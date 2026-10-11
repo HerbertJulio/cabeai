@@ -1,0 +1,41 @@
+{
+  "name": "cabeai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cabeaí: draw your home's floor plan to scale, place the furniture and see if it fits. Free, with AI. Portuguese and English.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/google": "4.0.93",
+    "ai": "7.0.137",
+    "immer": "11.1.21",
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "4.6.6",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "vitest": "5.0.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HerbertJulio/cabeai.git"
+  },
+  "author": "Herbert Vicente Cotta Julio",
+  "funding": "https://github.com/sponsors/HerbertJulio"
+}
