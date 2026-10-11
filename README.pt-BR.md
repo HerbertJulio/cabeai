@@ -8,6 +8,7 @@
 
 - Casa com **andares** e **cômodos**: veja um cômodo, os cômodos **lado a lado** ou a **planta da casa montada** (andares lado a lado, cômodos arrastáveis, com ímã que encosta as paredes e setas com a distância entre eles).
 - **Portas, janelas, ar-condicionado, interruptores e tomadas** em cada parede. Uma porta na parede dividida entre dois cômodos vale para os dois.
+- Coloque um cômodo **à direita, à esquerda, acima ou abaixo** de outro, crie **corredores** ligando dois cômodos com o comprimento que quiser e **escadas retas ou caracol**.
 - **Móveis com medidas reais**: cama (com **baú** na cabeceira, nos pés ou nos dois, mais largo que a cama, centralizado, à esquerda, à direita ou com ajuste), guarda-roupa, berço, cômoda, **mesa com cadeiras** (na frente, dos dois lados ou em volta, com o espaço para puxar), cadeira, sofá, rack, estante, geladeira, fogão, pia, lavadora, armário e outros.
 - **Espaço livre na frente** de cada móvel calculado pelas portas e gavetas, e editável para móveis planejados.
 - **Avisos** quando algo não cabe: porta batendo em móvel, janela tapada, interruptor ou tomada coberta, cadeira sem espaço, cômodos um em cima do outro.

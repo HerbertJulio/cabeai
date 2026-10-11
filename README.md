@@ -8,6 +8,7 @@
 
 - A home with **floors** and **rooms**: look at one room, all rooms **side by side**, or the **assembled home plan** (floors side by side, draggable rooms that snap wall to wall, and arrows showing the distance between them).
 - **Doors, windows, air conditioners, switches and outlets** on every wall. A door on a wall shared by two rooms counts for both.
+- Place a room **to the right, left, above or below** another one, add **hallways** that connect two rooms with the length you choose, and **straight or spiral stairs**.
 - **Furniture with real measurements**: bed (with a **storage chest** at the headboard, at the foot or both, wider than the bed, centered, left, right or offset), wardrobe, crib, dresser, **table with chairs** (in front, on both sides or all around, including the space to pull them out), chair, sofa, TV stand, bookcase, fridge, stove, sink, washing machine, cabinet and more.
 - **Free space in front of each piece** is calculated from its doors and drawers, and you can change it for custom-made furniture.
 - **Warnings** when something doesn't fit: a door hitting furniture, a blocked window, a covered switch or outlet, chairs without room, overlapping rooms.
