@@ -77,7 +77,7 @@ export function Avisos() {
     <div className="flut flut-ce" id="avisos">
       <div className={`aviso-card ${total ? 'ruim' : 'bom'}`}>
         <div className="aviso-cab"><strong>{total ? pl(total, tx('problema', 'problem'), tx('problemas', 'problems')) : tx('Tudo certo', 'All good')}</strong><button type="button" className="ico-btn peq" aria-label={tx('Recolher', 'Collapse')} onClick={() => abrir(false)}><Icone n="x" /></button></div>
-        {total ? <>{lista(true)}<p className="nota">{tx('Toque num problema para ver o item.', 'Tap a problem to see the item.')}</p></> : <p className="nota">{tx('Nenhuma porta, janela, interruptor ou ar-condicionado atrapalhado, e nada sobreposto.', 'No door, window, switch or air conditioner is blocked, and nothing overlaps.')}</p>}
+        {total ? <>{lista(true)}<p className="nota">{tx('Toque num problema para ver o item.', 'Tap a problem to see the item.')}</p></> : <p className="nota">{tx('Nenhuma porta, janela, ar-condicionado, interruptor, tomada ou outro ponto atrapalhado, e nada sobreposto.', 'No door, window, air conditioner, switch, outlet or hookup is blocked, and nothing overlaps.')}</p>}
       </div>
     </div>
   );

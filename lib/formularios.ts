@@ -126,7 +126,7 @@ export function validarParede(v: Valores, tipo: TipoParede, q: Comodo, atual: El
   if (nome) c.nome = nome;
   if (tipo === 'porta') { c.dobradica = v.dobradica === 'b' ? 'b' : 'a'; c.abre = v.abre === 'fora' ? 'fora' : 'dentro'; }
   if (tipo === 'janela') { c.abertura = v.abertura === 'abrir' ? 'abrir' : 'correr'; c.folhas = v.folhas === '1' ? 1 : 2; }
-  if (tipo === 'interruptor') c.ponto = v.ponto === 'tomada' || v.ponto === 'ambos' ? v.ponto : 'interruptor';
+  if (tipo === 'interruptor') c.ponto = pontoDe(v);
   if (tipo === 'ar') {
     const f = parseDist(v.folga);
     if ((f != null && Number.isNaN(f)) || (f != null && f > 200)) return { erro: tx('Confira a área livre de cada lado, por exemplo 0,30.', `Check the free space on each side, for example ${fmtM(30)}.`) };

@@ -1,7 +1,7 @@
 // Geometria de um cômodo (cm; origem = canto interno de cima à esquerda do cômodo).
 import { tx } from './i18n';
-import { NOME_PAREDE, PAREDES, PUXAR_CADEIRA, TIPOS, VERBO_AB, horizontal } from './catalogo';
-import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Problema, Ret, RetMedida } from './tipos';
+import { NOME_PAREDE, PAREDES, PONTO_USA, PUXAR_CADEIRA, TIPOS, VERBO_AB, ehInterruptor, horizontal, pontoDe } from './catalogo';
+import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Ponto, Problema, Ret, RetMedida, TipoMovel } from './tipos';
 import { clamp } from './util';
 
 export type Lado = 'esq' | 'dir' | 'cima' | 'baixo';
@@ -159,13 +159,27 @@ export const naAreaDoAr = (q: Caixa, a: ElParede, r: Ret): boolean => {
   return noTrecho(q, a.parede, z.a, z.b, r, 40);
 };
 
-/** O móvel atrapalha o interruptor ou a tomada? Interruptor precisa de 30 cm livres na frente;
- *  tomada sozinha pode ficar atrás de móvel baixo (cama, sofá, rack), mas não de móvel alto encostado nela. */
-export const cobreInterruptor = (q: Caixa, i: ElParede, r: Ret, alto = true): boolean => {
-  const g = geoEl(q, i);
-  if (i.ponto === 'tomada') return alto && noTrecho(q, i.parede, g.a - 2, g.b + 2, r, 15);
-  return noTrecho(q, i.parede, g.a - 5, g.b + 5, r, 30);
+/** O móvel atrapalha o ponto? Interruptor precisa de 30 cm livres na frente. Tomada, TV, internet, água, esgoto,
+ *  gás e arandela podem ficar atrás de móvel baixo (cama, sofá, rack), mas não de móvel alto encostado neles,
+ *  a não ser que o móvel use o ponto (a geladeira na tomada ou na água, a estante no ponto de TV). */
+export const cobreInterruptor = (q: Caixa, i: ElParede, r: Ret, alto = true, tipo?: TipoMovel): boolean => {
+  const g = geoEl(q, i), p = pontoDe(i);
+  if (ehInterruptor(p)) return noTrecho(q, i.parede, g.a - 5, g.b + 5, r, 30);
+  return alto && !(tipo && PONTO_USA[p].includes(tipo)) && noTrecho(q, i.parede, g.a - 2, g.b + 2, r, 15);
 };
+
+/** Pontos que o móvel usa e na frente dos quais ele está: o rack no ponto de TV, a pia na água e no esgoto,
+ *  a cama com a cabeceira entre as arandelas. Cada tipo de ponto conta uma vez. */
+export function pontosUsados(q: ComodoCompleto, tipo: TipoMovel, r: Ret): Ponto[] {
+  const out: Ponto[] = [];
+  for (const i of q.interruptores) {
+    const p = pontoDe(i);
+    if (out.includes(p) || !PONTO_USA[p].includes(tipo)) continue;
+    const g = geoEl(q, i), lado = p === 'luz' ? 60 : 10;
+    if (noTrecho(q, i.parede, g.a - lado, g.b + lado, r, p === 'luz' ? 5 : 25)) out.push(p);
+  }
+  return out;
+}
 
 /* ---------- portas, gavetas e o que precisa de espaço na frente ---------- */
 type ComAbertura = Pick<Movel, 'tipo' | 'abertura' | 'larg' | 'prof' | 'nPortas'> & { frente?: number | null };
@@ -357,9 +371,13 @@ export function avaliar(q: ComodoCompleto, lista: Movel[]): Avaliacao {
       if (p.abre === 'dentro' && bloqueiaPorta(q, p, r)) { anota(tx(`${m.nome} atrapalha a abertura de “${p.nome}”.`, `${m.nome} blocks “${p.nome}” from opening.`), m.id, p.id); portasBloq.add(p.id); }
       else if (p.abre === 'fora' && naFrentePorta(q, p, r)) { anota(tx(`${m.nome} fica na frente de “${p.nome}”.`, `${m.nome} is in front of “${p.nome}”.`), m.id, p.id); portasBloq.add(p.id); }
     }
-    for (const i of q.interruptores) if (cobreInterruptor(q, i, r, m.alto)) anota(i.ponto === 'tomada'
-      ? tx(`${m.nome} tapa “${i.nome}”: móvel alto encostado na tomada.`, `${m.nome} covers “${i.nome}”: tall furniture against the outlet.`)
-      : tx(`${m.nome} fica na frente de “${i.nome}”.`, `${m.nome} blocks “${i.nome}”.`), m.id, i.id);
+    for (const i of q.interruptores) {
+      if (!cobreInterruptor(q, i, r, m.alto, m.tipo)) continue;
+      const p = pontoDe(i);
+      anota(ehInterruptor(p) ? tx(`${m.nome} fica na frente de “${i.nome}”.`, `${m.nome} blocks “${i.nome}”.`)
+        : p === 'tomada' ? tx(`${m.nome} tapa “${i.nome}”: móvel alto encostado na tomada.`, `${m.nome} covers “${i.nome}”: tall furniture against the outlet.`)
+          : tx(`${m.nome} tapa “${i.nome}”: móvel alto encostado no ponto.`, `${m.nome} covers “${i.nome}”: tall furniture against it.`), m.id, i.id);
+    }
     if (m.alto) {
       for (const a of q.ares) if (naAreaDoAr(q, a, r)) anota(tx(`${m.nome} é alto e está na área do ${a.nome.toLowerCase()}.`, `${m.nome} is tall and too close to “${a.nome}”.`), m.id, a.id);
       for (const j of q.janelas) {
@@ -421,7 +439,7 @@ export function posValida(q: ComodoCompleto, m: Movel, x: number, y: number, rot
   if (x < 0 || y < 0 || r.x2 > q.w || r.y2 > q.h) return false;
   if (outros.some((o) => sobrepoe(r, ret(o)))) return false;
   if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre === 'fora' && naFrentePorta(q, p, r)))) return false;
-  if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto))) return false;
+  if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   if (exigirFrente) {
     const need = precisaFrente(m);

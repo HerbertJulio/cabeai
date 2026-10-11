@@ -7,12 +7,12 @@
 *Read in English: [README.md](README.md)*
 
 - Casa com **andares** e **cômodos**: veja um cômodo, os cômodos **lado a lado** ou a **planta da casa montada** (andares lado a lado, cômodos arrastáveis, com ímã que encosta as paredes e setas com a distância entre eles).
-- **Portas, janelas, ar-condicionado, interruptores e tomadas** em cada parede. Uma porta na parede dividida entre dois cômodos vale para os dois.
+- **Portas, janelas, ar-condicionado e pontos** em cada parede: interruptor, tomada, arandela, TV, internet, água, esgoto e gás. Uma porta na parede dividida entre dois cômodos vale para os dois.
 - Coloque um cômodo **à direita, à esquerda, acima ou abaixo** de outro, crie **corredores** ligando dois cômodos com o comprimento que quiser e **escadas retas ou caracol**.
 - **Móveis com medidas reais**: cama (com **baú** na cabeceira, nos pés ou nos dois, mais largo que a cama, centralizado, à esquerda, à direita ou com ajuste), guarda-roupa, berço, cômoda, **mesa com cadeiras** (na frente, dos dois lados ou em volta, com o espaço para puxar), cadeira, sofá, rack, estante, geladeira, fogão, pia, lavadora, armário e outros.
 - **Espaço livre na frente** de cada móvel calculado pelas portas e gavetas, e editável para móveis planejados.
-- **Avisos** quando algo não cabe: porta batendo em móvel, janela tapada, interruptor ou tomada coberta, cadeira sem espaço, cômodos um em cima do outro.
-- **Cenários** para comparar arrumações de um cômodo ou da casa toda (atualize o que está em uso ou salve um novo), e **3 sugestões** automáticas ou pela **IA**.
+- **Avisos** quando algo não cabe: porta batendo em móvel, janela tapada, interruptor, tomada ou outro ponto tapado, cadeira sem espaço, cômodos um em cima do outro.
+- **Cenários** para comparar arrumações de um cômodo ou da casa toda (atualize o que está em uso ou salve um novo), e **3 sugestões** automáticas ou pela **IA**, que põem o rack no ponto de TV, a pia e a máquina de lavar na água e no esgoto e o fogão no gás.
 - Tudo fica **salvo no navegador**; dá para **exportar e importar** um arquivo.
 - Funciona no **celular** e no **computador**, em modo **simples** ou **avançado** (painel de propriedades, posição exata, travar móveis), em **português** e **inglês**.
 

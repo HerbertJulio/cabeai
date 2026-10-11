@@ -1,12 +1,12 @@
 'use client';
 // Campos dos formulários (os mesmos para adicionar, editar e no painel do modo avançado).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AB_NOME, ESCADA_NOME, ESCADA_PADRAO, LADO_CAD_NOME, MAX_CADEIRAS, PAREDES, PAREDE_NOME, PONTO_BASE, PONTO_NOME, TIPOS, TIPOS_PAREDE, horizontal, rotDist } from '@/lib/catalogo';
+import { AB_NOME, ESCADA_NOME, ESCADA_PADRAO, GRUPOS_PONTO, LADO_CAD_NOME, MAX_CADEIRAS, PAREDES, PAREDE_NOME, PONTO_BASE, PONTO_NOME, TIPOS, TIPOS_PAREDE, horizontal, pontoDe, rotDist } from '@/lib/catalogo';
 import { frenteAutomatica } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
 import { fmtM, parseInteiro, parseMedida } from '@/lib/util';
 import type { Valores } from '@/lib/formularios';
-import type { Abertura, Parede, Ponto, TipoMovel, TipoParede } from '@/lib/tipos';
+import type { Abertura, Parede, TipoMovel, TipoParede } from '@/lib/tipos';
 
 type Set = (k: string, v: string | boolean) => void;
 type Commit = (k: string, val: string | boolean) => void;
@@ -24,13 +24,15 @@ export function Texto({ px, k, rot, v, set, commit, full, oculto, num, max, ph, 
   );
 }
 
-export function Escolha({ px, k, rot, v, set, commit, full, oculto, opts }: Base & { opts: [string, string][] }) {
+/** Lista de escolha; com `grupos`, as opções aparecem separadas por título (optgroup). */
+export function Escolha({ px, k, rot, v, set, commit, full, oculto, opts, grupos }: Base & { opts?: [string, string][]; grupos?: { rot: string; opts: [string, string][] }[] }) {
   if (oculto) return null;
+  const op = ([val, t]: [string, string]) => <option key={val} value={val}>{t}</option>;
   return (
     <div className={`campo${full ? ' full' : ''}`}>
       <label htmlFor={`${px}-${k}`}>{rot}</label>
       <select id={`${px}-${k}`} data-k={k} value={String(v[k] ?? '')} onChange={(e) => { set(k, e.target.value); commit?.(k, e.target.value); }}>
-        {opts.map(([val, t]) => <option key={val} value={val}>{t}</option>)}
+        {grupos ? grupos.map((g) => <optgroup key={g.rot} label={g.rot}>{g.opts.map(op)}</optgroup>) : (opts || []).map(op)}
       </select>
     </div>
   );
@@ -104,8 +106,8 @@ export function CamposParede({ px, tipo, v, set, commit, avancado, add, phNome }
   const tp = TIPOS_PAREDE[tipo], par = (v.parede as Parede) || tp.parede, hz = horizontal(par), p = { px, v, set, commit };
   return (
     <div className="campos">
-      {tipo === 'interruptor' && <Escolha {...p} k="ponto" rot={tx('O que é', 'What it is')} full opts={(['interruptor', 'tomada', 'ambos'] as const).map((k) => [k, PONTO_NOME[k]])} />}
-      <Texto {...p} k="nome" rot={tx('Nome', 'Name')} full max={30} ph={phNome || (tipo === 'interruptor' ? PONTO_BASE[(v.ponto as Ponto) || 'interruptor'] : tp.rot)} />
+      {tipo === 'interruptor' && <Escolha {...p} k="ponto" rot={tx('O que é', 'What it is')} full grupos={GRUPOS_PONTO.map((g) => ({ rot: g.rot, opts: g.pontos.map((k): [string, string] => [k, PONTO_NOME[k]]) }))} />}
+      <Texto {...p} k="nome" rot={tx('Nome', 'Name')} full max={30} ph={phNome || (tipo === 'interruptor' ? PONTO_BASE[pontoDe(v)] : tp.rot)} />
       <Escolha {...p} k="parede" rot={tx('Parede', 'Wall')} full={tipo !== 'interruptor'} opts={PAREDES.map((x) => [x, PAREDE_NOME[x]])} />
       {tipo !== 'interruptor' && <Texto {...p} k="largura" rot={tp.rotLarg} num ph={add ? tp.ex : ''} />}
       {avancado ? <Texto {...p} k="inicioCm" rot={rotDist(par) + ' (cm)'} num /> : <Texto {...p} k="dist" rot={rotDist(par)} num ph={tx('em branco = no meio', 'blank = centered')} />}

@@ -1,12 +1,17 @@
 // IA: o pedido (em português simples), a leitura da resposta e a conferência de cada opção.
 // Usado no servidor (IA grátis da Vercel ou Gemini) e no navegador (IA do Chrome).
-import { TIPOS, horizontal, pontoDe } from './catalogo';
+import { PONTO_USA, TIPOS, ehInterruptor, horizontal, pontoDe } from './catalogo';
 import { tx, type Idioma } from './i18n';
 import { avaliar, folgas, folhaDe, geoEl, geoPorta, normRot, nPortasDe, prender, precisaCadeira, precisaFrente, ret, tam, temCadeiras, uv2xy, zonaAr } from './geometria';
-import type { ComodoCompleto, ItemCenario, Movel, Parede } from './tipos';
+import type { ComodoCompleto, ItemCenario, Movel, Parede, Ponto } from './tipos';
 
 const nomeParede = (q: ComodoCompleto, p: Parede) => ({ cima: 'de cima (y=0)', baixo: `de baixo (y=${q.h})`, esquerda: 'da esquerda (x=0)', direita: `da direita (x=${q.w})` })[p];
 const eixo = (p: Parede) => (horizontal(p) ? 'x' : 'y');
+/** O pedido é sempre em português (só a resposta muda de idioma). */
+const PONTO_IA: Record<Ponto, string> = {
+  interruptor: 'interruptor', ambos: 'interruptor e tomada', tomada: 'tomada', luz: 'arandela, luz na parede',
+  tv: 'ponto de TV', rede: 'ponto de internet', agua: 'ponto de água', esgoto: 'esgoto', gas: 'ponto de gás'
+};
 
 export function montarPrompt(q: ComodoCompleto, lista: Movel[], fixos: Movel[], lingua: Idioma = 'pt'): string {
   const L: string[] = [];
@@ -21,11 +26,12 @@ export function montarPrompt(q: ComodoCompleto, lista: Movel[], fixos: Movel[], 
     }
   }
   if (q.interruptores.length) {
-    L.push('', 'INTERRUPTORES E TOMADAS:');
+    L.push('', 'PONTOS NA PAREDE (interruptores, tomadas, TV, internet, água, esgoto, gás):');
     for (const i of q.interruptores) {
-      const g = geoEl(q, i), e = eixo(i.parede), p = pontoDe(i);
-      if (p === 'tomada') L.push(`- "${i.nome}" (tomada): parede ${nomeParede(q, i.parede)}, de ${e}=${g.a} a ${e}=${g.b}. Móvel baixo pode ficar na frente; móvel alto não pode tapar a tomada.`);
-      else L.push(`- "${i.nome}" (${p === 'ambos' ? 'interruptor e tomada' : 'interruptor'}): parede ${nomeParede(q, i.parede)}, de ${e}=${g.a} a ${e}=${g.b}. Deixe 30 cm livres na frente dele.`);
+      const g = geoEl(q, i), e = eixo(i.parede), p = pontoDe(i), usa = PONTO_USA[p].map((t) => `tipo ${t}`).join(' ou ');
+      const onde = `- "${i.nome}" (${PONTO_IA[p]}): parede ${nomeParede(q, i.parede)}, de ${e}=${g.a} a ${e}=${g.b}.`;
+      if (ehInterruptor(p)) L.push(`${onde} Deixe 30 cm livres na frente dele.`);
+      else L.push(`${onde} Móvel baixo pode ficar na frente; móvel alto não pode tapar${usa ? `, a não ser o que usa o ponto` : ''}.${usa && p !== 'luz' ? ` Bom lugar para móvel do ${usa} (encostado na parede, na frente do ponto).` : ''}${p === 'luz' ? ' Bom lugar para a cabeceira da cama (arandela ao lado da cabeceira).' : ''}`);
     }
   }
   if (q.janelas.length) {
@@ -64,7 +70,8 @@ export function montarPrompt(q: ComodoCompleto, lista: Movel[], fixos: Movel[], 
     '4. Respeitar o espaço livre na frente de portas, gavetas, forno, pia, sofá e cadeiras (nunca com a frente virada para a parede).',
     '5. Cama de casal (largura 120 ou mais): cabeceira numa parede e acesso pelos dois lados compridos (60 cm ou mais de cada lado, se der).',
     '6. Caminhos de pelo menos 60 cm (ideal 80) das portas do cômodo até os móveis principais.',
-    '7. Prefira os móveis encostados nas paredes, com o meio livre.');
+    '7. Prefira os móveis encostados nas paredes, com o meio livre.',
+    '8. Se houver ponto de TV, internet, água, esgoto ou gás, ponha na frente dele o móvel que usa o ponto (rack no ponto de TV, pia e máquina de lavar na água e no esgoto, fogão no gás).');
   L.push('', 'As TRÊS opções precisam ser bem diferentes entre si (por exemplo: a cama ou o sofá em outra parede).');
   L.push('', 'Responda SOMENTE com JSON, sem texto antes ou depois, neste formato, com exatamente 3 itens em "opcoes" e TODOS os móveis para arrumar em cada um:',
     '{"opcoes":[{"titulo":"até 4 palavras","moveis":[{"id":"<id>","x":0,"y":0,"rot":0}],"explicacao":"2 ou 3 frases curtas, em português simples, dizendo onde ficou cada móvel e por quê."}]}');

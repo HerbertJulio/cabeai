@@ -12,8 +12,9 @@ export type LadoCadeiras = 'frente' | 'dois' | 'volta';
 /** Onde fica o baú em relação à cama: no meio, alinhado à esquerda ou à direita (mais um ajuste em cm). */
 export type AlinhaBau = 'centro' | 'esq' | 'dir';
 export type TipoParede = 'porta' | 'janela' | 'ar' | 'interruptor';
-/** Ponto elétrico (o item de parede "interruptor"): só interruptor, só tomada ou os dois. */
-export type Ponto = 'interruptor' | 'tomada' | 'ambos';
+/** Ponto na parede (o item de parede "interruptor"): elétrico (interruptor, tomada, os dois, arandela),
+ *  de sinal (TV, internet) ou de água e gás (água, esgoto, gás). */
+export type Ponto = 'interruptor' | 'tomada' | 'ambos' | 'luz' | 'tv' | 'rede' | 'agua' | 'esgoto' | 'gas';
 export type Vista = 'um' | 'lado' | 'casa';
 export type Modo = 'simples' | 'avancado';
 export type Escopo = 'casa' | 'comodo';
@@ -94,7 +95,7 @@ export interface ElParede {
   abertura?: 'correr' | 'abrir';
   folhas?: 1 | 2;
   folga?: number;
-  /** Interruptor, tomada ou os dois (só no item "interruptor"). */
+  /** Que ponto é: interruptor, tomada, TV, água, gás… (só no item "interruptor"). */
   ponto?: Ponto;
   /** Porta de um vizinho que fica na parede dividida (só para conferir e desenhar o vão). */
   herdada?: boolean;

@@ -1,5 +1,5 @@
 // Dados: normalização, arquivo (exportar/importar), leitura do formato antigo (versão 1) e o exemplo.
-import { LIM_BAU, LIM_CADEIRA, LIM_COMODO, LIM_MOVEL, MAX_CADEIRAS, PAREDES, TIPOS, TIPOS_PAREDE, tipoMovel } from './catalogo';
+import { LIM_BAU, LIM_CADEIRA, LIM_COMODO, LIM_MOVEL, MAX_CADEIRAS, PAREDES, TIPOS, TIPOS_PAREDE, pontoDe, tipoMovel } from './catalogo';
 import { ordenarAndares, portasVizinhas, posicaoNova } from './casa';
 import { normRot } from './geometria';
 import { tx } from './i18n';
@@ -62,7 +62,7 @@ export function normalizarEl(tipo: TipoParede, id: string, v: Record<string, unk
   if (tipo === 'porta') { e.dobradica = v.dobradica === 'b' ? 'b' : 'a'; e.abre = v.abre === 'fora' ? 'fora' : 'dentro'; }
   if (tipo === 'janela') { e.abertura = v.abertura === 'abrir' ? 'abrir' : 'correr'; e.folhas = num(v.folhas, 2) === 1 ? 1 : 2; }
   if (tipo === 'ar') e.folga = clamp(num(v.folga, 30), 0, 200);
-  if (tipo === 'interruptor') e.ponto = v.ponto === 'tomada' || v.ponto === 'ambos' ? v.ponto : 'interruptor';
+  if (tipo === 'interruptor') e.ponto = pontoDe(v);
   return e;
 }
 

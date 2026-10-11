@@ -1,6 +1,6 @@
 // Desenho de um cômodo (unidades = cm; origem = canto interno de cima à esquerda).
 import type { ReactNode } from 'react';
-import { AR_PROF, NOME_PAREDE, PAREDES, PONTO_NOME, T, horizontal, pontoDe } from '@/lib/catalogo';
+import { AR_PROF, NOME_PAREDE, PAREDES, PONTO_NOME, T, ehInterruptor, horizontal, pontoDe } from '@/lib/catalogo';
 import { tx } from '@/lib/i18n';
 import { compParede, folgas, folhaDe, geoEl, geoPorta, nivel, uv2xy, zonaAr, type Folga } from '@/lib/geometria';
 import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Vista } from '@/lib/tipos';
@@ -106,20 +106,64 @@ function ArTopo({ q, a, sel }: { q: Q; a: ElParede; sel: boolean }) {
     </g>
   );
 }
-function Interruptor({ q, i, sel, ruim }: { q: Q; i: ElParede; sel: boolean; ruim: boolean }) {
-  const g = geoEl(q, i), mid = (g.a + g.b) / 2, w = Math.max(6, g.b - g.a), hw = Math.max(12, w / 2 + 6), ponto = pontoDe(i);
-  // interruptor: placa com a tecla; tomada: placa com dois furos; os dois: tecla e furos
-  const furo = (u: number, k: number) => { const c = uv2xy(q, i.parede, u, 2.6); return <circle key={k} className="interr-f" cx={n1(c[0])} cy={n1(c[1])} r={0.9} />; };
-  const tecla = linhaEm(q, i.parede, mid - w * 0.22, 2, mid + w * 0.22, 2);
+/** Caminho fechado em coordenadas da parede (u ao longo dela, v para dentro do cômodo). */
+function caminhoUV(q: Q, parede: Parede, pts: [number, number][]): string {
+  return pts.map(([u, v], k) => { const p = uv2xy(q, parede, u, v); return (k ? 'L' : 'M') + n1(p[0]) + ',' + n1(p[1]); }).join(' ') + ' Z';
+}
+/** "light switch" para leitores de tela, sem estragar siglas ("TV outlet"). */
+const minuscula = (s: string): string => (/^.[A-Z]/.test(s) ? s : s.charAt(0).toLowerCase() + s.slice(1));
+
+/** Largura aproximada do rótulo de um ponto (cm do desenho; letras de 8,5 em caixa alta). */
+const larguraRotulo = (nome: string) => nome.length * 4.3 + 4;
+/** Rótulos dos pontos ficam do lado de fora da parede. Quando dois pontos estão perto na mesma parede (água e
+ *  esgoto, TV e internet), o rótulo do segundo vai para uma faixa mais longe da parede, para não encavalar. */
+function faixasRotulos(q: Q, maxFaixas: (p: Parede) => number): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const parede of PAREDES) {
+    const its = q.interruptores.filter((i) => i.parede === parede)
+      .map((i) => { const g = geoEl(q, i), mid = (g.a + g.b) / 2, meia = larguraRotulo(i.nome) / 2; return { id: i.id, a: mid - meia, b: mid + meia }; })
+      .sort((x, y) => x.a - y.a);
+    const fim: number[] = [], n = maxFaixas(parede);
+    for (const it of its) {
+      let k = fim.findIndex((f) => f <= it.a);
+      if (k < 0 && fim.length < n) { k = fim.length; fim.push(it.b); }
+      else if (k < 0) k = fim.indexOf(Math.min(...fim));
+      fim[k] = it.b;
+      out.set(it.id, k);
+    }
+  }
+  return out;
+}
+
+/** Ponto na parede: uma placa com o símbolo do que ele é. */
+function Interruptor({ q, i, sel, ruim, faixa }: { q: Q; i: ElParede; sel: boolean; ruim: boolean; faixa: number }) {
+  const g = geoEl(q, i), mid = (g.a + g.b) / 2, w = Math.max(6, g.b - g.a), hw = Math.max(12, w / 2 + 6), ponto = pontoDe(i), par = i.parede;
+  const furo = (u: number, k: number) => { const c = uv2xy(q, par, u, 2.6); return <circle key={k} className="interr-f" cx={n1(c[0])} cy={n1(c[1])} r={0.9} />; };
+  const circ = (v: number, r: number) => { const c = uv2xy(q, par, mid, v); return <circle className="interr-g" cx={n1(c[0])} cy={n1(c[1])} r={r} />; };
+  const traco = (u1: number, v1: number, u2: number, v2: number, cls = 'interr-g') => <line className={cls} {...linhaEm(q, par, mid + u1, v1, mid + u2, v2)} />;
+  const forma = (pts: [number, number][], cls: string) => <path className={cls} d={caminhoUV(q, par, pts.map(([du, v]): [number, number] => [mid + du, v]))} />;
+  const simbolo: Record<typeof ponto, ReactNode> = {
+    // interruptor: tecla; tomada: dois furos; os dois: tecla e furos
+    interruptor: traco(-w * 0.22, 2, w * 0.22, 2, 'interr-t'),
+    tomada: [furo(mid - w * 0.18, 1), furo(mid + w * 0.18, 2)],
+    ambos: <>{traco(-w * 0.4, 2, -w * 0.1, 2, 'interr-t')}{furo(mid + w * 0.12, 1)}{furo(mid + w * 0.34, 2)}</>,
+    // arandela: o símbolo de ponto de luz (círculo com um X)
+    luz: <>{circ(2, 1.9)}{traco(-1.3, 0.7, 1.3, 3.3)}{traco(-1.3, 3.3, 1.3, 0.7)}</>,
+    // TV: uma telinha; internet: a entrada do cabo de rede
+    tv: <><rect className="interr-g" {...rectEm(q, par, mid - 2.6, 0.4, mid + 2.6, 3.4)} />{traco(-1.2, 4.3, 1.2, 4.3)}</>,
+    rede: forma([[-1.8, 0.6], [1.8, 0.6], [1.8, 3], [0.8, 3], [0.8, 3.9], [-0.8, 3.9], [-0.8, 3], [-1.8, 3]], 'interr-g'),
+    // água: uma gota; esgoto: o ralo; gás: uma chama
+    agua: forma([[0, 0.3], [1.1, 1.8], [1.6, 2.8], [1.2, 3.7], [0, 4.2], [-1.2, 3.7], [-1.6, 2.8], [-1.1, 1.8]], 'interr-c'),
+    esgoto: <>{circ(2.2, 1.9)}{traco(-1.2, 1.6, 1.2, 1.6)}{traco(-1.2, 2.8, 1.2, 2.8)}</>,
+    gas: forma([[0, 4.3], [1.3, 3.2], [1.5, 2], [0.7, 0.4], [0.5, 1.6], [-0.2, 0.6], [-1.3, 2], [-1.4, 3.2]], 'interr-c')
+  };
   return (
     <g className={`interr-el${sel ? ' sel' : ''}${ruim ? ' ruim' : ''} p-${ponto}`} data-eid={i.id} tabIndex={0} role="button"
-      aria-label={tx(`${i.nome}, ${PONTO_NOME[ponto].toLowerCase()} na parede ${NOME_PAREDE[i.parede]}. Enter abre as opções; setas movem pela parede.`, `${i.nome}, ${PONTO_NOME[ponto].toLowerCase()} on the ${NOME_PAREDE[i.parede]} wall. Enter opens the options; arrow keys move it along the wall.`)}>
-      <rect className="hit" {...rectEm(q, i.parede, mid - hw, -T, mid + hw, 14)} />
-      <rect className="interr" rx={ponto === 'tomada' ? 2.5 : 1} {...rectEm(q, i.parede, mid - w / 2, -1, mid + w / 2, 5)} />
-      {ponto !== 'tomada' && <line className="interr-t" {...(ponto === 'ambos' ? linhaEm(q, i.parede, mid - w * 0.4, 2, mid - w * 0.1, 2) : tecla)} />}
-      {ponto === 'tomada' && [furo(mid - w * 0.18, 1), furo(mid + w * 0.18, 2)]}
-      {ponto === 'ambos' && [furo(mid + w * 0.12, 1), furo(mid + w * 0.34, 2)]}
-      <Txt cls="anot" p={uv2xy(q, i.parede, mid, -T - 6)} rt={rotTexto(i.parede)}>{i.nome}</Txt>
+      aria-label={tx(`${i.nome}, ${minuscula(PONTO_NOME[ponto])} na parede ${NOME_PAREDE[par]}. Enter abre as opções; setas movem pela parede.`, `${i.nome}, ${minuscula(PONTO_NOME[ponto])} on the ${NOME_PAREDE[par]} wall. Enter opens the options; arrow keys move it along the wall.`)}>
+      <rect className="hit" {...rectEm(q, par, mid - hw, -T, mid + hw, 14)} />
+      <rect className="interr" rx={ponto === 'tomada' ? 2.5 : ehInterruptor(ponto) ? 1 : 1.5} {...rectEm(q, par, mid - w / 2, -1, mid + w / 2, 5)} />
+      {simbolo[ponto]}
+      <Txt cls="anot" p={uv2xy(q, par, mid, -T - 6 - faixa * 11)} rt={rotTexto(par)}>{i.nome}</Txt>
     </g>
   );
 }
@@ -178,6 +222,8 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
   const ordem = lista.slice().sort((a, b) => Number(a.id === sel) - Number(b.id === sel));
   const comSetas = setasTodos ? lista : lista.filter((m) => m.id === sel);
   const probs = av.itens.length;
+  // em cima e à esquerda ficam as cotas do cômodo (fora da planta da casa): ali cabem só duas faixas de rótulo
+  const faixas = faixasRotulos(q, (p) => (!casa && (p === 'cima' || p === 'esquerda') ? 2 : 3));
   return (
     <>
       <rect className={`piso${q.corredor ? ' corredor' : ''}`} x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
@@ -187,7 +233,7 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
       {(varios && foco) || selComodo ? <rect className={`sala-foco${selComodo ? ' forte' : ''}`} x={-T - 4} y={-T - 4} width={q.w + 2 * T + 8} height={q.h + 2 * T + 8} rx={4} /> : null}
       {q.ares.map((a) => <ArBase key={a.id} q={q} a={a} sel={selEl === a.id} />)}
       {q.janelas.map((j) => <Janela key={j.id} q={q} j={j} sel={selEl === j.id} ruim={av.elsRuins.has(j.id)} />)}
-      {q.interruptores.map((i) => <Interruptor key={i.id} q={q} i={i} sel={selEl === i.id} ruim={av.elsRuins.has(i.id)} />)}
+      {q.interruptores.map((i) => <Interruptor key={i.id} q={q} i={i} sel={selEl === i.id} ruim={av.elsRuins.has(i.id)} faixa={faixas.get(i.id) || 0} />)}
       {!casa && <Cotas q={q} />}
       {vista === 'lado' && ty != null && (
         <text className={`sala-t${foco ? ' ativo' : ''}`} data-qt={q.id} x={0} y={n1(ty)}>{q.nome}{probs ? ` · ${pl(probs, tx('problema', 'problem'), tx('problemas', 'problems'))}` : ''}</text>

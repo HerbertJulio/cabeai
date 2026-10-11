@@ -1,7 +1,7 @@
 'use client';
 // Painel de propriedades do modo avançado: cada campo vale ao sair dele (ou com Enter).
 import { useEffect, useState } from 'react';
-import { AB_NOME, LIM_COMODO, PAREDES, TIPOS, TIPOS_PAREDE, horizontal, tipoMovel } from '@/lib/catalogo';
+import { AB_NOME, LIM_COMODO, PAREDES, PONTO_NOME, TIPOS, TIPOS_PAREDE, horizontal, pontoDe, tipoMovel } from '@/lib/catalogo';
 import { alvoSel, andaresOrdem, comodosOrdem, cq } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { valsMovel, valsParede, validarMovel, validarParede, type Valores } from '@/lib/formularios';
@@ -146,7 +146,7 @@ function PropEl({ e }: { e: ElParede }) {
     salvarEl(e.id, r.campos!);
   };
   return <>
-    <div className="insp-cab"><div><h2 className="sec-t">{e.nome}</h2><div className="sub">{TIPOS_PAREDE[e.tipo].rot} · {q.nome}</div></div><Fechar /></div>
+    <div className="insp-cab"><div><h2 className="sec-t">{e.nome}</h2><div className="sub">{e.tipo === 'interruptor' ? PONTO_NOME[pontoDe(e)] : TIPOS_PAREDE[e.tipo].rot} · {q.nome}</div></div><Fechar /></div>
     <CamposParede px="fp" tipo={e.tipo} v={v} set={set} commit={commit} avancado />
     {erro && <p className="erro" id="fp-erro">{erro}</p>}
     <ChipsEl q={q} el={e} />

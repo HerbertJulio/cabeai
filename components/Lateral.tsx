@@ -1,5 +1,5 @@
 'use client';
-import { PAREDE_CURTA } from '@/lib/catalogo';
+import { PAREDE_CURTA, pontoDe } from '@/lib/catalogo';
 import { andaresOrdem, avaliacao, comodosDoAndar, cq } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { geoEl } from '@/lib/geometria';
@@ -26,7 +26,7 @@ export default function Lateral() {
     [tx('Portas', 'Doors'), 'porta', 'porta', q.portas.filter((p) => !p.herdada), tx('Nenhuma porta.', 'No doors.'), tx('porta', 'door')],
     [tx('Janelas', 'Windows'), 'janela', 'jan', q.janelas, tx('Nenhuma janela.', 'No windows.'), tx('janela', 'window')],
     [tx('Ar-condicionado', 'Air conditioners'), 'ar', 'ar', q.ares, tx('Nenhum.', 'None.'), tx('ar-condicionado', 'air conditioner')],
-    [tx('Interruptores e tomadas', 'Switches and outlets'), 'interruptor', 'interruptor', q.interruptores, tx('Nenhum.', 'None.'), tx('interruptor ou tomada', 'switch or outlet')]
+    [tx('Tomadas e outros pontos', 'Outlets and hookups'), 'interruptor', 'interruptor', q.interruptores, tx('Nenhum.', 'None.'), tx('tomada, interruptor, ponto de TV, água ou gás', 'outlet, switch, TV, water or gas hookup')]
   ] as const) : [];
   const herdadas = q ? q.portas.filter((p) => p.herdada) : [];
 
@@ -90,7 +90,7 @@ export default function Lateral() {
                 <ul className="lista">
                   {arr.map((e) => { const g = geoEl(q, e); return (
                     <li key={e.id}><button type="button" className="item" data-esel={e.id} aria-current={selEl === e.id} onClick={() => { fecharGaveta(); selecionar({ eid: e.id }, { abrir: true }); }}>
-                      <span className={`dot ${av.elsRuins.has(e.id) ? 'bad' : dot}`} aria-hidden="true" /><span className="nm">{e.nome}</span><span className="med">{e.tipo === 'interruptor' ? '' : fmtM(g.b - g.a) + ' m · '}{PAREDE_CURTA[e.parede]}</span>
+                      <span className={`dot ${av.elsRuins.has(e.id) ? 'bad' : e.tipo === 'interruptor' ? 'interruptor pt-' + pontoDe(e) : dot}`} aria-hidden="true" /><span className="nm">{e.nome}</span><span className="med">{e.tipo === 'interruptor' ? '' : fmtM(g.b - g.a) + ' m · '}{PAREDE_CURTA[e.parede]}</span>
                     </button></li>
                   ); })}
                 </ul>

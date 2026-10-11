@@ -1,7 +1,7 @@
 // Estado do app (Zustand + Immer): os dados da casa e o estado da tela.
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, pontoDe, tipoMovel } from './catalogo';
+import { PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, nomePadraoPonto, pontoDe, tipoMovel } from './catalogo';
 import { nomeAndarNovo, planoCorredor, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
 import { alvoSel, andaresOrdem, cenariosLista, comodosDoAndar, comodosOrdem, cq, idsVisiveis } from './consultas';
 import { exemplo, moveisDo } from './dados';
@@ -319,7 +319,18 @@ export function removerComodo(id: string) {
 export function criarMovel(dados: Omit<Movel, 'id'>): string { const id = novoId('m'); set((s) => { s.dados.moveis[id] = { ...dados, id }; }); return id; }
 export function salvarMovel(id: string, campos: Partial<Movel>) { set((s) => { const m = s.dados.moveis[id]; if (m) Object.assign(m, campos); }); }
 export function criarEl(dados: Omit<ElParede, 'id'>): string { const id = novoId('e'); set((s) => { s.dados.els[id] = { ...dados, id }; }); return id; }
-export function salvarEl(id: string, campos: Partial<ElParede>) { set((s) => { const e = s.dados.els[id]; if (e) Object.assign(e, campos); }); }
+export function salvarEl(id: string, campos: Partial<ElParede>) {
+  set((s) => {
+    const e = s.dados.els[id];
+    if (!e) return;
+    // trocou o tipo de ponto e o nome ainda é o padrão ("Tomada 2")? O nome acompanha ("Ponto de TV").
+    const antes = pontoDe(e);
+    if (e.tipo === 'interruptor' && campos.ponto && campos.ponto !== antes && (campos.nome == null || campos.nome === e.nome) && nomePadraoPonto(e.nome, antes)) {
+      campos = { ...campos, nome: proximoNomeEl(s.dados, e.comodo, 'interruptor', campos.ponto) };
+    }
+    Object.assign(e, campos);
+  });
+}
 export function removerAlvo() {
   const s = get(), a = alvoSel(s.dados, s.sel, s.selEl);
   if (!a) return;

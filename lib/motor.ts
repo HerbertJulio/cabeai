@@ -1,12 +1,12 @@
 // Sugestões automáticas: testa centenas de arrumações no próprio aparelho e escolhe 3 bem diferentes.
-import { NOME_PAREDE, PAREDES, horizontal } from './catalogo';
+import { NOME_PAREDE, PAREDES, PONTO_DO, horizontal } from './catalogo';
 import {
   COSTAS, FRENTE, avaliar, bloqueiaPorta, cobreInterruptor, dims, distRet, folgas, folgasRet, geoEl, geoPorta, janelaRuim, ladosCama,
-  lugarLivre, naAreaDoAr, naFrentePorta, noTrecho, normRot, paredeDe, posValida, precisaFrente, ret, sobrepoe, temCadeiras,
+  lugarLivre, naAreaDoAr, naFrentePorta, noTrecho, normRot, paredeDe, pontosUsados, posValida, precisaFrente, ret, sobrepoe, temCadeiras,
   uv2xy, zonaFrente, zonasCadeiras
 } from './geometria';
 import { registro, tx } from './i18n';
-import type { Avaliacao, ComodoCompleto, ItemCenario, Movel, Parede, Ret } from './tipos';
+import type { Avaliacao, ComodoCompleto, ItemCenario, Movel, Parede, Ponto, Ret } from './tipos';
 import { tem } from './util';
 
 export function aleatorio(semente: number): () => number {
@@ -20,7 +20,7 @@ export function aleatorio(semente: number): () => number {
 function estaticoOk(q: ComodoCompleto, m: Movel, r: Ret): boolean {
   if (r.x1 < -0.5 || r.y1 < -0.5 || r.x2 > q.w + 0.5 || r.y2 > q.h + 0.5) return false;
   if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre === 'fora' && naFrentePorta(q, p, r)))) return false;
-  if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto))) return false;
+  if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   return true;
 }
@@ -120,8 +120,13 @@ function notaLocal(q: ComodoCompleto, m: Movel, c: Cand, col: Bloco[]): number {
   if (m.tipo === 'fogao' || m.tipo === 'geladeira') { const pia = col.find((o) => o.m.tipo === 'pia'); if (pia) { const dd = distRet(c.r, pia.r); s += dd < 3 ? (m.tipo === 'fogao' ? 14 : 6) : -dd / 20; } }
   if (m.tipo === 'sofa') { const tv = col.find((o) => o.m.tipo === 'rack'); if (tv) { const dd = distRet(c.r, tv.r); s += dd >= 150 && dd <= 400 ? 14 : -6; } }
   for (const p of q.portas) { const g = geoPorta(q, p); if (noTrecho(q, p.parede, g.a - 20, g.b + 20, c.r, g.r + 45)) s -= 14; }
+  s += bonusPontos(pontosUsados(q, m.tipo, c.r));
   return s;
 }
+
+/** Móvel na frente do ponto que ele usa (rack no ponto de TV, pia na água e no esgoto, fogão no gás) ganha pontos;
+ *  tomada vale pouco, porque costuma ter em toda parede. */
+const bonusPontos = (ps: Ponto[]): number => ps.reduce((s, p) => s + (p === 'tomada' ? 5 : 16), 0);
 
 const PRIOR: Record<string, number> = {
   'cama': 0, 'guarda-roupa': 1, 'sofa': 1, 'pia': 1, 'berco': 2, 'geladeira': 2, 'fogao': 2, 'armario': 3, 'comoda': 3,
@@ -241,6 +246,7 @@ function notaFinal(q: ComodoCompleto, lista: Movel[]): Nota {
   for (const m of lista) {
     if (m.tipo === 'cama' && m.larg >= 120) { const lados = ladosCama(m, folgas(q, m, lista.filter((o) => o !== m))); for (const g of lados) s += g >= 60 ? 20 : -20; }
     if (paredeDe(q, m)) s += 8;
+    s += bonusPontos(pontosUsados(q, m.tipo, ret(m)));
     if (m.tipo === 'cadeira' && lista.some((o) => o.tipo === 'mesa' && distRet(ret(m), ret(o)) < 3)) s += 25;
     if (m.tipo === 'berco') { const cama = lista.find((o) => o.tipo === 'cama'); if (cama) s -= distRet(ret(m), ret(cama)) / 5; }
   }
@@ -268,6 +274,8 @@ const CURTO = registro<Parede>(
 );
 /** Nome do móvel no meio da frase: em português tudo minúsculo; em inglês só a primeira letra, sem mexer em siglas ("TV stand"). */
 const nomeNaFrase = (nome: string): string => tx(nome.toLowerCase(), /^[A-Z]{2}/.test(nome) ? nome : nome.charAt(0).toLowerCase() + nome.slice(1));
+/** "a, b e c" / "a, b and c". */
+const juntar = (xs: string[]): string => (xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + tx(' e ', ' and ') + xs[xs.length - 1]);
 const principal = (lista: Movel[]): Movel | undefined =>
   lista.find((m) => m.tipo === 'cama') || lista.find((m) => m.tipo === 'sofa') || lista.find((m) => m.tipo === 'guarda-roupa') || lista.find((m) => m.tipo === 'mesa') || lista.find((m) => m.tipo === 'pia');
 
@@ -311,6 +319,13 @@ function explicarSug(q: ComodoCompleto, lista: Movel[], nota: Nota, fixos: Movel
     `${mesa.nome} com ${mesa.cadeiras === 1 ? '1 cadeira' : mesa.cadeiras + ' cadeiras'} e espaço para puxar.`,
     `${mesa.nome} with ${mesa.cadeiras === 1 ? '1 chair' : mesa.cadeiras + ' chairs'} and room to pull ${mesa.cadeiras === 1 ? 'it' : 'them'} out.`
   ));
+  // móveis nos pontos que usam (a tomada fica de fora: tem em quase toda parede)
+  for (const m of lista) {
+    const ps = pontosUsados(q, m.tipo, ret(m)).filter((p) => p !== 'tomada');
+    if (!ps.length) continue;
+    if (m.tipo === 'cama') { partes.push(tx('Cabeceira entre as arandelas.', 'Headboard between the wall lights.')); continue; }
+    partes.push(tx(`${m.nome} na frente ${juntar(ps.map((p) => PONTO_DO[p]))}.`, `${m.nome} in front of ${juntar(ps.map((p) => PONTO_DO[p]))}.`));
+  }
   const berco = lista.find((m) => m.tipo === 'berco');
   if (berco && cama) { const dd = Math.round(distRet(ret(berco), ret(cama))); partes.push(dd < 5 ? tx('Berço encostado na cama.', 'Crib against the bed.') : tx(`Berço a ${dd} cm da cama.`, `Crib ${dd} cm from the bed.`)); }
   if (q.portas.length) partes.push(nota.semPassagem.length

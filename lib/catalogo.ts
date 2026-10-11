@@ -98,21 +98,65 @@ export const TIPOS_PAREDE: Record<TipoParede, InfoParede> = {
   porta: itemParede({ rot: 'Porta', novo: 'Nova porta', rotLarg: 'Largura da porta' }, { rot: 'Door', novo: 'New door', rotLarg: 'Door width' }, { larg: 80, min: 40, max: 300, parede: 'cima' }),
   janela: itemParede({ rot: 'Janela', novo: 'Nova janela', rotLarg: 'Largura da janela' }, { rot: 'Window', novo: 'New window', rotLarg: 'Window width' }, { larg: 120, min: 20, max: 800, parede: 'cima' }),
   ar: itemParede({ rot: 'Ar-condicionado', novo: 'Novo ar-condicionado', rotLarg: 'Largura do aparelho' }, { rot: 'Air conditioner', novo: 'New air conditioner', rotLarg: 'Unit width' }, { larg: 85, min: 20, max: 200, parede: 'direita' }),
-  interruptor: itemParede({ rot: 'Interruptor / tomada', novo: 'Novo interruptor ou tomada', rotLarg: 'Largura' }, { rot: 'Switch / outlet', novo: 'New switch or outlet', rotLarg: 'Width' }, { larg: 10, min: 5, max: 40, parede: 'cima' })
+  interruptor: itemParede({ rot: 'Tomada e outros pontos', novo: 'Novo ponto na parede', rotLarg: 'Largura' }, { rot: 'Outlet or hookup', novo: 'New outlet or hookup', rotLarg: 'Width' }, { larg: 10, min: 5, max: 40, parede: 'cima' })
 };
 export const ORDEM_PAREDE = Object.keys(TIPOS_PAREDE) as TipoParede[];
 
-/** Ponto elétrico na parede: interruptor, tomada ou os dois juntos. */
+/* ---------- pontos na parede: elétrica, TV e internet, água e gás ---------- */
+export const PONTOS: Ponto[] = ['interruptor', 'tomada', 'ambos', 'luz', 'tv', 'rede', 'agua', 'esgoto', 'gas'];
+const GRUPO_PONTO_NOME = registro<'eletrica' | 'sinal' | 'agua'>(
+  { eletrica: 'Elétrica', sinal: 'TV e internet', agua: 'Água e gás' },
+  { eletrica: 'Electrical', sinal: 'TV and internet', agua: 'Water and gas' }
+);
+export const GRUPOS_PONTO: { rot: string; pontos: Ponto[] }[] = ([
+  ['eletrica', ['interruptor', 'tomada', 'ambos', 'luz']], ['sinal', ['tv', 'rede']], ['agua', ['agua', 'esgoto', 'gas']]
+] as const).map(([g, pontos]) => ({ get rot() { return GRUPO_PONTO_NOME[g]; }, pontos: [...pontos] }));
+/** O que é o ponto (no formulário e no painel). */
 export const PONTO_NOME = registro<Ponto>(
-  { interruptor: 'Interruptor', tomada: 'Tomada', ambos: 'Interruptor + tomada' },
-  { interruptor: 'Light switch', tomada: 'Outlet', ambos: 'Switch + outlet' }
+  {
+    interruptor: 'Interruptor', tomada: 'Tomada', ambos: 'Interruptor + tomada', luz: 'Ponto de luz na parede (arandela)',
+    tv: 'Ponto de TV (antena ou cabo)', rede: 'Ponto de internet (cabo de rede)', agua: 'Ponto de água', esgoto: 'Esgoto (da pia ou da máquina)', gas: 'Ponto de gás'
+  },
+  {
+    interruptor: 'Light switch', tomada: 'Outlet', ambos: 'Switch + outlet', luz: 'Wall light',
+    tv: 'TV outlet (antenna or cable)', rede: 'Network jack (internet)', agua: 'Water hookup', esgoto: 'Drain (sink or washer)', gas: 'Gas hookup'
+  }
 );
-/** Nome padrão de um ponto novo ("Tomada 2"). */
-export const PONTO_BASE = registro<Ponto>(
-  { interruptor: 'Interruptor', tomada: 'Tomada', ambos: 'Interruptor e tomada' },
-  { interruptor: 'Switch', tomada: 'Outlet', ambos: 'Switch and outlet' }
+/** Nome padrão de um ponto novo ("Tomada 2"), nos dois idiomas. */
+const BASE_PT: Record<Ponto, string> = {
+  interruptor: 'Interruptor', tomada: 'Tomada', ambos: 'Interruptor e tomada', luz: 'Arandela',
+  tv: 'Ponto de TV', rede: 'Ponto de internet', agua: 'Ponto de água', esgoto: 'Esgoto', gas: 'Ponto de gás'
+};
+const BASE_EN: Record<Ponto, string> = {
+  interruptor: 'Switch', tomada: 'Outlet', ambos: 'Switch and outlet', luz: 'Wall light',
+  tv: 'TV outlet', rede: 'Network jack', agua: 'Water hookup', esgoto: 'Drain', gas: 'Gas hookup'
+};
+export const PONTO_BASE = registro<Ponto>(BASE_PT, BASE_EN);
+/** O nome ainda é o padrão do ponto ("Tomada", "Tomada 2", "Outlet 3")? */
+export const nomePadraoPonto = (nome: string, p: Ponto): boolean => {
+  const base = nome.replace(/\s+\d+$/, '').trim();
+  return base === BASE_PT[p] || base === BASE_EN[p];
+};
+export const ehPonto = (v: unknown): v is Ponto => typeof v === 'string' && (PONTOS as string[]).includes(v);
+export const pontoDe = (e: { ponto?: unknown }): Ponto => (ehPonto(e.ponto) ? e.ponto : 'interruptor');
+/** Interruptor precisa de espaço na frente para a mão alcançar; os outros pontos só não podem ficar atrás de móvel alto. */
+export const ehInterruptor = (p: Ponto): boolean => p === 'interruptor' || p === 'ambos';
+/** Móveis que usam o ponto: as sugestões tentam pôr esses móveis na frente dele, e um móvel alto que usa o ponto
+ *  (a geladeira na tomada ou na água, a estante da TV) não conta como tapando. */
+export const PONTO_USA: Record<Ponto, TipoMovel[]> = {
+  interruptor: [], ambos: [], luz: ['cama'],
+  tomada: ['geladeira', 'lavadora'],
+  tv: ['rack', 'estante'],
+  rede: ['rack', 'mesa'],
+  agua: ['pia', 'lavadora', 'geladeira'],
+  esgoto: ['pia', 'lavadora'],
+  gas: ['fogao']
+};
+/** "do ponto de TV", "do esgoto" (para as explicações das sugestões). */
+export const PONTO_DO = registro<Ponto>(
+  { interruptor: 'do interruptor', tomada: 'da tomada', ambos: 'do interruptor', luz: 'das arandelas', tv: 'do ponto de TV', rede: 'do ponto de internet', agua: 'do ponto de água', esgoto: 'do esgoto', gas: 'do ponto de gás' },
+  { interruptor: 'the switch', tomada: 'the outlet', ambos: 'the switch', luz: 'the wall lights', tv: 'the TV outlet', rede: 'the network jack', agua: 'the water hookup', esgoto: 'the drain', gas: 'the gas hookup' }
 );
-export const pontoDe = (e: { ponto?: Ponto }): Ponto => (e.ponto === 'tomada' || e.ponto === 'ambos' ? e.ponto : 'interruptor');
 
 export const ehParede = (tipo: string): tipo is TipoParede => tem(TIPOS_PAREDE, tipo);
 export const tipoMovel = (tipo: string): tipo is TipoMovel => tem(TIPOS, tipo);
