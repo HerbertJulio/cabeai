@@ -65,7 +65,10 @@ export default function Lateral() {
             </div>
           );
         })}
-        {as.length > 0 && <button type="button" className="btn peq andar-novo" id="b-novo-andar" onClick={() => { const id = criarAndar(), nome = useApp.getState().dados.andares[id].nome; toast(tx(`${nome} criado. Agora crie os cômodos dele.`, `${nome} created. Now add its rooms.`)); abrirDialogo('comodo', { andar: id }); }}>{tx('+ Novo andar', '+ New floor')}</button>}
+        {as.length > 0 && <div className="acoes">
+          <button type="button" className="btn peq andar-novo" id="b-novo-andar" onClick={() => { const id = criarAndar(), nome = useApp.getState().dados.andares[id].nome; toast(tx(`${nome} criado. Agora crie os cômodos dele.`, `${nome} created. Now add its rooms.`)); abrirDialogo('comodo', { andar: id }); }}>{tx('+ Novo andar', '+ New floor')}</button>
+          {Object.keys(dados.comodos).length > 0 && <button type="button" className="btn peq andar-novo" id="b-novo-corredor" onClick={() => { fecharGaveta(); abrirDialogo('corredor'); }}>{tx('+ Corredor', '+ Hallway')}</button>}
+        </div>}
       </section>
       <section className="lat-sec" id="lat-itens" aria-label={tx('Itens do cômodo', 'Room items')}>
         {q && av && <>

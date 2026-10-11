@@ -4,7 +4,9 @@
 export type Parede = 'cima' | 'baixo' | 'esquerda' | 'direita';
 export type TipoMovel =
   | 'cama' | 'guarda-roupa' | 'berco' | 'comoda' | 'mesa' | 'cadeira' | 'sofa' | 'estante' | 'rack'
-  | 'geladeira' | 'fogao' | 'pia' | 'lavadora' | 'armario' | 'outro';
+  | 'geladeira' | 'fogao' | 'pia' | 'lavadora' | 'armario' | 'escada' | 'outro';
+/** Escada reta (degraus em linha) ou caracol (redonda). */
+export type FormaEscada = 'reta' | 'caracol';
 export type Abertura = 'nenhuma' | 'abrir' | 'correr' | 'gavetas';
 export type LadoCadeiras = 'frente' | 'dois' | 'volta';
 /** Onde fica o baú em relação à cama: no meio, alinhado à esquerda ou à direita (mais um ajuste em cm). */
@@ -34,6 +36,8 @@ export interface Comodo {
   x: number;
   y: number;
   criado: number;
+  /** Corredor: um cômodo comprido que liga outros. */
+  corredor?: boolean;
 }
 
 export interface Movel {
@@ -71,6 +75,8 @@ export interface Movel {
   bauPeLarg: number;
   bauPeAl: AlinhaBau;
   bauPeDx: number;
+  /** Escada: reta ou caracol (no caracol, largura = profundidade = diâmetro). */
+  escada?: FormaEscada;
 }
 
 export interface ElParede {

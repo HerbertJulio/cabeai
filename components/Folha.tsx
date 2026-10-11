@@ -132,6 +132,8 @@ export default function Folha() {
         <button className="btn prim" type="button" data-f="q-editar" onClick={() => abrirDialogo('comodo', { id: c.id })}>{tx('Editar medidas', 'Edit measurements')}</button>
         <button className="btn" type="button" data-f="q-ver" onClick={() => focarComodo(c.id, true)}>{tx('Ver só este cômodo', 'View only this room')}</button>
         <button className="btn" type="button" data-f="q-add" onClick={() => iniciarAdd('movel', { comodo: c.id })}>{tx('Adicionar um item', 'Add an item')}</button>
+        {Object.keys(dados.comodos).length > 1 && <button className="btn" type="button" data-f="q-lado" onClick={() => abrirDialogo('comodo', { id: c.id, onde: 'direita' })}>{tx('Ao lado de outro…', 'Next to another…')}</button>}
+        <button className="btn" type="button" data-f="q-corredor" onClick={() => abrirDialogo('corredor', { a: c.id })}>{tx('Ligar por corredor…', 'Connect with hallway…')}</button>
         {as.length > 1 && <button className="btn" type="button" data-f="q-andar" onClick={() => abrirDialogo('andar-comodo', { id: c.id })}>{tx('Mudar de andar…', 'Move to another floor…')}</button>}
         <button className="btn perigo" type="button" data-f="q-remover" onClick={() => abrirDialogo('remover-comodo', { id: c.id })}>{tx('Remover cômodo', 'Remove room')}</button>
       </div>

@@ -30,6 +30,62 @@ export function posicaoNova(cs: Pos[], w: number, h: number): { x: number; y: nu
   return { x: b.x2, y: b.y1 + T };
 }
 
+/* ---------- um cômodo ao lado de outro, e corredores ---------- */
+export type Lado4 = 'direita' | 'esquerda' | 'acima' | 'abaixo';
+export type Alinhar = 'inicio' | 'meio' | 'fim';
+export const LADOS4: Lado4[] = ['direita', 'esquerda', 'acima', 'abaixo'];
+const horizontalCasa = (l: Lado4) => l === 'direita' || l === 'esquerda';
+
+/** Onde fica um cômodo encostado num lado de outro: dividindo a parede (espaço 0) ou com um espaço entre as paredes.
+ *  "inicio" alinha pelo topo (à direita/esquerda) ou pela esquerda (acima/abaixo); "fim" pelo outro lado. */
+export function posicaoAoLado(c: { w: number; h: number }, ref: Pos, lado: Lado4, alinhar: Alinhar = 'inicio', espaco = 0): { x: number; y: number } {
+  const passo = T + (espaco > 0 ? espaco + T : 0);
+  const al = (tam: number, ini: number, total: number) => Math.round(alinhar === 'meio' ? ini + (total - tam) / 2 : alinhar === 'fim' ? ini + total - tam : ini);
+  if (lado === 'direita') return { x: ref.x + ref.w + passo, y: al(c.h, ref.y, ref.h) };
+  if (lado === 'esquerda') return { x: ref.x - passo - c.w, y: al(c.h, ref.y, ref.h) };
+  if (lado === 'abaixo') return { x: al(c.w, ref.x, ref.w), y: ref.y + ref.h + passo };
+  return { x: al(c.w, ref.x, ref.w), y: ref.y - passo - c.h };
+}
+
+/** Espaço livre entre as paredes de "a" e "b" no lado escolhido (para um corredor caber), ou null se "b" não está desse lado. */
+export function vaoEntre(a: Pos, b: Pos, lado: Lado4): number | null {
+  const g = lado === 'direita' ? b.x - (a.x + a.w) - 2 * T : lado === 'esquerda' ? a.x - (b.x + b.w) - 2 * T
+    : lado === 'abaixo' ? b.y - (a.y + a.h) - 2 * T : a.y - (b.y + b.h) - 2 * T;
+  return g > 0 ? Math.round(g) : null;
+}
+
+export interface PlanoCorredor { corredor: { x: number; y: number; w: number; h: number }; b?: { x: number; y: number }; comprimento: number }
+
+/** Corredor saindo de "a" pelo lado escolhido. Sem comprimento, usa o espaço que já existe até "b" (e "b" fica onde está);
+ *  com comprimento, "b" vai para a outra ponta do corredor. */
+export function planoCorredor(a: Pos, lado: Lado4, largura: number, alinhar: Alinhar, b: Pos | null, comprimento: number | null): PlanoCorredor | { erro: 'sem-vao' | 'sem-medida' } {
+  const hz = horizontalCasa(lado);
+  let comp = comprimento, moverB = true;
+  if (comp == null) {
+    if (!b) return { erro: 'sem-medida' };
+    const v = vaoEntre(a, b, lado);
+    if (v == null) return { erro: 'sem-vao' };
+    comp = v; moverB = false;
+  }
+  const dim = hz ? { w: comp, h: largura } : { w: largura, h: comp };
+  let p = posicaoAoLado(dim, a, lado, alinhar);
+  if (b && !moverB) {
+    // o corredor fica na faixa onde os dois cômodos se encaram
+    const ini = hz ? Math.max(a.y, b.y) : Math.max(a.x, b.x), fim = hz ? Math.min(a.y + a.h, b.y + b.h) : Math.min(a.x + a.w, b.x + b.w);
+    if (fim - ini >= largura) {
+      const meio = Math.round(alinhar === 'inicio' ? ini : alinhar === 'fim' ? fim - largura : ini + (fim - ini - largura) / 2);
+      p = hz ? { ...p, y: meio } : { ...p, x: meio };
+    }
+  }
+  const corredor = { ...p, ...dim };
+  if (!b || !moverB) return { corredor, comprimento: comp };
+  let pb = posicaoAoLado(b, corredor, lado, 'meio');
+  // se "b" já cobre a largura do corredor nessa direção, só anda no comprimento
+  if (hz && b.y <= corredor.y && b.y + b.h >= corredor.y + corredor.h) pb = { ...pb, y: b.y };
+  if (!hz && b.x <= corredor.x && b.x + b.w >= corredor.x + corredor.w) pb = { ...pb, x: b.x };
+  return { corredor, b: pb, comprimento: comp };
+}
+
 /** As paredes de "a" entram no espaço de dentro de "b" (ou vice-versa)? Dividir a mesma parede é permitido. */
 export function invade(a: Pos, b: Pos): boolean {
   const A = caixa(a), B = dentro(b), A2 = dentro(a), B2 = caixa(b);

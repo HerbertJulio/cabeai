@@ -14,7 +14,7 @@ export const qualBau = (m: Pick<Movel, 'bauCab' | 'bauPe'>): QualBau => (m.bauCa
 export function valsMovel(m: Movel): Valores {
   return {
     nome: m.nome, larg: fmtM(m.larg), prof: fmtM(m.prof), alto: m.alto, abertura: m.abertura, nPortas: m.nPortas ? String(m.nPortas) : '',
-    frente: m.frente == null ? '' : String(m.frente),
+    frente: m.frente == null ? '' : String(m.frente), escada: m.escada || 'reta',
     x: String(Math.round(m.x)), y: String(Math.round(m.y)), rot: String(normRot(m.rot)), comodo: m.comodo, fixo: m.fixo,
     cadeiras: String(m.cadeiras || 0), ladoCadeiras: m.ladoCadeiras, cadLarg: fmtM(m.cadLarg), cadProf: fmtM(m.cadProf),
     bau: qualBau(m),
@@ -27,7 +27,7 @@ export function valsNovoMovel(tipo: TipoMovel, r: Valores = {}): Valores {
   const t = TIPOS[tipo];
   return {
     nome: r.nome || '', larg: r.larg || '', prof: r.prof || '', alto: tem(r, 'alto') ? !!r.alto : t.alto,
-    abertura: (r.abertura as string) || (t.ab ? t.ab[0] : 'nenhuma'), nPortas: r.nPortas || '', frente: r.frente || '',
+    abertura: (r.abertura as string) || (t.ab ? t.ab[0] : 'nenhuma'), nPortas: r.nPortas || '', frente: r.frente || '', escada: (r.escada as string) || 'reta',
     cadeiras: (r.cadeiras as string) ?? (tipo === 'mesa' ? '1' : '0'), ladoCadeiras: (r.ladoCadeiras as string) || 'frente', cadLarg: r.cadLarg || fmtM(45), cadProf: r.cadProf || fmtM(50),
     bau: (r.bau as string) || 'nenhum', bauCabLarg: r.bauCabLarg || '', bauCabProf: r.bauCabProf || fmtM(40), bauCabAl: (r.bauCabAl as string) || 'centro', bauCabDx: r.bauCabDx || '0',
     bauPeLarg: r.bauPeLarg || '', bauPeProf: r.bauPeProf || fmtM(45), bauPeAl: (r.bauPeAl as string) || 'centro', bauPeDx: r.bauPeDx || '0'
@@ -39,7 +39,8 @@ const alinha = (v: unknown): AlinhaBau => (v === 'esq' || v === 'dir' ? v : 'cen
 /** Confere os campos de um móvel. "atual" = o móvel sendo editado (null ao adicionar). */
 export function validarMovel(v: Valores, tipo: TipoMovel, atual: Movel | null): { campos?: Partial<Movel>; erro?: string } {
   const t = TIPOS[tipo] || TIPOS.outro, c: Partial<Movel> = {};
-  const larg = parseMedida(v.larg), prof = parseMedida(v.prof);
+  const caracol = tipo === 'escada' && v.escada === 'caracol';
+  const larg = parseMedida(v.larg), prof = caracol ? larg : parseMedida(v.prof);
   if (!(larg >= LIM_MOVEL.min && larg <= LIM_MOVEL.max) || !(prof >= LIM_MOVEL.min && prof <= LIM_MOVEL.max))
     return { erro: tx(`Preencha as duas medidas, por exemplo ${t.exA} e ${t.exB} (ou ${parseMedida(t.exA)} e ${parseMedida(t.exB)} em cm).`, `Fill in both measurements, for example ${t.exA} and ${t.exB} (or ${parseMedida(t.exA)} and ${parseMedida(t.exB)} in cm).`) };
   c.larg = larg; c.prof = prof;
@@ -52,6 +53,7 @@ export function validarMovel(v: Valores, tipo: TipoMovel, atual: Movel | null): 
     if (!txt || c.abertura !== 'abrir') c.nPortas = atual ? atual.nPortas : 0;
     else { const n = parseInteiro(txt); if (!(n != null && n >= 1 && n <= 8)) return { erro: tx('Quantas portas: de 1 a 8 (ou deixe em branco).', 'Number of doors: 1 to 8 (or leave it blank).') }; c.nPortas = n; }
   }
+  if (tipo === 'escada') c.escada = caracol ? 'caracol' : 'reta';
   if (tem(v, 'frente')) {
     const txt = s(v.frente);
     if (!txt) c.frente = null;

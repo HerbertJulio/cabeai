@@ -1,6 +1,6 @@
 // Catálogo: tipos de móvel, itens de parede e nomes das paredes.
 import { bilingue, registro, tx } from './i18n';
-import type { Abertura, LadoCadeiras, Parede, Ponto, TipoMovel, TipoParede } from './tipos';
+import type { Abertura, FormaEscada, LadoCadeiras, Parede, Ponto, TipoMovel, TipoParede } from './tipos';
 import { fmtM, tem } from './util';
 
 export interface InfoTipo {
@@ -50,6 +50,7 @@ export const TIPOS: Record<TipoMovel, InfoTipo> = {
   'pia': tipo({ rot: 'Pia', chip: 'Pia / bancada', novo: 'Nova pia', ...LARG, uso: 'usar a pia' }, { rot: 'Sink', chip: 'Sink / counter', novo: 'New sink', ...WIDTH, uso: 'use the sink' }, { alto: false, ea: 120, eb: 55, frente: 60, grupo: 'cozinha' }),
   'lavadora': tipo({ rot: 'Máquina de lavar', chip: 'Máquina de lavar', novo: 'Nova máquina de lavar', ...LARG, uso: 'usar a máquina' }, { rot: 'Washing machine', chip: 'Washing machine', novo: 'New washing machine', ...WIDTH, uso: 'use the machine' }, { alto: false, ea: 60, eb: 65, frente: 60, grupo: 'cozinha' }),
   'armario': tipo({ rot: 'Armário', chip: 'Armário', novo: 'Novo armário', ...FRENTE_PT }, { rot: 'Cabinet', chip: 'Cabinet', novo: 'New cabinet', ...FRENTE_EN }, { alto: true, ea: 80, eb: 45, ab: ['abrir', 'correr'], grupo: 'cozinha' }),
+  'escada': tipo({ rot: 'Escada', chip: 'Escada', novo: 'Nova escada', ...COMPR, uso: 'subir a escada' }, { rot: 'Stairs', chip: 'Stairs', novo: 'New stairs', ...LENGTH, uso: 'use the stairs' }, { alto: false, ea: 90, eb: 300, frente: 80, grupo: 'outro' }),
   'outro': tipo({ rot: 'Móvel', chip: 'Outro móvel', novo: 'Novo móvel', ...FRENTE_PT }, { rot: 'Furniture', chip: 'Other', novo: 'New piece', ...FRENTE_EN }, { alto: false, ea: 80, eb: 40, ab: ['nenhuma', 'abrir', 'correr', 'gavetas'], grupo: 'outro' })
 };
 export const ORDEM_TIPOS = Object.keys(TIPOS) as TipoMovel[];
@@ -67,6 +68,9 @@ export const VERBO_AB = registro<Abertura>(
   { nenhuma: '', abrir: 'abrir as portas', correr: 'usar as portas de correr', gavetas: 'abrir as gavetas' },
   { nenhuma: '', abrir: 'open the doors', correr: 'use the sliding doors', gavetas: 'open the drawers' }
 );
+export const ESCADA_NOME = registro<FormaEscada>({ reta: 'Reta', caracol: 'Caracol' }, { reta: 'Straight', caracol: 'Spiral' });
+/** Medidas comuns de escada (cm): reta 0,90 × 3,00; caracol com 1,50 de diâmetro. */
+export const ESCADA_PADRAO: Record<FormaEscada, { larg: number; prof: number }> = { reta: { larg: 90, prof: 300 }, caracol: { larg: 150, prof: 150 } };
 export const LADO_CAD_NOME = registro<LadoCadeiras>(
   { frente: 'Na frente', dois: 'Dos dois lados', volta: 'Em volta' },
   { frente: 'In front', dois: 'On both sides', volta: 'All around' }

@@ -2,7 +2,7 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, pontoDe, tipoMovel } from './catalogo';
-import { nomeAndarNovo, posicaoNova } from './casa';
+import { nomeAndarNovo, planoCorredor, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
 import { alvoSel, andaresOrdem, cenariosLista, comodosDoAndar, comodosOrdem, cq, idsVisiveis } from './consultas';
 import { exemplo, moveisDo } from './dados';
 import { centrar, geoEl, lugarLivre, normRot, posNoPonto, posValida, prender } from './geometria';
@@ -215,15 +215,73 @@ function andarPadrao(): string {
 }
 
 /* ---------- cômodos ---------- */
-export function criarComodo(v: { nome: string; w: number; h: number; andar?: string }): string {
-  const andar = v.andar && get().dados.andares[v.andar] ? v.andar : andarPadrao();
+/** Onde pôr um cômodo: encostado num lado de outro, com alinhamento e espaço opcional entre as paredes. */
+export interface Junto { ref: string; lado: Lado4; alinhar: Alinhar; espaco?: number }
+
+export function criarComodo(v: { nome: string; w: number; h: number; andar?: string; junto?: Junto | null }): string {
+  const ref0 = v.junto ? get().dados.comodos[v.junto.ref] : null;
+  const andar = ref0 ? ref0.andar : v.andar && get().dados.andares[v.andar] ? v.andar : andarPadrao();
   const id = novoId('c');
   set((s) => {
-    const p = posicaoNova(comodosDoAndar(s.dados, andar), v.w, v.h);
+    const ref = v.junto ? s.dados.comodos[v.junto.ref] : null;
+    const p = ref && v.junto ? posicaoAoLado({ w: v.w, h: v.h }, ref, v.junto.lado, v.junto.alinhar, v.junto.espaco || 0) : posicaoNova(comodosDoAndar(s.dados, andar), v.w, v.h);
     s.dados.comodos[id] = { id, nome: v.nome.slice(0, 30), w: v.w, h: v.h, andar, x: p.x, y: p.y, criado: Date.now() };
     s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.latAberta = false; s.folha = false;
   });
   return id;
+}
+
+/** Leva um cômodo para o lado de outro (no andar dele). */
+export function posicionarComodo(id: string, j: Junto) {
+  set((s) => {
+    const c = s.dados.comodos[id], ref = s.dados.comodos[j.ref];
+    if (!c || !ref || c.id === ref.id) return;
+    c.andar = ref.andar;
+    const p = posicaoAoLado(c, ref, j.lado, j.alinhar, j.espaco || 0);
+    c.x = p.x; c.y = p.y;
+  });
+}
+
+export function nomeCorredorNovo(d: Dados): string {
+  const base = tx('Corredor', 'Hallway'), nomes = new Set(Object.values(d.comodos).map((c) => c.nome));
+  if (!nomes.has(base)) return base;
+  let k = 2;
+  while (nomes.has(`${base} ${k}`)) k++;
+  return `${base} ${k}`;
+}
+
+const OPOSTA: Record<Parede, Parede> = { cima: 'baixo', baixo: 'cima', esquerda: 'direita', direita: 'esquerda' };
+/** Parede do corredor que encosta no cômodo de onde ele sai. */
+const PAREDE_DE_SAIDA: Record<Lado4, Parede> = { direita: 'esquerda', esquerda: 'direita', abaixo: 'cima', acima: 'baixo' };
+
+/** Cria um corredor saindo de "a" (e chegando em "b", se houver), com portas nas pontas. */
+export function criarCorredor(o: { nome: string; a: string; b: string | null; lado: Lado4; comprimento: number | null; largura: number; alinhar: Alinhar; portas: boolean }): { id: string } | { erro: string } {
+  const d = get().dados, A = d.comodos[o.a], B = o.b ? d.comodos[o.b] : null;
+  if (!A) return { erro: tx('Escolha de qual cômodo o corredor sai.', 'Choose the room the hallway starts from.') };
+  if (B && (B.id === A.id || B.andar !== A.andar)) return { erro: tx('O corredor liga dois cômodos diferentes do mesmo andar.', 'A hallway connects two different rooms on the same floor.') };
+  const plano = planoCorredor(A, o.lado, o.largura, o.alinhar, B, o.comprimento);
+  if ('erro' in plano) {
+    return { erro: plano.erro === 'sem-vao' && B
+      ? tx(`Não há espaço entre ${A.nome} e ${B.nome} desse lado. Escreva o comprimento do corredor que eu levo ${B.nome} para a outra ponta.`, `There is no gap between ${A.nome} and ${B.nome} on that side. Type the hallway length and I will move ${B.nome} to the other end.`)
+      : tx('Escreva o comprimento do corredor.', 'Type the hallway length.') };
+  }
+  const id = novoId('c');
+  set((s) => {
+    const c = plano.corredor;
+    s.dados.comodos[id] = { id, nome: (o.nome || nomeCorredorNovo(s.dados)).slice(0, 30), w: c.w, h: c.h, andar: A.andar, x: c.x, y: c.y, criado: Date.now(), corredor: true };
+    if (B && plano.b) { const bb = s.dados.comodos[B.id]; bb.x = plano.b.x; bb.y = plano.b.y; }
+    if (o.portas) {
+      const larg = Math.max(40, Math.min(80, o.largura - 10)), inicio = Math.round((o.largura - larg) / 2), pa = PAREDE_DE_SAIDA[o.lado];
+      const porta = (parede: Parede, k: number) => {
+        const eid = novoId('e');
+        s.dados.els[eid] = { id: eid, tipo: 'porta', nome: k === 1 ? tx('Porta', 'Door') : tx(`Porta ${k}`, `Door ${k}`), comodo: id, parede, inicio, largura: larg, criado: Date.now() + k, dobradica: 'a', abre: 'fora' };
+      };
+      porta(pa, 1);
+      if (B) porta(OPOSTA[pa], 2);
+    }
+    s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = id; s.verCen = null; s.latAberta = false; s.folha = false;
+  });
+  return { id };
 }
 
 /** Muda nome, medidas, posição ou andar; o que ficou fora do cômodo volta para dentro. */
@@ -344,7 +402,7 @@ export function adicionarMovel(tipo: TipoMovel, campos: Partial<Movel>, ctx: Ctx
   if (!q || !cid) return null;
   const t = TIPOS[tipo], outros = moveisDo(s.dados, cid);
   const base: Movel = {
-    id: '', tipo, nome: '', larg: 100, prof: 50, alto: t.alto, comodo: cid, x: 0, y: 0, rot: 0, criado: Date.now(), fixo: false,
+    id: '', tipo, nome: '', larg: 100, prof: 50, alto: t.alto, comodo: cid, x: 0, y: 0, rot: 0, criado: Date.now(), fixo: tipo === 'escada',
     abertura: t.ab ? t.ab[0] : 'nenhuma', nPortas: 0, frente: null, cadeiras: tipo === 'mesa' ? 1 : 0, ladoCadeiras: 'frente', cadLarg: 45, cadProf: 50,
     bauCab: 0, bauCabLarg: 0, bauCabAl: 'centro', bauCabDx: 0, bauPe: 0, bauPeLarg: 0, bauPeAl: 'centro', bauPeDx: 0, ...campos
   };

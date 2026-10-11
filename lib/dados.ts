@@ -23,7 +23,8 @@ export function normalizarComodo(id: string, v: Record<string, unknown>, andar: 
     id, nome: txt(v.nome, tx('Cômodo', 'Room'), 30),
     w: clamp(Math.round(num(v.w, 300)), LIM_COMODO.min, LIM_COMODO.max), h: clamp(Math.round(num(v.h, 300)), LIM_COMODO.min, LIM_COMODO.max),
     andar: typeof v.andar === 'string' && v.andar ? v.andar : andar,
-    x: Math.round(num(v.x, 0)), y: Math.round(num(v.y, 0)), criado: num(v.criado, 0)
+    x: Math.round(num(v.x, 0)), y: Math.round(num(v.y, 0)), criado: num(v.criado, 0),
+    ...(v.corredor ? { corredor: true } : {})
   };
 }
 
@@ -39,14 +40,15 @@ export function normalizarMovel(id: string, v: Record<string, unknown>): Movel {
   const dx = (x: unknown) => clamp(Math.round(num(x, 0)), -200, 200);
   return {
     id, tipo, nome: txt(v.nome, t.rot, 30),
-    larg, prof: clamp(num(v.prof, 50), LIM_MOVEL.min, LIM_MOVEL.max),
+    larg, prof: tipo === 'escada' && v.escada === 'caracol' ? larg : clamp(num(v.prof, 50), LIM_MOVEL.min, LIM_MOVEL.max),
     alto: !!v.alto, comodo: String(v.comodo || v.quarto || ''), x: num(v.x, 0), y: num(v.y, 0), rot: normRot(v.rot), criado: num(v.criado, 0),
     fixo: !!v.fixo, abertura: ab, nPortas: np >= 1 ? Math.min(8, np) : 0,
     frente: v.frente == null || v.frente === '' || !Number.isFinite(Number(v.frente)) ? null : clamp(Math.round(Number(v.frente)), 0, 300),
     cadeiras: tipo === 'mesa' ? clamp(Math.round(num(v.cadeiras, 0)), 0, MAX_CADEIRAS) : 0, ladoCadeiras: lado,
     cadLarg: clamp(num(v.cadLarg, 45), LIM_CADEIRA.min, LIM_CADEIRA.max), cadProf: clamp(num(v.cadProf, 50), LIM_CADEIRA.min, LIM_CADEIRA.max),
     bauCab: prof(v.bauCab), bauCabLarg: largB(v.bauCabLarg), bauCabAl: al(v.bauCabAl), bauCabDx: dx(v.bauCabDx),
-    bauPe: prof(v.bauPe), bauPeLarg: largB(v.bauPeLarg), bauPeAl: al(v.bauPeAl), bauPeDx: dx(v.bauPeDx)
+    bauPe: prof(v.bauPe), bauPeLarg: largB(v.bauPeLarg), bauPeAl: al(v.bauPeAl), bauPeDx: dx(v.bauPeDx),
+    ...(tipo === 'escada' ? { escada: v.escada === 'caracol' ? 'caracol' : 'reta' } : {})
   };
 }
 

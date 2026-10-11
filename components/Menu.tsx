@@ -54,7 +54,10 @@ function blocos(m: InfoMenu): Bloco[] {
   if (m.tipo === 'comodo' && m.comodo && d.comodos[m.comodo]) {
     const q = d.comodos[m.comodo], as = andaresOrdem(d);
     return [{ titulo: q.nome, itens: [{ a: 'q-editar', t: tx('Editar nome e medidas…', 'Edit name and measurements…') }, { a: 'q-ver', t: tx('Ver só este cômodo', 'View only this room') }, { a: 'q-add', t: tx('Adicionar um item…', 'Add an item…') },
-      ...(s.vista === 'casa' ? [{ a: 'q-sel', t: tx('Mover na planta da casa', 'Move on the home plan') }] : []), ...(as.length > 1 ? [{ a: 'q-andar', t: tx('Mudar de andar…', 'Move to another floor…') }] : [])] },
+      ...(s.vista === 'casa' ? [{ a: 'q-sel', t: tx('Mover na planta da casa', 'Move on the home plan') }] : []),
+      ...(comodosOrdem(d).length > 1 ? [{ a: 'q-lado', t: tx('Colocar ao lado de outro cômodo…', 'Place next to another room…') }] : []),
+      { a: 'q-corredor', t: tx('Ligar por um corredor…', 'Connect with a hallway…') },
+      ...(as.length > 1 ? [{ a: 'q-andar', t: tx('Mudar de andar…', 'Move to another floor…') }] : [])] },
     { itens: [{ a: 'q-remover', t: tx('Remover cômodo…', 'Remove room…'), perigo: true }] }];
   }
   if (m.tipo === 'andar' && m.andar && d.andares[m.andar]) {
@@ -107,6 +110,8 @@ function executar(a: string, m: InfoMenu) {
     case 'q-add': focarComodo(qid, false); iniciarAdd('movel', { comodo: qid }); break;
     case 'q-sel': selecionarComodo(qid); toast(tx('Arraste o cômodo pelo nome para mudar o lugar dele. Setas do teclado também movem.', 'Drag the room by its name to move it. The arrow keys move it too.')); break;
     case 'q-andar': abrirDialogo('andar-comodo', { id: qid }); break;
+    case 'q-lado': abrirDialogo('comodo', { id: qid, onde: 'direita' }); break;
+    case 'q-corredor': abrirDialogo('corredor', { a: qid }); break;
     case 'q-remover': abrirDialogo('remover-comodo', { id: qid }); break;
     case 'a-comodo': abrirDialogo('comodo', { andar: m.andar }); break;
     case 'a-nome': abrirDialogo('andar-nome', { id: m.andar }); break;

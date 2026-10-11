@@ -180,7 +180,7 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
   const probs = av.itens.length;
   return (
     <>
-      <rect className="piso" x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
+      <rect className={`piso${q.corredor ? ' corredor' : ''}`} x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
       {grade}
       {q.portas.map((p) => <Porta key={'p' + p.id + (p.herdada ? 'h' : '')} q={q} p={p} sel={selEl === p.id && !p.herdada} bloq={av.portasBloq.has(p.id)} vista={vista} />)}
       <Paredes q={q} />

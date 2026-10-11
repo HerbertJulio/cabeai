@@ -6,14 +6,15 @@ import { contar, moveisDo, type Contagem } from '@/lib/dados';
 import { valsNovaParede, valsNovoMovel, validarComodo, validarMovel, validarParede, type Valores } from '@/lib/formularios';
 import { iaNavegadorDisponivel } from '@/lib/iaNavegador';
 import {
-  abrirCenario, adicionarEl, adicionarMovel, atualizar, atualizarCenario, cenarioComNome, criarComodo, enquadrar, fecharDialogo, gerarSugestoes, levarPara,
-  limparSel, nomeComTraco, nomeComodoNovo, nomeUnicoCenario, pararIA, pedirIA, removerAlvo, removerAndar, removerCenario, removerComodo, salvarAndar, salvarCenario,
-  salvarComodo, salvarMovel, sobrescreverCenario, substituirCenario, toast, trocarDados, useApp
+  abrirCenario, adicionarEl, adicionarMovel, atualizar, atualizarCenario, cenarioComNome, criarComodo, criarCorredor, enquadrar, fecharDialogo, gerarSugestoes, levarPara,
+  limparSel, nomeComTraco, nomeComodoNovo, nomeCorredorNovo, nomeUnicoCenario, pararIA, pedirIA, posicionarComodo, removerAlvo, removerAndar, removerCenario, removerComodo,
+  salvarAndar, salvarCenario, salvarComodo, salvarMovel, sobrescreverCenario, substituirCenario, toast, trocarDados, useApp, type Junto
 } from '@/lib/store';
 import type { Dados, Escopo, TipoMovel, TipoParede } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
-import { fmtM, pl } from '@/lib/util';
-import { CamposMovel, CamposParede, Escolha, Texto, useValores } from './campos';
+import { fmtM, parseDist, parseMedida, pl } from '@/lib/util';
+import { vaoEntre, type Alinhar, type Lado4 } from '@/lib/casa';
+import { CamposMovel, CamposParede, Escolha, Marca, Texto, useValores } from './campos';
 import { Icone } from './icones';
 
 function Cab({ t, sug }: { t: string; sug?: boolean }) {
@@ -81,23 +82,58 @@ function Adicionar() {
 }
 
 /* ---------- cômodo: novo ou editar ---------- */
+/** Textos do alinhamento conforme o lado (à direita/esquerda alinha topo e base; acima/abaixo, esquerda e direita). */
+function opcoesAlinhar(lado: string): [string, string][] {
+  const lateral = lado === 'direita' || lado === 'esquerda';
+  return [
+    ['inicio', lateral ? tx('Topos alinhados', 'Tops aligned') : tx('Lados esquerdos alinhados', 'Left sides aligned')],
+    ['meio', tx('Centralizado', 'Centered')],
+    ['fim', lateral ? tx('Fundos alinhados', 'Bottoms aligned') : tx('Lados direitos alinhados', 'Right sides aligned')]
+  ];
+}
+const opcoesLado = (comDe = true): [string, string][] => [
+  ['direita', comDe ? tx('À direita de…', 'To the right of…') : tx('Para a direita', 'To the right')],
+  ['esquerda', comDe ? tx('À esquerda de…', 'To the left of…') : tx('Para a esquerda', 'To the left')],
+  ['acima', comDe ? tx('Acima de… (na planta)', 'Above… (on the plan)') : tx('Para cima (na planta)', 'Up (on the plan)')],
+  ['abaixo', comDe ? tx('Abaixo de… (na planta)', 'Below… (on the plan)') : tx('Para baixo (na planta)', 'Down (on the plan)')]
+];
+
 function FormComodo({ dados: x }: { dados: Record<string, unknown> }) {
   const d = useApp((s) => s.dados);
   const atual = x.id ? d.comodos[String(x.id)] : null;
   const as = andaresOrdem(d);
   const andarIni = String(x.andar || (atual ? atual.andar : (useApp.getState().comodo && d.comodos[useApp.getState().comodo!]?.andar) || (as[0] && as[0].id) || ''));
-  const ini = useCallback(() => ({ nome: atual ? atual.nome : nomeComodoNovo(d), w: atual ? fmtM(atual.w) : '', h: atual ? fmtM(atual.h) : '', andar: andarIni }), [atual, d, andarIni]);
+  const refIni = String(x.ref || (!atual && useApp.getState().comodo && d.comodos[useApp.getState().comodo!]?.andar === andarIni ? useApp.getState().comodo : '') || '');
+  const ini = useCallback(() => ({
+    nome: atual ? atual.nome : nomeComodoNovo(d), w: atual ? fmtM(atual.w) : '', h: atual ? fmtM(atual.h) : '', andar: andarIni,
+    onde: String(x.onde || 'auto'), ref: refIni, alinhar: 'inicio', espaco: ''
+  }), [atual, d, andarIni, refIni, x.onde]);
   const [v, set] = useValores(ini, String(x.id || 'novo'));
   const [erro, setErro] = useState('');
+  const andarSel = String(v.andar || andarIni);
+  const vizinhos = comodosOrdem(d).filter((c) => c.andar === andarSel && (!atual || c.id !== atual.id));
+  const onde = String(v.onde || 'auto'), ref = vizinhos.find((c) => c.id === v.ref) ? String(v.ref) : vizinhos[0]?.id || '';
   const enviar = (e: React.FormEvent) => {
     e.preventDefault();
     const r = validarComodo(v);
     if (r.erro) { setErro(r.erro); return; }
     const { nome, w, h } = r.campos!;
+    let junto: Junto | null = null;
+    if (onde !== 'auto') {
+      if (!ref) { setErro(tx('Não há outro cômodo neste andar para ficar ao lado.', 'There is no other room on this floor to place it next to.')); return; }
+      const esp = parseDist(v.espaco);
+      if (esp != null && (Number.isNaN(esp) || esp > 2000)) { setErro(tx('Espaço entre as paredes: em centímetros (ex.: 120) ou metros (1,20).', 'Gap between walls: in centimeters (e.g. 120) or meters (1.20).')); return; }
+      junto = { ref, lado: onde as Lado4, alinhar: (String(v.alinhar) as Alinhar) || 'inicio', espaco: esp || 0 };
+    }
     atualizar((s) => { s.dlg = null; });
-    if (atual) { salvarComodo(atual.id, { nome: nome || atual.nome, w, h, ...(v.andar && v.andar !== atual.andar ? { andar: String(v.andar) } : {}) }); toast(tx('Cômodo atualizado.', 'Room updated.')); return; }
+    if (atual) {
+      salvarComodo(atual.id, { nome: nome || atual.nome, w, h, ...(v.andar && v.andar !== atual.andar && !junto ? { andar: String(v.andar) } : {}) });
+      if (junto) posicionarComodo(atual.id, junto);
+      toast(tx('Cômodo atualizado.', 'Room updated.'));
+      return;
+    }
     const nm = nome || nomeComodoNovo(useApp.getState().dados);
-    criarComodo({ nome: nm, w, h, andar: String(v.andar || '') || undefined });
+    criarComodo({ nome: nm, w, h, andar: String(v.andar || '') || undefined, junto });
     enquadrar();
     toast(tx(`${nm} criado. Agora coloque as portas, janelas e os móveis.`, `${nm} created. Now add the doors, windows and furniture.`));
   };
@@ -106,13 +142,71 @@ function FormComodo({ dados: x }: { dados: Record<string, unknown> }) {
     <form data-form="comodo" noValidate onSubmit={enviar}>
       <div className="campos">
         <Texto px="fq2" k="nome" rot={tx('Nome', 'Name')} v={v} set={set} full max={30} ph={tx('ex.: Quarto 1, Sala, Cozinha', 'e.g. Bedroom 1, Living room, Kitchen')} />
-        <Texto px="fq2" k="w" rot={tx('Largura (esquerda → direita)', 'Width (left → right)')} v={v} set={set} num ph={tx(`ex.: ${fmtM(300)}`, `e.g. ${fmtM(300)}`)} foco />
+        <Texto px="fq2" k="w" rot={tx('Largura (esquerda → direita)', 'Width (left → right)')} v={v} set={set} num ph={tx(`ex.: ${fmtM(300)}`, `e.g. ${fmtM(300)}`)} foco={!x.onde} />
         <Texto px="fq2" k="h" rot={tx('Comprimento (cima → baixo)', 'Length (top → bottom)')} v={v} set={set} num ph={tx(`ex.: ${fmtM(400)}`, `e.g. ${fmtM(400)}`)} />
         {as.length > 1 && <Escolha px="fq2" k="andar" rot={tx('Andar', 'Floor')} v={v} set={set} full opts={as.map((a) => [a.id, a.nome])} />}
+        <Escolha px="fq2" k="onde" rot={tx('Onde fica na planta da casa', 'Where it goes on the home plan')} v={v} set={set} full
+          opts={[['auto', atual ? tx('Deixar onde está', 'Keep it where it is') : tx('Ao lado dos outros (automático)', 'Next to the others (automatic)')], ...opcoesLado()]} />
+        {onde !== 'auto' && <>
+          <Escolha px="fq2" k="ref" rot={tx('Qual cômodo', 'Which room')} v={{ ...v, ref }} set={set} full opts={vizinhos.length ? vizinhos.map((c) => [c.id, c.nome]) : [['', tx('Nenhum cômodo neste andar', 'No rooms on this floor')]]} />
+          <Escolha px="fq2" k="alinhar" rot={tx('Alinhamento', 'Alignment')} v={v} set={set} opts={opcoesAlinhar(onde)} />
+          <Texto px="fq2" k="espaco" rot={tx('Espaço entre as paredes', 'Gap between walls')} v={v} set={set} num ph={tx('0 = dividem a parede', '0 = shared wall')} />
+        </>}
       </div>
-      <p className="nota">{tx(`Medidas de dentro, de parede a parede, em metros (${fmtM(300)}) ou centímetros (300).`, `Inside measurements, wall to wall, in meters (${fmtM(300)}) or centimeters (300).`)} {atual ? '' : tx('O cômodo entra na planta da casa ao lado dos outros, dividindo a parede; depois é só arrastar pelo nome na vista Casa.', 'The room goes into the home plan next to the others, sharing a wall; then just drag it by its name in the Home view.')}</p>
+      <p className="nota">{tx(`Medidas de dentro, de parede a parede, em metros (${fmtM(300)}) ou centímetros (300).`, `Inside measurements, wall to wall, in meters (${fmtM(300)}) or centimeters (300).`)} {onde === 'auto' && !atual ? tx('O cômodo entra na planta da casa ao lado dos outros, dividindo a parede; depois é só arrastar pelo nome na vista Casa.', 'The room goes into the home plan next to the others, sharing a wall; then just drag it by its name in the Home view.') : ''}</p>
       {erro && <p className="erro">{erro}</p>}
       <div className="grade-acoes"><button className="btn prim" type="submit">{atual ? tx('Salvar', 'Save') : tx('Criar cômodo', 'Create room')}</button><button className="btn" type="button" data-d="fechar" onClick={fecharDialogo}>{tx('Cancelar', 'Cancel')}</button></div>
+    </form>
+  </>;
+}
+
+/* ---------- corredor ligando cômodos ---------- */
+function FormCorredor({ dados: x }: { dados: Record<string, unknown> }) {
+  const d = useApp((s) => s.dados);
+  const atualQ = useApp((s) => s.comodo);
+  const todos = comodosOrdem(d);
+  const aIni = String(x.a || (atualQ && d.comodos[atualQ] ? atualQ : todos[0]?.id || ''));
+  const ini = useCallback(() => ({ nome: nomeCorredorNovo(d), a: aIni, b: String(x.b || ''), lado: 'direita', comprimento: '', largura: fmtM(100), alinhar: 'meio', portas: true }), [d, aIni, x.b]);
+  const [v, set] = useValores(ini, 'corredor');
+  const [erro, setErro] = useState('');
+  const A = d.comodos[String(v.a)] || null;
+  const outros = A ? todos.filter((c) => c.andar === A.andar && c.id !== A.id) : [];
+  const B = outros.find((c) => c.id === v.b) || null;
+  const lado = String(v.lado || 'direita') as Lado4;
+  const vao = A && B ? vaoEntre(A, B, lado) : null;
+  const enviar = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!A) { setErro(tx('Escolha de qual cômodo o corredor sai.', 'Choose the room the hallway starts from.')); return; }
+    const larg = parseMedida(v.largura);
+    if (!(larg >= 60 && larg <= 400)) { setErro(tx(`Largura do corredor: entre ${fmtM(60)} e ${fmtM(400)} m.`, `Hallway width: between ${fmtM(60)} and ${fmtM(400)} m.`)); return; }
+    const txt = String(v.comprimento || '').trim();
+    const comp = txt ? parseMedida(txt) : null;
+    if (comp != null && !(comp >= 30 && comp <= 3000)) { setErro(tx(`Comprimento: entre ${fmtM(30)} e ${fmtM(3000)} m.`, `Length: between ${fmtM(30)} and ${fmtM(3000)} m.`)); return; }
+    const r = criarCorredor({ nome: String(v.nome || '').trim(), a: A.id, b: B ? B.id : null, lado, comprimento: comp, largura: larg, alinhar: (String(v.alinhar) as Alinhar) || 'meio', portas: !!v.portas });
+    if ('erro' in r) { setErro(r.erro); return; }
+    atualizar((s) => { s.dlg = null; s.vista = 'casa'; });
+    enquadrar();
+    const nome = useApp.getState().dados.comodos[r.id]?.nome || '';
+    toast(B ? tx(`${nome} criado ligando ${A.nome} e ${B.nome}.`, `${nome} created connecting ${A.nome} and ${B.nome}.`) : tx(`${nome} criado saindo de ${A.nome}.`, `${nome} created from ${A.nome}.`));
+  };
+  return <>
+    <Cab t={tx('Novo corredor', 'New hallway')} />
+    <p className="nota">{tx('O corredor sai de um cômodo, para o lado que você escolher, e pode chegar em outro. As portas das pontas já entram nas paredes dos dois.', 'The hallway starts at a room, goes the way you choose and can reach another room. The doors at its ends go into both walls.')}</p>
+    <form data-form="corredor" noValidate onSubmit={enviar}>
+      <div className="campos">
+        <Texto px="fco" k="nome" rot={tx('Nome', 'Name')} v={v} set={set} full max={30} />
+        <Escolha px="fco" k="a" rot={tx('Sai de', 'Starts at')} v={v} set={set} opts={todos.map((c) => [c.id, c.nome])} />
+        <Escolha px="fco" k="lado" rot={tx('Para que lado', 'Which way')} v={v} set={set} opts={opcoesLado(false)} />
+        <Escolha px="fco" k="b" rot={tx('Chega em', 'Ends at')} v={v} set={set} full opts={[['', tx('Nenhum (só o corredor)', 'None (just the hallway)')], ...outros.map((c) => [c.id, c.nome] as [string, string])]} />
+        <Texto px="fco" k="comprimento" rot={tx('Comprimento', 'Length')} v={v} set={set} num
+          ph={vao != null ? tx(`em branco: ${fmtM(vao)} m (o espaço que já existe)`, `blank: ${fmtM(vao)} m (the existing gap)`) : tx(`ex.: ${fmtM(300)}`, `e.g. ${fmtM(300)}`)} />
+        <Texto px="fco" k="largura" rot={tx('Largura', 'Width')} v={v} set={set} num ph={tx(`ex.: ${fmtM(100)}`, `e.g. ${fmtM(100)}`)} />
+        <Escolha px="fco" k="alinhar" rot={tx('Na parede de saída', 'On the starting wall')} v={v} set={set} full opts={opcoesAlinhar(lado)} />
+        <Marca px="fco" k="portas" rot={tx('Pôr uma porta em cada ponta', 'Add a door at each end')} v={v} set={set} />
+      </div>
+      <p className="nota">{B && vao == null ? tx(`${B.nome} vai para a outra ponta do corredor.`, `${B.nome} moves to the other end of the hallway.`) : B ? tx(`Com o comprimento em branco, ${B.nome} fica onde está.`, `With the length blank, ${B.nome} stays where it is.`) : ''}</p>
+      {erro && <p className="erro">{erro}</p>}
+      <div className="grade-acoes"><button className="btn prim" type="submit">{tx('Criar corredor', 'Create hallway')}</button><button className="btn" type="button" data-d="fechar" onClick={fecharDialogo}>{tx('Cancelar', 'Cancel')}</button></div>
     </form>
   </>;
 }
@@ -321,6 +415,7 @@ export default function Dialogo() {
     const x = dlg.dados, t = dlg.tipo;
     if (t === 'add') corpo = <Adicionar />;
     else if (t === 'comodo') corpo = <FormComodo dados={x} />;
+    else if (t === 'corredor') corpo = <FormCorredor dados={x} />;
     else if (t === 'sugestoes') corpo = <Sugestoes dados={x} />;
     else if (t === 'cenario') corpo = <SalvarCenario dados={x} />;
     else if (t === 'importar') corpo = <Importar dados={x} />;
@@ -380,6 +475,8 @@ export default function Dialogo() {
         <li><b>{tx('Mover:', 'Move:')}</b> {tx('arraste. Vendo vários cômodos, dá para levar o móvel de um para o outro arrastando.', 'drag. When you see several rooms, you can drag furniture from one to another.')}</li>
         <li><b>{tx('Mesa com cadeiras:', 'Table with chairs:')}</b> {tx('na mesa, escolha quantas cadeiras vêm junto e de que lado; o espaço para puxar entra na conta.', 'on the table, choose how many chairs come with it and on which side; the space to pull them out is counted.')}</li>
         <li><b>{tx('Cama com baú:', 'Bed with storage chest:')}</b> {tx('baú na cabeceira, nos pés ou nos dois, com largura e posição próprias.', 'a chest at the headboard, at the foot of the bed or both, each with its own width and position.')}</li>
+        <li><b>{tx('Corredores:', 'Hallways:')}</b> {tx('“+ Corredor” liga dois cômodos com o comprimento e a largura que você escolher; as portas das pontas entram nas paredes dos dois. Um cômodo novo também pode ficar à direita, à esquerda, acima ou abaixo de outro.', '“+ Hallway” connects two rooms with the length and width you choose; the doors at its ends go into both walls. A new room can also go to the right, left, above or below another one.')}</li>
+        <li><b>{tx('Escadas:', 'Stairs:')}</b> {tx('reta ou caracol, em Adicionar → Escada. Já entram travadas, para as sugestões não mexerem nelas.', 'straight or spiral, in Add → Stairs. They start locked, so suggestions leave them alone.')}</li>
         <li><b>{tx('Setas coloridas:', 'Colored arrows:')}</b> {tx('o espaço que sobra em volta do móvel. Vermelho: não passa (menos de 60 cm). Amarelo: apertado. Verde: passa bem.', 'the free space left around the furniture. Red: no way through (under 60 cm). Yellow: tight. Green: plenty of room.')}</li>
         <li><b>{tx('Cenários:', 'Scenarios:')}</b> {tx('fotos da arrumação, de um cômodo ou da casa toda, para comparar e voltar a usar.', 'snapshots of the layout, of one room or the whole home, to compare and use again.')}</li>
         <li><b>{tx('Sugestões:', 'Suggestions:')}</b> {tx('3 arrumações diferentes. Trave os móveis que não quer mexer. Também dá para pedir à IA, de graça.', '3 different layouts. Lock the furniture you don’t want moved. You can also ask the AI, for free.')}</li>

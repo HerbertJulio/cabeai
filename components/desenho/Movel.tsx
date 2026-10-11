@@ -85,6 +85,32 @@ function corpo(m: Movel, A: number, B: number): ReactNode {
     return <>{base}<rect className="mv-l" x={n1(bx)} y={n1(B * 0.22)} width={n1(bw)} height={n1(B * 0.6)} rx={6} /><circle className="mv-l" cx={n1(A * 0.5)} cy={n1(B * 0.12)} r={2.5} /></>;
   }
   if (t === 'lavadora') return <>{base}<circle className="mv-l" cx={n1(A / 2)} cy={n1(B * 0.55)} r={n1(Math.min(A, B) * 0.32)} /><line className="mv-l forte" x1={0} y1={B - 2} x2={A} y2={B - 2} /></>;
+  if (t === 'escada') {
+    if (m.escada === 'caracol') {
+      // degraus em leque em volta do pilar do meio; a seta mostra o sentido de subida
+      const r = Math.min(A, B) / 2, cx = A / 2, cy = B / 2, n = 12, rs = r * 0.62;
+      const raios = Array.from({ length: n }, (_, k) => {
+        const a = (k / n) * 2 * Math.PI;
+        return <line key={k} className="mv-l fino" x1={n1(cx + 7 * Math.cos(a))} y1={n1(cy + 7 * Math.sin(a))} x2={n1(cx + r * Math.cos(a))} y2={n1(cy + r * Math.sin(a))} />;
+      });
+      const ini = { x: cx + rs, y: cy }, fim = { x: cx, y: cy - rs };
+      return <>
+        <rect className="mv-base t-escada" x={0} y={0} width={A} height={B} rx={2} />
+        <circle className="mv-l" cx={n1(cx)} cy={n1(cy)} r={n1(r)} />
+        {raios}
+        <circle className="mv-cab" cx={n1(cx)} cy={n1(cy)} r={6} />
+        <path className="mv-seta" d={`M${n1(ini.x)} ${n1(ini.y)} A${n1(rs)} ${n1(rs)} 0 1 1 ${n1(fim.x)} ${n1(fim.y)}`} />
+        <path className="mv-seta" d={`M${n1(fim.x + 6)} ${n1(fim.y - 5)} L${n1(fim.x)} ${n1(fim.y)} L${n1(fim.x + 6)} ${n1(fim.y + 5)}`} />
+      </>;
+    }
+    // reta: a entrada (primeiro degrau) fica na frente; a seta aponta para onde sobe
+    const n = Math.max(3, Math.round(B / 28)), passo = B / n;
+    return <>{base}
+      {Array.from({ length: n - 1 }, (_, k) => <line key={k} className="mv-l fino" x1={0} y1={n1((k + 1) * passo)} x2={A} y2={n1((k + 1) * passo)} />)}
+      <line className="mv-seta" x1={n1(A / 2)} y1={n1(B - 8)} x2={n1(A / 2)} y2={10} />
+      <path className="mv-seta" d={`M${n1(A / 2 - 6)} 18 L${n1(A / 2)} 9 L${n1(A / 2 + 6)} 18`} />
+    </>;
+  }
   return <>{base}<line className="mv-l forte" x1={n1(A / 2 - 8)} y1={B - 5} x2={n1(A / 2 + 8)} y2={B - 5} /></>;
 }
 

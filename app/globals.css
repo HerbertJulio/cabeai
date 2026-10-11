@@ -257,6 +257,7 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 
 /* ---------- desenho (unidades = cm) ---------- */
 .piso{fill:var(--paper)}
+.piso.corredor{fill:var(--paper-2)}
 .grade-l{stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
 .parede{fill:var(--wall)}
 .sala-t{font:700 17px var(--f-display);fill:var(--ink);letter-spacing:.04em;cursor:pointer}
@@ -320,6 +321,8 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .t-bau{fill:var(--wood-2)}.t-sofa{fill:var(--fabric)}.t-geladeira,.t-fogao,.t-lavadora{fill:var(--metal)}.t-pia{fill:var(--stone)}
 .mv-estofo{fill:var(--fabric-2);stroke:var(--ink-2);stroke-width:1;vector-effect:non-scaling-stroke}
 .mv-tv{fill:var(--ink-2)}
+.t-escada{fill:var(--paper-2)}
+.mv-seta{fill:none;stroke:var(--accent);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .mv-zona{fill:var(--door-zone);stroke:var(--ink-3);stroke-width:1;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
 .mv-abre.ruim .mv-zona{fill:var(--door-bad);stroke:var(--bad)}
 .mv-trav{fill:var(--paper);stroke:var(--ink-2);stroke-width:1.2;vector-effect:non-scaling-stroke}

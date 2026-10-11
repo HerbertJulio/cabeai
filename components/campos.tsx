@@ -1,7 +1,7 @@
 'use client';
 // Campos dos formulários (os mesmos para adicionar, editar e no painel do modo avançado).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AB_NOME, LADO_CAD_NOME, MAX_CADEIRAS, PAREDES, PAREDE_NOME, PONTO_BASE, PONTO_NOME, TIPOS, TIPOS_PAREDE, horizontal, rotDist } from '@/lib/catalogo';
+import { AB_NOME, ESCADA_NOME, ESCADA_PADRAO, LADO_CAD_NOME, MAX_CADEIRAS, PAREDES, PAREDE_NOME, PONTO_BASE, PONTO_NOME, TIPOS, TIPOS_PAREDE, horizontal, rotDist } from '@/lib/catalogo';
 import { frenteAutomatica } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
 import { fmtM, parseInteiro, parseMedida } from '@/lib/util';
@@ -49,7 +49,7 @@ const alinha = (): [string, string][] => [['centro', tx('Centralizado', 'Centere
 /** Campos de um móvel. No modo avançado aparecem tipo, posição, cômodo e travar. */
 export function CamposMovel({ px, tipo, v, set, commit, avancado, add, comodos }: { px: string; tipo: TipoMovel; v: Valores; set: Set; commit?: Commit; avancado?: boolean; add?: boolean; comodos?: [string, string][] }) {
   const t = TIPOS[tipo] || TIPOS.outro, p = { px, v, set, commit };
-  const cad = Number(v.cadeiras || 0), bau = String(v.bau || 'nenhum');
+  const cad = Number(v.cadeiras || 0), bau = String(v.bau || 'nenhum'), caracol = tipo === 'escada' && v.escada === 'caracol';
   const autoFrente = frenteAutomatica({ tipo, abertura: (v.abertura as Abertura) || (t.ab ? t.ab[0] : 'nenhuma'), larg: parseMedida(v.larg) || parseMedida(t.exA), prof: parseMedida(v.prof) || parseMedida(t.exB), nPortas: parseInteiro(v.nPortas) || 0 });
   const blocoBau = (pre: 'Cab' | 'Pe', titulo: string): ReactNode => (
     <>
@@ -64,8 +64,13 @@ export function CamposMovel({ px, tipo, v, set, commit, avancado, add, comodos }
     <div className="campos">
       <Texto {...p} k="nome" rot={tx('Nome', 'Name')} full max={30} ph={t.rot} />
       {avancado && <Escolha {...p} k="tipo" rot={tx('Tipo', 'Type')} full opts={Object.keys(TIPOS).map((k) => [k, TIPOS[k as TipoMovel].chip])} />}
-      <Texto {...p} k="larg" rot={t.a} num ph={tx('ex.: ', 'e.g. ') + t.exA} foco={add} />
-      <Texto {...p} k="prof" rot={t.b} num ph={tx('ex.: ', 'e.g. ') + t.exB} />
+      {tipo === 'escada' && <Escolha {...p} k="escada" rot={tx('Tipo de escada', 'Stair type')} full opts={(['reta', 'caracol'] as const).map((k) => [k, ESCADA_NOME[k]])} />}
+      {caracol
+        ? <Texto {...p} k="larg" rot={tx('Diâmetro', 'Diameter')} num ph={tx('ex.: ', 'e.g. ') + fmtM(ESCADA_PADRAO.caracol.larg)} foco={add} />
+        : <>
+          <Texto {...p} k="larg" rot={t.a} num ph={tx('ex.: ', 'e.g. ') + t.exA} foco={add} />
+          <Texto {...p} k="prof" rot={t.b} num ph={tx('ex.: ', 'e.g. ') + t.exB} />
+        </>}
       {avancado && <>
         <Texto {...p} k="x" rot={tx('Da parede esquerda (cm)', 'From the left wall (cm)')} num />
         <Texto {...p} k="y" rot={tx('Da parede de cima (cm)', 'From the top wall (cm)')} num />
