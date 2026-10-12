@@ -6,8 +6,10 @@
 
 *Read in English: [README.md](README.md)*
 
-- Casa com **andares** e **cômodos**: veja um cômodo, os cômodos **lado a lado** ou a **planta da casa montada** (andares lado a lado, cômodos arrastáveis, com ímã que encosta as paredes e setas com a distância entre eles).
-- **Portas, janelas, ar-condicionado e pontos** em cada parede: interruptor, tomada, arandela, TV, internet, água, esgoto e gás. Uma porta na parede dividida entre dois cômodos vale para os dois.
+- **Desenhe a planta** arrastando o dedo ou o mouse: escolha sala, quarto, banheiro, cozinha, corredor, varanda… O ímã junta as paredes, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam.
+- **Foto do desenho em papel**: tire uma foto do rascunho e a IA monta os cômodos, os corredores, as portas e as janelas.
+- Casa com **andares** e **cômodos**: veja um cômodo, os cômodos **lado a lado** ou a **planta da casa montada** (andares lado a lado; cômodos que se arrastam, esticam pelas paredes e giram, com ímã que encosta as paredes e setas com a distância entre eles).
+- **Portas (ou vão livre, sem porta), janelas, ar-condicionado e pontos** em cada parede: interruptor, tomada, arandela, TV, internet, água, esgoto e gás. Uma porta na parede dividida entre dois cômodos vale para os dois.
 - Coloque um cômodo **à direita, à esquerda, acima ou abaixo** de outro, crie **corredores** ligando dois cômodos com o comprimento que quiser e **escadas retas ou caracol**.
 - **Móveis com medidas reais**: cama (com **baú** na cabeceira, nos pés ou nos dois, mais largo que a cama, centralizado, à esquerda, à direita ou com ajuste), guarda-roupa, berço, cômoda, **mesa com cadeiras** (na frente, dos dois lados ou em volta, com o espaço para puxar), cadeira, sofá, rack, estante, geladeira, fogão, pia, lavadora, armário e outros.
 - **Espaço livre na frente** de cada móvel calculado pelas portas e gavetas, e editável para móveis planejados.
@@ -23,6 +25,8 @@ O Cabeaí tem três jeitos de sugerir arrumações, todos sem custo:
 1. **Sugestões automáticas**: um motor de regras que roda no navegador. Sempre disponível.
 2. **IA online** (`/api/ia`): usa os modelos **gratuitos do AI Gateway da Vercel**. Na Vercel a autenticação é automática (OIDC), sem chave nenhuma. Se preferir o **Gemini** do Google, crie uma chave grátis no [Google AI Studio](https://aistudio.google.com/apikey) e coloque em `GOOGLE_GENERATIVE_AI_API_KEY`.
 3. **IA do navegador**: no Google Chrome do computador (versões novas, com o Gemini Nano embutido), a IA roda no próprio aparelho, sem enviar nada.
+
+Para **montar a planta pela foto do desenho** (`/api/planta`), a IA precisa ler imagem: coloque a chave grátis do Gemini em `GOOGLE_GENERATIVE_AI_API_KEY` (ou escolha um modelo com visão do AI Gateway em `CABEAI_MODELO_VISAO`). Sem isso, o botão avisa que a IA de fotos não está ligada, e dá para desenhar a planta direto no app.
 
 Toda resposta da IA é conferida com as medidas antes de aparecer: móveis são trazidos para dentro do cômodo e os problemas são contados. Se sobrar algum problema, a IA recebe a lista e tenta corrigir uma vez.
 

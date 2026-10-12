@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 import { NOME_PAREDE } from '@/lib/catalogo';
 import { alvoSel, cenariosVisiveis, comodosDoCenario, idsVisiveis, nomeComodo, problemasDe } from '@/lib/consultas';
 import { geoEl } from '@/lib/geometria';
-import { abrirCenario, abrirDialogo, editarItem, girar, limparSel, sairCenario, useApp } from '@/lib/store';
+import { abrirCenario, abrirDialogo, editarItem, girar, girarComodo, limparSel, sairCenario, useApp } from '@/lib/store';
 import type { Comodo, ElParede } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
 import { fmtM, pl } from '@/lib/util';
@@ -12,7 +12,7 @@ import { abrirMenuEmBotao } from './Topo';
 
 export function descEl(q: Comodo, e: ElParede): string {
   const g = geoEl(q, e), w = fmtM(g.b - g.a), par = tx('parede ' + NOME_PAREDE[e.parede], NOME_PAREDE[e.parede] + ' wall');
-  if (e.tipo === 'porta') return `${w} m · ${par} · ${tx(`abre para ${e.abre}`, `opens ${e.abre === 'dentro' ? 'inward' : 'outward'}`)}`;
+  if (e.tipo === 'porta') return `${w} m · ${par} · ${e.abre === 'vao' ? tx('vão livre', 'open doorway') : tx(`abre para ${e.abre}`, `opens ${e.abre === 'dentro' ? 'inward' : 'outward'}`)}`;
   if (e.tipo === 'janela') return `${w} m · ${par} · ${e.abertura === 'abrir' ? tx('de abrir', 'hinged') : tx('de correr', 'sliding')}`;
   if (e.tipo === 'ar') return tx(`aparelho de ${w} m · ${par}`, `${w} m unit · ${par}`);
   return par;
@@ -60,6 +60,7 @@ export default function Faixa() {
       <div className="faixa" id="faixa">
         <div className="barra-txt"><span className="barra-nome">{c.nome}</span> <span className="barra-med">{fmtM(c.w)} × {fmtM(c.h)} m{a ? ` · ${a.nome}` : ''}</span></div>
         <div className="acoes">
+          <button className="btn" type="button" data-acao="q-girar" aria-label={tx(`Girar ${c.nome} 90 graus`, `Rotate ${c.nome} 90 degrees`)} onClick={() => girarComodo(c.id)}><Icone n="girar" /><span className="rot-longo">{tx('Girar', 'Rotate')}</span></button>
           <button className="btn" type="button" data-acao="q-editar" onClick={() => abrirDialogo('comodo', { id: c.id })}>{tx('Editar', 'Edit')}</button>
           <button className="ico-btn" type="button" id="b-comodo-mais" aria-label={tx(`Mais opções de ${c.nome}`, `More options for ${c.nome}`)} aria-haspopup="menu" onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'comodo', { comodo: c.id })}><Icone n="mais" /></button>
           <button className="ico-btn" type="button" data-acao="desmarcar" aria-label={tx('Tirar a seleção', 'Clear selection')} onClick={limparSel}><Icone n="x" /></button>

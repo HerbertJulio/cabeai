@@ -1,13 +1,15 @@
 // Estado do app (Zustand + Immer): os dados da casa e o estado da tela.
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, nomePadraoPonto, pontoDe, tipoMovel } from './catalogo';
+import { COMODO_NOME, LIM_COMODO, PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, nomePadraoPonto, pontoDe, tipoMovel } from './catalogo';
 import { nomeAndarNovo, planoCorredor, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
 import { alvoSel, andaresOrdem, cenariosLista, comodosDoAndar, comodosOrdem, cq, idsVisiveis } from './consultas';
 import { exemplo, moveisDo } from './dados';
+import { acomodar, esticarComodo, girarComodo90, janelaNaParede, portaDeEntrada, portaEntre, portaLigacao, type Borda } from './edicao';
+import { lerPlanta, type PlantaIA } from './planta';
 import { centrar, geoEl, lugarLivre, normRot, posNoPonto, posValida, prender } from './geometria';
 import { sugerirCasa, sugerirComodo, type Opcao } from './motor';
-import type { Andar, Cenario, Comodo, Dados, ElParede, Escopo, Modo, Movel, Parede, Ponto, TipoMovel, TipoParede, Vista } from './tipos';
+import type { Andar, Cenario, Comodo, Dados, ElParede, Escopo, Modo, Movel, Parede, Ponto, TipoComodo, TipoMovel, TipoParede, Vista } from './tipos';
 import { vazio } from './tipos';
 import { definirIdioma, idioma, tx, type Idioma } from './i18n';
 import { novoId, pl } from './util';
@@ -47,9 +49,14 @@ export interface Estado {
   sug: { busy: boolean; msg: string };
   ia: { busy: boolean; msg: string };
   iaCtl: AbortController | null;
+  /** Montando a planta pela foto do desenho (a IA está lendo). */
+  planta: { busy: boolean; msg: string };
+  plantaCtl: AbortController | null;
   menu: InfoMenu | null;
   toast: { msg: string; tipo: '' | 'erro'; n: number } | null;
   arrastando: boolean;
+  /** Desenhar cômodos arrastando na planta da casa, e o tipo do próximo. */
+  desenho: { ativo: boolean; tipo: TipoComodo };
   /** Tela estreita (celular): painéis viram gaveta e folha. */
   estreito: boolean;
 }
@@ -65,8 +72,8 @@ const inicial = (): Estado => ({
   cam: { z: 1, cx: null, cy: null }, camBase: { cx: 0, cy: 0 },
   verCen: null, cenBase: null, idioma: 'pt', folha: false, folhaModo: 'acoes', dlg: null, avisosAbertos: false,
   add: { tipo: 'guarda-roupa', ctx: null, rascunho: {} },
-  sug: { busy: false, msg: '' }, ia: { busy: false, msg: '' }, iaCtl: null,
-  menu: null, toast: null, arrastando: false, estreito: false
+  sug: { busy: false, msg: '' }, ia: { busy: false, msg: '' }, iaCtl: null, planta: { busy: false, msg: '' }, plantaCtl: null,
+  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto' }, estreito: false
 });
 
 export const useApp = create<Estado>()(immer(() => inicial()));
@@ -153,7 +160,7 @@ export function zoomEm(fator: number, px?: number, py?: number) {
 
 /* ---------- diálogos e menus ---------- */
 export function abrirDialogo(tipo: string, dados: Record<string, unknown> = {}) { set((s) => { s.menu = null; s.dlg = { tipo, dados }; }); }
-export function fecharDialogo() { if (get().sug.busy) return; set((s) => { s.dlg = null; }); }
+export function fecharDialogo() { if (get().sug.busy || get().planta.busy) return; set((s) => { s.dlg = null; }); }
 export function abrirMenu(info: InfoMenu) { set((s) => { s.menu = info; }); }
 export function fecharMenu() { if (get().menu) set((s) => { s.menu = null; }); }
 
@@ -293,9 +300,89 @@ export function salvarComodo(id: string, campos: Partial<Comodo>) {
       campos = { ...campos, x: p.x, y: p.y };
     }
     Object.assign(c, campos);
-    for (const m of Object.values(s.dados.moveis)) if (m.comodo === id) { const p = prender(c, m, m.x, m.y); m.x = p.x; m.y = p.y; }
-    for (const e of Object.values(s.dados.els)) if (e.comodo === id) { const g = geoEl(c, e); if (e.largura > g.L) e.largura = g.L; e.inicio = Math.round(g.a); }
+    acomodar(c, Object.values(s.dados.moveis).filter((m) => m.comodo === id), Object.values(s.dados.els).filter((e) => e.comodo === id));
   });
+}
+
+/* ---------- mexer no cômodo direto na planta ---------- */
+const doComodo = (d: Dados, id: string) => ({
+  moveis: Object.values(d.moveis).filter((m) => m.comodo === id),
+  els: Object.values(d.els).filter((e) => e.comodo === id),
+  itens: Object.values(d.cenarios).flatMap((cen) => Object.entries(cen.itens).filter(([, it]) => it.comodo === id).map(([mid, item]) => ({ item, m: d.moveis[mid] })).filter((x) => !!x.m))
+});
+
+/** Gira o cômodo 90° (sentido do relógio) com tudo o que tem dentro; o meio dele fica no mesmo lugar. */
+export function girarComodo(id: string) {
+  set((s) => {
+    const c = s.dados.comodos[id]; if (!c) return;
+    const o = doComodo(s.dados, id);
+    girarComodo90(c, o.moveis, o.els, o.itens);
+  });
+}
+
+/** Arrastando a alça de uma parede: leva aquela borda até "v" (na planta do andar). */
+export function esticar(id: string, borda: Borda, v: number) {
+  set((s) => {
+    const c = s.dados.comodos[id]; if (!c) return;
+    const o = doComodo(s.dados, id);
+    esticarComodo(c, borda, v, LIM_COMODO.min, o.moveis, o.els, o.itens.map((x) => x.item));
+  });
+}
+/** Soltou a alça: o que ficou fora do cômodo volta para dentro. */
+export function fimEsticar(id: string) {
+  set((s) => {
+    const c = s.dados.comodos[id]; if (!c) return;
+    const o = doComodo(s.dados, id);
+    acomodar(c, o.moveis, o.els);
+  });
+}
+
+/* ---------- desenhar cômodos ---------- */
+export function modoDesenho(ativo: boolean, tipo?: TipoComodo) {
+  set((s) => {
+    s.desenho = { ativo, tipo: tipo || s.desenho.tipo };
+    if (ativo) { s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.verCen = null; s.menu = null; s.latAberta = false; }
+  });
+}
+
+/** "Quarto 1", "Quarto 2"; "Sala", "Sala 2"… */
+export function nomeTipoNovo(d: Dados, tipo: TipoComodo): string {
+  const base = tipo === 'outro' ? tx('Cômodo', 'Room') : COMODO_NOME[tipo], nomes = new Set(Object.values(d.comodos).map((c) => c.nome));
+  if (tipo === 'quarto' || tipo === 'outro') { let k = 1; while (nomes.has(`${base} ${k}`)) k++; return `${base} ${k}`; }
+  if (!nomes.has(base)) return base;
+  let k = 2;
+  while (nomes.has(`${base} ${k}`)) k++;
+  return `${base} ${k}`;
+}
+
+/** Cria as portas (ou vãos) entre um cômodo e os vizinhos de parede, quando um deles é corredor ou varanda. */
+function ligarVizinhos(d: Dados, c: Comodo) {
+  let k = 0;
+  for (const o of comodosDoAndar(d, c.andar)) {
+    if (o.id === c.id) continue;
+    const p = portaEntre(c, o, Object.values(d.els));
+    if (!p) continue;
+    const eid = novoId('e');
+    d.els[eid] = { ...p, id: eid, criado: Date.now() + k++ };
+  }
+}
+
+/** Cômodo desenhado na planta da casa (medidas de dentro, posição na planta do andar). */
+export function desenharComodo(v: { andar: string | null; x: number; y: number; w: number; h: number; tipo: TipoComodo }): { id: string; nome: string } {
+  const andar = v.andar && get().dados.andares[v.andar] ? v.andar : andarPadrao();
+  const id = novoId('c');
+  let nome = '';
+  set((s) => {
+    nome = nomeTipoNovo(s.dados, v.tipo);
+    const c: Comodo = {
+      id, nome, w: Math.max(LIM_COMODO.min, Math.round(v.w)), h: Math.max(LIM_COMODO.min, Math.round(v.h)), andar, x: Math.round(v.x), y: Math.round(v.y),
+      criado: Date.now(), tipo: v.tipo, ...(v.tipo === 'corredor' ? { corredor: true } : {})
+    };
+    s.dados.comodos[id] = c;
+    ligarVizinhos(s.dados, c);
+    s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.folha = false;
+  });
+  return { id, nome };
 }
 export function moverComodo(id: string, x: number, y: number) { set((s) => { const c = s.dados.comodos[id]; if (c) { c.x = Math.round(x); c.y = Math.round(y); } }); }
 
@@ -596,6 +683,73 @@ export function editarItem() {
   }
 }
 export function pedirRemover() { const s = get(); if (alvoSel(s.dados, s.sel, s.selEl)) abrirDialogo('remover-item'); }
+
+/* ---------- planta pela foto do desenho em papel ---------- */
+/** Cria os cômodos que a IA leu do desenho, com portas, passagens, a entrada e as janelas. Se a casa já tem
+ *  cômodos, tudo vai para um andar novo ("Do desenho"), para não misturar com o que já existe. */
+export function montarDoDesenho(pl: PlantaIA): { andar: string; n: number } {
+  const temCasa = Object.keys(get().dados.comodos).length > 0;
+  const andar = temCasa ? criarAndar(tx('Do desenho', 'From the sketch')) : andarPadrao();
+  set((s) => {
+    const d = s.dados, ids: string[] = [], agora = Date.now();
+    pl.comodos.forEach((c, k) => {
+      const id = novoId('c');
+      ids.push(id);
+      d.comodos[id] = { id, nome: c.nome.slice(0, 30), w: c.w, h: c.h, andar, x: c.x, y: c.y, criado: agora + k, tipo: c.tipo, ...(c.tipo === 'corredor' ? { corredor: true } : {}) };
+    });
+    const novos = () => ids.map((id) => d.comodos[id]);
+    let k = 0;
+    const poe = (e: Omit<ElParede, 'id' | 'criado'> | null) => { if (!e) return; const eid = novoId('e'); d.els[eid] = { ...e, id: eid, criado: agora + 100 + k++ }; };
+    // as ligações que a IA viu; sem nenhuma, as automáticas de corredor e varanda
+    for (const l of pl.ligacoes) { const A = d.comodos[ids[l.a]], B = d.comodos[ids[l.b]]; if (A && B) poe(portaLigacao(A, B, l.porta, Object.values(d.els))); }
+    if (!pl.ligacoes.length) for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) poe(portaEntre(d.comodos[ids[i]], d.comodos[ids[j]], Object.values(d.els)));
+    if (pl.entrada && ids[pl.entrada.comodo]) poe(portaDeEntrada(d.comodos[ids[pl.entrada.comodo]], pl.entrada.parede, novos(), Object.values(d.els)));
+    for (const j of pl.janelas) if (ids[j.comodo]) poe(janelaNaParede(d.comodos[ids[j.comodo]], j.parede, novos(), Object.values(d.els)));
+    s.vista = 'casa'; s.comodo = ids[0] || null; s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.folha = false; s.desenho.ativo = false;
+  });
+  enquadrar();
+  return { andar, n: pl.comodos.length };
+}
+
+function msgErroPlanta(codigo: string): string {
+  const m: Record<string, string> = {
+    'sem-ia': tx('A IA que lê fotos ainda não está ligada neste site. Enquanto isso, você pode desenhar a planta aqui mesmo com o botão “Desenhar”.', 'The AI that reads photos isn’t turned on for this site yet. In the meantime, you can draw the floor plan right here with the “Draw” button.'),
+    limite: tx('Muitos pedidos para a IA agora. Espere uns minutos e tente de novo.', 'Too many requests to the AI right now. Wait a few minutes and try again.'),
+    invalido: tx('A IA não conseguiu entender o desenho. Tente uma foto mais de perto, com boa luz e a folha inteira, ou escreva os cômodos nas observações.', 'The AI couldn’t make sense of the sketch. Try a closer photo with good light and the whole sheet, or list the rooms in the notes.'),
+    grande: tx('A foto ficou grande demais. Tente outra foto.', 'The photo is too big. Try another photo.'),
+    rede: tx('Não deu para falar com a IA. Confira a internet e tente de novo.', 'Couldn’t reach the AI. Check your internet connection and try again.')
+  };
+  return m[codigo] || tx('Não deu certo agora. Tente de novo em instantes.', 'That didn’t work right now. Try again in a moment.');
+}
+
+/** Manda a foto do desenho (já reduzida, em data URL) e/ou a descrição para a IA e monta a planta. */
+export async function plantaPeloDesenho(imagem: string | null, texto: string) {
+  if (get().planta.busy) return;
+  const ctl = new AbortController();
+  set((s) => { s.planta = { busy: true, msg: imagem ? tx('A IA está lendo o seu desenho…', 'The AI is reading your sketch…') : tx('A IA está montando a planta…', 'The AI is putting the plan together…') }; s.plantaCtl = ctl; if (s.dlg) s.dlg.dados.erro = ''; });
+  const fim = (erro?: string) => set((s) => { s.planta = { busy: false, msg: '' }; s.plantaCtl = null; if (erro && s.dlg) s.dlg.dados.erro = erro; });
+  try {
+    const r = await fetch('/api/planta', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.any([ctl.signal, AbortSignal.timeout(70_000)]),
+      body: JSON.stringify({ imagem: imagem || undefined, texto: texto.slice(0, 2000), idioma: get().idioma })
+    });
+    let j: { bruto?: unknown; codigo?: string } = {};
+    try { j = await r.json(); } catch { /* sem corpo */ }
+    if (!r.ok) { fim(msgErroPlanta(j.codigo || (r.status === 413 ? 'grande' : 'erro'))); return; }
+    const planta = lerPlanta(j.bruto);
+    if (!planta) { fim(msgErroPlanta('invalido')); return; }
+    fim();
+    const res = montarDoDesenho(planta);
+    set((s) => { s.dlg = null; });
+    const andar = get().dados.andares[res.andar];
+    toast(tx(`Pronto! A IA montou ${pl(res.n, 'cômodo', 'cômodos')}${andar ? ' em “' + andar.nome + '”' : ''}. Confira as medidas: toque num cômodo para esticar as paredes ou girar.`, `Done! The AI built ${plEn(res.n)}${andar ? ' on “' + andar.nome + '”' : ''}. Check the measurements: tap a room to stretch its walls or rotate it.`));
+  } catch {
+    if (ctl.signal.aborted) { fim(); return; }
+    fim(msgErroPlanta('rede'));
+  }
+}
+const plEn = (n: number) => pl(n, 'room', 'rooms');
+export function pararPlanta() { const c = get().plantaCtl; if (c) c.abort(); }
 
 /* ---------- IA (online grátis ou a do navegador) ---------- */
 function msgErroIA(codigo: string, msg?: string): string {

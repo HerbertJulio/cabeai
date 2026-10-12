@@ -112,8 +112,8 @@ export function CamposParede({ px, tipo, v, set, commit, avancado, add, phNome }
       {tipo !== 'interruptor' && <Texto {...p} k="largura" rot={tp.rotLarg} num ph={add ? tp.ex : ''} />}
       {avancado ? <Texto {...p} k="inicioCm" rot={rotDist(par) + ' (cm)'} num /> : <Texto {...p} k="dist" rot={rotDist(par)} num ph={tx('em branco = no meio', 'blank = centered')} />}
       {tipo === 'porta' && <>
-        <Escolha {...p} k="dobradica" rot={tx('Dobradiça', 'Hinge')} opts={[['a', hz ? tx('Esquerda', 'Left') : tx('Em cima', 'Top')], ['b', hz ? tx('Direita', 'Right') : tx('Embaixo', 'Bottom')]]} />
-        <Escolha {...p} k="abre" rot={tx('Abre para', 'Opens')} opts={[['dentro', tx('Dentro do cômodo', 'Into the room')], ['fora', tx('Fora', 'Out of the room')]]} />
+        <Escolha {...p} k="abre" rot={tx('Abre para', 'Opens')} opts={[['dentro', tx('Dentro do cômodo', 'Into the room')], ['fora', tx('Fora', 'Out of the room')], ['vao', tx('Sem porta (vão livre)', 'No door (open doorway)')]]} />
+        <Escolha {...p} k="dobradica" rot={tx('Dobradiça', 'Hinge')} oculto={v.abre === 'vao'} opts={[['a', hz ? tx('Esquerda', 'Left') : tx('Em cima', 'Top')], ['b', hz ? tx('Direita', 'Right') : tx('Embaixo', 'Bottom')]]} />
       </>}
       {tipo === 'janela' && <>
         <Escolha {...p} k="abertura" rot={tx('Tipo', 'Type')} opts={[['correr', tx('De correr', 'Sliding')], ['abrir', tx('De abrir (para dentro)', 'Casement (opens inward)')]]} />

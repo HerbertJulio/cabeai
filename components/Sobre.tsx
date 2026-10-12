@@ -2,11 +2,12 @@
 // O que fica por cima da planta: avisos, botões de adicionar e sugestões, zoom e a tela vazia.
 import { useEffect, useRef } from 'react';
 import { sobreposicoes } from '@/lib/casa';
+import { COMODO_NOME, TIPOS_COMODO } from '@/lib/catalogo';
 import { andaresOrdem, avaliacao, comodosDoAndar, comodosDoCenario, idsVisiveis, listaAtiva, nomeComodo } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { tx } from '@/lib/i18n';
 import {
-  abrirDialogo, abrirMenu, atualizar, atualizarCenario, criarExemplo, enquadrar, iniciarAdd, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm
+  abrirDialogo, abrirMenu, atualizar, atualizarCenario, criarExemplo, enquadrar, iniciarAdd, modoDesenho, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm
 } from '@/lib/store';
 import type { Problema } from '@/lib/tipos';
 import { pl } from '@/lib/util';
@@ -86,11 +87,31 @@ export function Avisos() {
 export function Botoes() {
   const n = useApp((s) => Object.keys(s.dados.comodos).length);
   const vista = useApp((s) => s.vista);
-  if (!n) return null;
+  const desenhando = useApp((s) => s.desenho.ativo);
+  if (!n || desenhando) return null;
   return (
     <div className="flut flut-be">
       <button type="button" className="fab prim" id="b-add" onClick={() => { const s = useApp.getState(); iniciarAdd(s.add.tipo || 'guarda-roupa', { comodo: s.comodo || undefined }); }}><Icone n="add" /><span>{tx('Adicionar', 'Add')}</span></button>
       <button type="button" className="fab" id="b-sug" onClick={() => abrirDialogo('sugestoes', { escopo: vista !== 'um' && n > 1 ? 'casa' : 'comodo' })}><Icone n="estrela" /><span>{tx('Sugestões', 'Suggestions')}</span></button>
+      <button type="button" className="fab" id="b-desenhar" aria-label={tx('Desenhar cômodos na planta', 'Draw rooms on the plan')} onClick={() => modoDesenho(true)}><Icone n="lapis" /><span>{tx('Desenhar', 'Draw')}</span></button>
+    </div>
+  );
+}
+
+/** Barra do modo de desenhar: o tipo do próximo cômodo e o "Pronto". */
+export function BarraDesenho() {
+  const d = useApp((s) => s.desenho);
+  if (!d.ativo) return null;
+  return (
+    <div className="flut flut-desenho" id="barra-desenho" role="toolbar" aria-label={tx('Desenhar cômodos', 'Draw rooms')}>
+      <div className="desenho-cab">
+        <p className="desenho-t"><Icone n="lapis" />{tx('Arraste o dedo ou o mouse na planta para desenhar', 'Drag your finger or the mouse on the plan to draw')}</p>
+        <button type="button" className="btn prim peq" data-acao="desenho-pronto" onClick={() => modoDesenho(false)}>{tx('Pronto', 'Done')}</button>
+      </div>
+      <div className="tipos tipos-desenho" role="group" aria-label={tx('O que desenhar', 'What to draw')}>
+        {TIPOS_COMODO.map((t) => <button key={t} type="button" className="tipo" data-tipo-comodo={t} aria-pressed={d.tipo === t} onClick={() => modoDesenho(true, t)}>{COMODO_NOME[t]}</button>)}
+      </div>
+      <p className="nota">{tx('Perto da parede de outro cômodo, o ímã junta as duas. Corredor e varanda já ganham porta ou passagem para quem eles tocam. Com dois dedos você move e aproxima a planta.', 'Near another room’s wall, snap joins the two walls. Hallways and porches get a door or an opening to the rooms they touch. Use two fingers to move and zoom the plan.')}</p>
     </div>
   );
 }
@@ -123,7 +144,8 @@ export function Controles() {
 export function Vazio() {
   const carregado = useApp((s) => s.carregado);
   const n = useApp((s) => Object.keys(s.dados.comodos).length);
-  if (!carregado || n) return null;
+  const desenhando = useApp((s) => s.desenho.ativo);
+  if (!carregado || n || desenhando) return null;
   return (
     <div className="vazio" id="vazio">
       <div className="vazio-in">
@@ -131,7 +153,11 @@ export function Vazio() {
         <h2>{tx('Será que cabe? Monte a planta e veja.', 'Will it fit? Draw your floor plan and see.')}</h2>
         <p>{tx('Crie os cômodos com as medidas de dentro, monte a casa (com andares, se tiver), coloque portas, janelas e os móveis em escala, e veja se dá para passar. Grátis, com IA.', 'Create your rooms with their inside measurements, put the home together (with floors, if it has them), add doors, windows and furniture to scale, and see if there’s room to get through. Free, with AI.')}</p>
         <div className="acoes">
-          <button className="btn prim" type="button" data-acao="novo-comodo" onClick={() => abrirDialogo('comodo')}>{tx('+ Criar o primeiro cômodo', '+ Create your first room')}</button>
+          <button className="btn prim" type="button" data-acao="desenhar" onClick={() => modoDesenho(true)}><Icone n="lapis" />{tx('Desenhar a planta', 'Draw the floor plan')}</button>
+          <button className="btn prim" type="button" data-acao="foto-desenho" onClick={() => abrirDialogo('foto-desenho')}><Icone n="camera" />{tx('Foto do desenho em papel', 'Photo of a paper sketch')}</button>
+        </div>
+        <div className="acoes">
+          <button className="btn" type="button" data-acao="novo-comodo" onClick={() => abrirDialogo('comodo')}>{tx('+ Criar cômodo pelas medidas', '+ Create a room by its measurements')}</button>
           <button className="btn" type="button" data-acao="exemplo" onClick={criarExemplo}>{tx('Ver um exemplo', 'See an example')}</button>
         </div>
         <p className="nota">{tx('Já tem um arquivo do Cabeaí?', 'Already have a Cabeaí file?')} <button className="btn peq" type="button" data-acao="importar" onClick={() => document.getElementById('arquivo')?.click()}>{tx('Importar arquivo', 'Import file')}</button></p>

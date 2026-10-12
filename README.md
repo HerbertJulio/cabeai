@@ -6,8 +6,10 @@
 
 *Leia em português: [README.pt-BR.md](README.pt-BR.md)*
 
-- A home with **floors** and **rooms**: look at one room, all rooms **side by side**, or the **assembled home plan** (floors side by side, draggable rooms that snap wall to wall, and arrows showing the distance between them).
-- **Doors, windows, air conditioners and hookups** on every wall: switch, outlet, wall light, TV, network, water, drain and gas. A door on a wall shared by two rooms counts for both.
+- **Draw the floor plan** with your finger or the mouse: pick living room, bedroom, bathroom, kitchen, hallway, porch… Snap joins the walls, and hallways and porches get a door or an opening to the rooms they touch.
+- **Photo of a paper sketch**: take a picture of your sketch and the AI builds the rooms, hallways, doors and windows.
+- A home with **floors** and **rooms**: look at one room, all rooms **side by side**, or the **assembled home plan** (floors side by side; rooms you can drag, stretch by their walls and rotate, that snap wall to wall, with arrows showing the distance between them).
+- **Doors (or open doorways), windows, air conditioners and hookups** on every wall: switch, outlet, wall light, TV, network, water, drain and gas. A door on a wall shared by two rooms counts for both.
 - Place a room **to the right, left, above or below** another one, add **hallways** that connect two rooms with the length you choose, and **straight or spiral stairs**.
 - **Furniture with real measurements**: bed (with a **storage chest** at the headboard, at the foot or both, wider than the bed, centered, left, right or offset), wardrobe, crib, dresser, **table with chairs** (in front, on both sides or all around, including the space to pull them out), chair, sofa, TV stand, bookcase, fridge, stove, sink, washing machine, cabinet and more.
 - **Free space in front of each piece** is calculated from its doors and drawers, and you can change it for custom-made furniture.
@@ -23,6 +25,8 @@ Cabeaí has three ways to suggest layouts, all free:
 1. **Automatic suggestions**: a rules engine that runs in the browser. Always available.
 2. **Online AI** (`/api/ia`): uses the **free models of the Vercel AI Gateway**. On Vercel, authentication is automatic (OIDC), no key needed. If you prefer Google's **Gemini**, create a free key at [Google AI Studio](https://aistudio.google.com/apikey) and set `GOOGLE_GENERATIVE_AI_API_KEY`.
 3. **Browser AI**: in desktop Google Chrome (recent versions with built-in Gemini Nano), the AI runs on the device itself and nothing is sent anywhere.
+
+**Building the plan from a sketch photo** (`/api/planta`) needs an AI that reads images: set a free Gemini key in `GOOGLE_GENERATIVE_AI_API_KEY` (or pick an AI Gateway model with vision in `CABEAI_MODELO_VISAO`). Without it, the button says the photo AI isn't turned on, and you can still draw the plan in the app.
 
 Every AI answer is checked against the measurements before it is shown: furniture is brought back inside the room and problems are counted. If any problem is left, the AI gets the list and tries to fix it once.
 
@@ -66,13 +70,14 @@ Optional environment variables:
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Use Gemini (Google AI Studio) before the free AI Gateway models |
 | `CABEAI_GEMINI` | Which Gemini model to use (default `gemini-flash-latest`) |
 | `CABEAI_MODELOS` | Comma-separated AI Gateway models (default: the free ones available) |
+| `CABEAI_MODELO_VISAO` | AI Gateway model that reads images, for the sketch photo (Gemini with the key above is used first) |
 
-Diagnostics: `/api/ia` shows whether the online AI is configured; `/api/ia?teste=1` asks it a tiny question.
+Diagnostics: `/api/ia` shows whether the online AI is configured (and which models read images); `/api/ia?teste=1` asks it a tiny question.
 
 ## How the code is organized
 
 ```
-app/            pages (Next.js App Router), styles, fonts and the /api/ia route
+app/            pages (Next.js App Router), styles, fonts and the /api/ia and /api/planta routes
 components/     React UI (SVG floor plan, panels, dialogs, menus)
   desenho/      to-scale drawing of rooms and furniture (1 unit = 1 cm)
 lib/            logic without UI: geometry, warnings, home, suggestions, AI, data, i18n
@@ -81,6 +86,8 @@ tests/          tests (Vitest)
 
 - `lib/geometria.ts`: measurements, clearances, chairs, chests and the rule behind each warning.
 - `lib/casa.ts`: rooms on the home plan, snapping, distances and doors on shared walls.
+- `lib/edicao.ts`: rotating and stretching rooms, and the automatic doors of hallways and porches.
+- `lib/planta.ts`: the sketch photo request and how the AI answer becomes rooms with shared walls.
 - `lib/motor.ts`: the automatic suggestions.
 - `lib/ia.ts`: the AI request and the checking of its answers.
 - `lib/i18n.ts`: Portuguese and English (`tx('português', 'English')`).

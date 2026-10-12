@@ -5,8 +5,9 @@ import { alvoSel, andaresOrdem, comodosDoAndar, comodosOrdem, cq, nomeComodo } f
 import { contar, moveisDo, type Contagem } from '@/lib/dados';
 import { valsNovaParede, valsNovoMovel, validarComodo, validarMovel, validarParede, type Valores } from '@/lib/formularios';
 import { iaNavegadorDisponivel } from '@/lib/iaNavegador';
+import { reduzirImagem } from '@/lib/imagem';
 import {
-  abrirCenario, adicionarEl, adicionarMovel, atualizar, atualizarCenario, cenarioComNome, criarComodo, criarCorredor, enquadrar, fecharDialogo, gerarSugestoes, levarPara,
+  abrirCenario, modoDesenho, pararPlanta, plantaPeloDesenho, adicionarEl, adicionarMovel, atualizar, atualizarCenario, cenarioComNome, criarComodo, criarCorredor, enquadrar, fecharDialogo, gerarSugestoes, levarPara,
   limparSel, nomeComTraco, nomeComodoNovo, nomeCorredorNovo, nomeUnicoCenario, pararIA, pedirIA, posicionarComodo, removerAlvo, removerAndar, removerCenario, removerComodo,
   salvarAndar, salvarCenario, salvarComodo, salvarMovel, sobrescreverCenario, substituirCenario, toast, trocarDados, useApp, type Junto
 } from '@/lib/store';
@@ -22,6 +23,58 @@ function Cab({ t, sug }: { t: string; sug?: boolean }) {
 }
 function Sim({ rot, cls = 'prim', onSim, d }: { rot: string; cls?: string; onSim: () => void; d: string }) {
   return <div className="grade-acoes"><button className={`btn ${cls}`} type="button" data-d={d} onClick={onSim}>{rot}</button><button className="btn" type="button" data-d="fechar" onClick={fecharDialogo}>{tx('Cancelar', 'Cancel')}</button></div>;
+}
+
+/* ---------- planta pela foto do desenho em papel ---------- */
+function FotoDesenho({ dados }: { dados: Record<string, unknown> }) {
+  const planta = useApp((s) => s.planta);
+  const temCasa = useApp((s) => Object.keys(s.dados.comodos).length > 0);
+  const [img, setImg] = useState<string | null>(null);
+  const [texto, setTexto] = useState('');
+  const [abrindo, setAbrindo] = useState(false);
+  const [erroLocal, setErroLocal] = useState('');
+  const erro = erroLocal || String(dados.erro || '');
+  const escolher = async (f: File | undefined) => {
+    if (!f) return;
+    setErroLocal(''); atualizar((s) => { if (s.dlg) s.dlg.dados.erro = ''; });
+    if (!/^image\//.test(f.type)) { setErroLocal(tx('Escolha uma foto (imagem).', 'Choose a photo (an image).')); return; }
+    if (f.size > 30 * 1024 * 1024) { setErroLocal(tx('Essa foto é grande demais. Tente outra.', 'That photo is too big. Try another one.')); return; }
+    setAbrindo(true);
+    try { setImg(await reduzirImagem(f, 1600)); } catch { setErroLocal(tx('Não consegui abrir essa foto. Tente outra.', 'Couldn’t open that photo. Try another one.')); } finally { setAbrindo(false); }
+  };
+  const enviar = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!img && texto.trim().length < 10) { setErroLocal(tx('Tire a foto do desenho ou descreva a casa nas observações.', 'Take a photo of the sketch or describe the home in the notes.')); return; }
+    setErroLocal('');
+    plantaPeloDesenho(img, texto);
+  };
+  return <>
+    <Cab t={tx('Montar pelo desenho em papel', 'Build from a paper sketch')} />
+    <p className="nota">{tx('Tire uma foto do rascunho da planta (de cima, com boa luz e a folha inteira). A IA lê o desenho e monta os cômodos, os corredores e as portas. Medidas escritas no papel ajudam muito.', 'Take a photo of your floor plan sketch (from above, with good light and the whole sheet). The AI reads it and builds the rooms, hallways and doors. Measurements written on the paper help a lot.')}</p>
+    <form data-form="foto-desenho" noValidate onSubmit={enviar}>
+      <label className={`foto-escolha${img ? ' com-foto' : ''}`}>
+        <input type="file" accept="image/*" data-k="foto" disabled={planta.busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; escolher(f); }} />
+        {img
+          ? <img src={img} alt={tx('Foto do desenho', 'Photo of the sketch')} />
+          : <span><Icone n="camera" />{abrindo ? tx('Abrindo a foto…', 'Opening the photo…') : tx('Tirar ou escolher a foto', 'Take or choose a photo')}</span>}
+      </label>
+      {img && !planta.busy && <p className="nota">{tx('Toque na foto para trocar.', 'Tap the photo to change it.')}</p>}
+      <div className="campo full">
+        <label htmlFor="fd-texto">{tx('Observações (opcional)', 'Notes (optional)')}</label>
+        <textarea id="fd-texto" data-k="texto" rows={3} maxLength={2000} value={texto} disabled={planta.busy} onChange={(e) => setTexto(e.target.value)}
+          placeholder={tx('Ex.: varanda grande na frente, sala, corredor com banheiro de um lado e dois quartos de frente um para o outro, cozinha pequena e outra varanda nos fundos.', 'E.g.: big porch at the front, living room, a hallway with a bathroom on one side and two bedrooms facing each other, a small kitchen and another porch at the back.')} />
+      </div>
+      {temCasa && <p className="nota">{tx('Os cômodos vão para um andar novo, “Do desenho”, sem mexer no que você já tem.', 'The rooms go to a new floor, “From the sketch”, without touching what you already have.')}</p>}
+      {planta.busy && <p className="ia-status" role="status"><span className="spin" aria-hidden="true" />{planta.msg}</p>}
+      {erro && <p className="erro" role="alert">{erro}</p>}
+      <div className="grade-acoes">
+        {planta.busy
+          ? <button className="btn" type="button" data-d="parar" onClick={pararPlanta}>{tx('Parar', 'Stop')}</button>
+          : <button className="btn prim" type="submit" data-d="montar">{tx('Montar a planta', 'Build the plan')}</button>}
+        <button className="btn" type="button" data-d="desenhar" disabled={planta.busy} onClick={() => { fecharDialogo(); modoDesenho(true); }}>{tx('Prefiro desenhar aqui', 'I’d rather draw here')}</button>
+      </div>
+    </form>
+  </>;
 }
 
 /* ---------- adicionar móvel ou item de parede ---------- */
@@ -416,6 +469,7 @@ export default function Dialogo() {
     if (t === 'add') corpo = <Adicionar />;
     else if (t === 'comodo') corpo = <FormComodo dados={x} />;
     else if (t === 'corredor') corpo = <FormCorredor dados={x} />;
+    else if (t === 'foto-desenho') corpo = <FotoDesenho dados={x} />;
     else if (t === 'sugestoes') corpo = <Sugestoes dados={x} />;
     else if (t === 'cenario') corpo = <SalvarCenario dados={x} />;
     else if (t === 'importar') corpo = <Importar dados={x} />;
@@ -469,7 +523,9 @@ export default function Dialogo() {
     } else if (t === 'ajuda') {
       corpo = <><Cab t={tx('Como usar', 'How to use')} /><ul className="atalhos">
         <li><b>{tx('Cômodos:', 'Rooms:')}</b> {tx('“+ Novo cômodo” no painel da esquerda. Medidas de dentro, de parede a parede.', '“+ New room” in the left panel. Inside measurements, wall to wall.')}</li>
-        <li><b>{tx('Casa:', 'Home:')}</b> {tx('na vista Casa os cômodos aparecem montados, cada andar lado a lado. Arraste um cômodo pelo nome para mudar o lugar dele; perto de outro, o ímã encosta as paredes. As setas mostram o espaço até o vizinho.', 'the Home view shows the rooms put together, each floor side by side. Drag a room by its name to move it; near another room, snap brings the walls together. The arrows show the space to the next room.')}</li>
+        <li><b>{tx('Desenhar:', 'Draw:')}</b> {tx('toque em “Desenhar”, escolha o que vai desenhar (sala, quarto, corredor…) e arraste na planta. O ímã junta as paredes, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam.', 'tap “Draw”, pick what to draw (living room, bedroom, hallway…) and drag on the plan. Snap joins the walls, and hallways and porches get a door or an opening to the rooms they touch.')}</li>
+        <li><b>{tx('Foto do desenho:', 'Sketch photo:')}</b> {tx('tire uma foto do rascunho feito no papel e a IA monta os cômodos, os corredores e as portas. Depois é só conferir as medidas.', 'take a photo of a sketch on paper and the AI builds the rooms, hallways and doors. Then just check the measurements.')}</li>
+        <li><b>{tx('Casa:', 'Home:')}</b> {tx('na vista Casa os cômodos aparecem montados, cada andar lado a lado. Toque num cômodo para selecionar: arraste pelo piso ou pelo nome para mudar o lugar, use as alças azuis para esticar as paredes e o botão ↻ para girar. Perto de outro cômodo, o ímã encosta as paredes; as setas mostram o espaço até o vizinho.', 'the Home view shows the rooms put together, each floor side by side. Tap a room to select it: drag it by its floor or name to move it, use the blue handles to stretch its walls and the ↻ button to rotate it. Near another room, snap brings the walls together; the arrows show the space to the next room.')}</li>
         <li><b>{tx('Andares:', 'Floors:')}</b> {tx('“+ Novo andar” no painel; cada cômodo fica num andar.', '“+ New floor” in the panel; each room is on one floor.')}</li>
         <li><b>{tx('Adicionar:', 'Add:')}</b> {tx('botão “Adicionar”, o “+” de cada grupo, ou segure o dedo (botão direito) no ponto da planta.', 'the “Add” button, the “+” on each group, or press and hold (right-click) on a spot in the floor plan.')}</li>
         <li><b>{tx('Mover:', 'Move:')}</b> {tx('arraste. Vendo vários cômodos, dá para levar o móvel de um para o outro arrastando.', 'drag. When you see several rooms, you can drag furniture from one to another.')}</li>

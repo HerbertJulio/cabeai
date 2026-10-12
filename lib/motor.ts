@@ -19,7 +19,7 @@ export function aleatorio(semente: number): () => number {
 
 function estaticoOk(q: ComodoCompleto, m: Movel, r: Ret): boolean {
   if (r.x1 < -0.5 || r.y1 < -0.5 || r.x2 > q.w + 0.5 || r.y2 > q.h + 0.5) return false;
-  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre === 'fora' && naFrentePorta(q, p, r)))) return false;
+  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && naFrentePorta(q, p, r)))) return false;
   if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   return true;

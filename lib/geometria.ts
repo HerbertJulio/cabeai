@@ -369,7 +369,7 @@ export function avaliar(q: ComodoCompleto, lista: Movel[]): Avaliacao {
     if (r.x1 < -0.5 || r.y1 < -0.5 || r.x2 > q.w + 0.5 || r.y2 > q.h + 0.5) anota(tx(`${m.nome} está saindo do cômodo.`, `${m.nome} is sticking out of the room.`), m.id);
     for (const p of q.portas) {
       if (p.abre === 'dentro' && bloqueiaPorta(q, p, r)) { anota(tx(`${m.nome} atrapalha a abertura de “${p.nome}”.`, `${m.nome} blocks “${p.nome}” from opening.`), m.id, p.id); portasBloq.add(p.id); }
-      else if (p.abre === 'fora' && naFrentePorta(q, p, r)) { anota(tx(`${m.nome} fica na frente de “${p.nome}”.`, `${m.nome} is in front of “${p.nome}”.`), m.id, p.id); portasBloq.add(p.id); }
+      else if (p.abre !== 'dentro' && naFrentePorta(q, p, r)) { anota(tx(`${m.nome} fica na frente de “${p.nome}”.`, `${m.nome} is in front of “${p.nome}”.`), m.id, p.id); portasBloq.add(p.id); }
     }
     for (const i of q.interruptores) {
       if (!cobreInterruptor(q, i, r, m.alto, m.tipo)) continue;
@@ -438,7 +438,7 @@ export function posValida(q: ComodoCompleto, m: Movel, x: number, y: number, rot
   const d = dims(m, rot), r = { x1: x, y1: y, x2: x + d.w, y2: y + d.h };
   if (x < 0 || y < 0 || r.x2 > q.w || r.y2 > q.h) return false;
   if (outros.some((o) => sobrepoe(r, ret(o)))) return false;
-  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre === 'fora' && naFrentePorta(q, p, r)))) return false;
+  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && naFrentePorta(q, p, r)))) return false;
   if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   if (exigirFrente) {

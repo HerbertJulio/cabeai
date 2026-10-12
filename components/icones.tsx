@@ -16,7 +16,9 @@ const P: Record<string, ReactNode> = {
   voltar: <path d="M15 18l-6-6 6-6" />,
   mover: <path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" />,
   ia: <><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /><rect x="7" y="7" width="10" height="10" rx="3" /><path d="M10 12h4M12 10v4" /></>,
-  coracao: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />
+  coracao: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" />,
+  lapis: <><path d="M4 20l4.5-1L19 8.5 15.5 5 5 15.5z" /><path d="M13.5 7l3.5 3.5" /></>,
+  camera: <><path d="M4 8h3.2l1.8-2.6h6l1.8 2.6H20v11H4z" /><circle cx="12" cy="13.2" r="3.4" /></>
 };
 
 export function Icone({ n, className }: { n: string; className?: string }) {

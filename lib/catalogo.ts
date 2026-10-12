@@ -1,6 +1,6 @@
 // Catálogo: tipos de móvel, itens de parede e nomes das paredes.
 import { bilingue, registro, tx } from './i18n';
-import type { Abertura, FormaEscada, LadoCadeiras, Parede, Ponto, TipoMovel, TipoParede } from './tipos';
+import type { Abertura, FormaEscada, LadoCadeiras, Parede, Ponto, TipoComodo, TipoMovel, TipoParede } from './tipos';
 import { fmtM, tem } from './util';
 
 export interface InfoTipo {
@@ -158,6 +158,16 @@ export const PONTO_DO = registro<Ponto>(
   { interruptor: 'the switch', tomada: 'the outlet', ambos: 'the switch', luz: 'the wall lights', tv: 'the TV outlet', rede: 'the network jack', agua: 'the water hookup', esgoto: 'the drain', gas: 'the gas hookup' }
 );
 
+/* ---------- tipos de cômodo (desenhar a planta e montar pela foto do desenho) ---------- */
+export const TIPOS_COMODO: TipoComodo[] = ['sala', 'quarto', 'banheiro', 'cozinha', 'corredor', 'varanda', 'servico', 'garagem', 'outro'];
+export const COMODO_NOME = registro<TipoComodo>(
+  { sala: 'Sala', quarto: 'Quarto', banheiro: 'Banheiro', cozinha: 'Cozinha', corredor: 'Corredor', varanda: 'Varanda', servico: 'Área de serviço', garagem: 'Garagem', outro: 'Outro' },
+  { sala: 'Living room', quarto: 'Bedroom', banheiro: 'Bathroom', cozinha: 'Kitchen', corredor: 'Hallway', varanda: 'Porch', servico: 'Laundry', garagem: 'Garage', outro: 'Other' }
+);
+export const ehTipoComodo = (v: unknown): v is TipoComodo => typeof v === 'string' && (TIPOS_COMODO as string[]).includes(v);
+/** O tipo de um cômodo, mesmo dos antigos (corredor pela marca; o resto vira "outro"). */
+export const tipoDoComodo = (c: { tipo?: TipoComodo; corredor?: boolean }): TipoComodo => (c.corredor ? 'corredor' : c.tipo || 'outro');
+
 export const ehParede = (tipo: string): tipo is TipoParede => tem(TIPOS_PAREDE, tipo);
 export const tipoMovel = (tipo: string): tipo is TipoMovel => tem(TIPOS, tipo);
 
@@ -179,7 +189,7 @@ export const PAREDE_CURTA = registro<Parede>(
 export const horizontal = (parede: Parede): boolean => parede === 'cima' || parede === 'baixo';
 export const rotDist = (parede: Parede): string => (horizontal(parede) ? tx('Distância do canto esquerdo', 'Distance from the left corner') : tx('Distância do canto de cima', 'Distance from the top corner'));
 
-export const LIM_COMODO = { min: 100, max: 3000 };
+export const LIM_COMODO = { min: 60, max: 3000 };
 export const LIM_MOVEL = { min: 10, max: 600 };
 export const LIM_CADEIRA = { min: 25, max: 120 };
 export const LIM_BAU = { min: 10, max: 150 };

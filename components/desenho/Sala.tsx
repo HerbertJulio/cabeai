@@ -43,25 +43,34 @@ function Paredes({ q }: { q: Q }) {
 
 function Porta({ q, p, sel, bloq, vista }: { q: Q; p: ElParede; sel: boolean; bloq: boolean; vista: Vista }) {
   if (p.herdada && vista === 'casa') return null; // o vizinho já desenha essa porta; aqui fica só o vão
-  const g = geoPorta(q, p), lin = arcoUV(q, p.parede, g.hu, g.du, g.r, g.sv);
-  const H = uv2xy(q, p.parede, g.hu, 0), E = uv2xy(q, p.parede, g.hu, g.sv * g.r), lab = uv2xy(q, p.parede, g.hu + g.du * g.r * 0.55, g.sv * g.r * 0.3);
-  const cls = `porta-el${sel ? ' sel' : ''}${bloq ? ' bloq' : ''}${p.herdada ? ' herdada' : ''}`;
+  const g = geoPorta(q, p), cls = `porta-el${sel ? ' sel' : ''}${bloq ? ' bloq' : ''}${p.herdada ? ' herdada' : ''}${p.abre === 'vao' ? ' vao' : ''}`;
+  const comoAbre = p.abre === 'vao' ? tx('vão livre, sem porta', 'open doorway, no door') : tx(`abre para ${p.abre}`, `opens ${p.abre === 'dentro' ? 'inward' : 'outward'}`);
+  const aria = p.herdada ? undefined : tx(`${p.nome}, porta de ${fmtM(g.r)} metros na parede ${NOME_PAREDE[p.parede]}, ${comoAbre}. Enter abre as opções; setas movem pela parede.`, `${p.nome}, ${fmtM(g.r)}-meter door on the ${NOME_PAREDE[p.parede]} wall, ${comoAbre}. Enter opens the options; arrow keys move it along the wall.`);
+  const comum = { className: cls, 'data-eid': p.herdada ? undefined : p.id, tabIndex: p.herdada ? undefined : 0, role: p.herdada ? undefined : 'button', 'aria-label': aria };
+  if (p.abre === 'vao') {
+    // vão livre: só a abertura na parede, com o batente tracejado
+    return (
+      <g {...comum}>
+        <rect className="zona-porta" {...rectEm(q, p.parede, g.a, -T, g.b, 0)} />
+        <line className="vao-l" {...linhaEm(q, p.parede, g.a, -T / 2, g.b, -T / 2)} />
+        {!p.herdada && <rect className="hit" {...rectEm(q, p.parede, g.a, -T, g.b, 24)} />}
+      </g>
+    );
+  }
+  const lin = arcoUV(q, p.parede, g.hu, g.du, g.r, g.sv), H = uv2xy(q, p.parede, g.hu, 0), E = uv2xy(q, p.parede, g.hu, g.sv * g.r);
   return (
-    <g className={cls} data-eid={p.herdada ? undefined : p.id} tabIndex={p.herdada ? undefined : 0} role={p.herdada ? undefined : 'button'}
-      aria-label={p.herdada ? undefined : tx(`${p.nome}, porta de ${fmtM(g.r)} metros na parede ${NOME_PAREDE[p.parede]}, abre para ${p.abre}. Enter abre as opções; setas movem pela parede.`, `${p.nome}, ${fmtM(g.r)}-meter door on the ${NOME_PAREDE[p.parede]} wall, opens ${p.abre === 'dentro' ? 'inward' : 'outward'}. Enter opens the options; arrow keys move it along the wall.`)}>
+    <g {...comum}>
       <path className="zona-porta" d={`M${n1(H[0])},${n1(H[1])} L${lin} Z`} />
       <path className="arco" d={`M${lin}`} />
       {!p.herdada && <rect className="hit" {...rectEm(q, p.parede, g.a, -T, g.b, Math.min(30, g.r))} />}
       <line className="folha-porta" x1={n1(H[0])} y1={n1(H[1])} x2={n1(E[0])} y2={n1(E[1])} />
-      <text className="porta-nome" x={n1(lab[0])} y={n1(lab[1])} textAnchor="middle" dy=".35em">{p.nome}</text>
     </g>
   );
 }
 
 function Janela({ q, j, sel, ruim }: { q: Q; j: ElParede; sel: boolean; ruim: boolean }) {
-  const g = geoEl(q, j), w = g.b - g.a, rt = rotTexto(j.parede);
+  const g = geoEl(q, j), w = g.b - g.a;
   const aria = tx(`${j.nome}, janela ${j.abertura === 'abrir' ? 'de abrir' : 'de correr'} de ${fmtM(w)} metros, parede ${NOME_PAREDE[j.parede]}. Enter abre as opções; setas movem pela parede.`, `${j.nome}, ${fmtM(w)}-meter ${j.abertura === 'abrir' ? 'casement' : 'sliding'} window on the ${NOME_PAREDE[j.parede]} wall. Enter opens the options; arrow keys move it along the wall.`);
-  const nome = `${j.nome} · ${fmtM(w)}`;
   if (j.abertura === 'abrir') {
     const lf = folhaDe(q, j), dobs: [number, number][] = j.folhas === 1 ? [[g.a, 1]] : [[g.a, 1], [g.b, -1]];
     return (
@@ -70,7 +79,6 @@ function Janela({ q, j, sel, ruim }: { q: Q; j: ElParede; sel: boolean; ruim: bo
         {dobs.map(([hu, du], k) => { const H = uv2xy(q, j.parede, hu, 0); return <g key={k}><path className="jan-arco" d={`M${n1(H[0])},${n1(H[1])} L${arcoUV(q, j.parede, hu, du, lf, 1)} Z`} /><line className="jan-vidro" {...linhaEm(q, j.parede, hu, 0, hu, lf)} /></g>; })}
         <rect className="jan-moldura" {...rectEm(q, j.parede, g.a, -T, g.b, 0)} />
         <line className="jan-vidro" {...linhaEm(q, j.parede, g.a + 2, -T / 2, g.b - 2, -T / 2)} />
-        <Txt cls="jan-nome" p={uv2xy(q, j.parede, g.a + w / 2, Math.min(lf * 0.45, 30))} rt={rt}>{nome}</Txt>
       </g>
     );
   }
@@ -81,7 +89,6 @@ function Janela({ q, j, sel, ruim }: { q: Q; j: ElParede; sel: boolean; ruim: bo
       <rect className="jan-moldura" {...rectEm(q, j.parede, g.a, -T, g.b, 0)} />
       <line className="jan-vidro" {...linhaEm(q, j.parede, g.a + 2, -T * 0.66, g.a + w * 0.56, -T * 0.66)} />
       <line className="jan-vidro" {...linhaEm(q, j.parede, g.a + w * 0.44, -T * 0.34, g.b - 2, -T * 0.34)} />
-      <Txt cls="jan-nome" p={uv2xy(q, j.parede, g.a + w / 2, 19)} rt={rt}>{nome}</Txt>
     </g>
   );
 }
@@ -97,12 +104,11 @@ function ArBase({ q, a, sel }: { q: Q; a: ElParede; sel: boolean }) {
   );
 }
 function ArTopo({ q, a, sel }: { q: Q; a: ElParede; sel: boolean }) {
-  const g = geoEl(q, a), w = g.b - g.a, c = uv2xy(q, a.parede, g.a + w / 2, AR_PROF / 2), lab = uv2xy(q, a.parede, g.a + w / 2, AR_PROF + 7), rt = horizontal(a.parede) ? 0 : -90;
+  const g = geoEl(q, a), w = g.b - g.a, c = uv2xy(q, a.parede, g.a + w / 2, AR_PROF / 2);
   return (
     <g className={`ar-top${sel ? ' sel' : ''}`} aria-hidden="true">
       <rect className="ar-r" {...rectEm(q, a.parede, g.a, 0, g.b, AR_PROF)} />
       <g transform={`translate(${n1(c[0] - 8)} ${n1(c[1] - 8)}) scale(0.667)`}><path className="ar-i" d="M12 3v18M4.21 7.5l15.58 9M4.21 16.5l15.58-9M9.5 3.5L12 6l2.5-2.5M9.5 20.5L12 18l2.5 2.5M18.11 5.59L17.2 9l3.41.92M5.89 5.59L6.8 9l-3.41.92M3.39 14.09L6.8 15l-.91 3.42M20.61 14.09L17.2 15l.91 3.42" /></g>
-      <Txt cls="anot" p={lab} rt={rt}>{a.nome}</Txt>
     </g>
   );
 }
@@ -135,8 +141,32 @@ function faixasRotulos(q: Q, maxFaixas: (p: Parede) => number): Map<string, numb
   return out;
 }
 
+/** Nomes das portas, janelas, ar-condicionado e pontos. A planta desenha esta camada depois de todos os cômodos,
+ *  para os nomes ficarem por cima dos móveis e dos cômodos vizinhos. */
+export function RotulosSala({ q, vista }: { q: Q; vista: Vista }) {
+  const casa = vista === 'casa';
+  // em cima e à esquerda ficam as cotas do cômodo (fora da planta da casa): ali cabem só duas faixas de rótulo
+  const faixas = faixasRotulos(q, (p) => (!casa && (p === 'cima' || p === 'esquerda') ? 2 : 3));
+  return (
+    <g className="rotulos" aria-hidden="true">
+      {q.portas.map((p) => {
+        if (p.herdada && casa) return null;
+        const g = geoPorta(q, p);
+        const lab = p.abre === 'vao' ? uv2xy(q, p.parede, (g.a + g.b) / 2, 10) : uv2xy(q, p.parede, g.hu + g.du * g.r * 0.55, g.sv * g.r * 0.3);
+        return <text key={'p' + p.id + (p.herdada ? 'h' : '')} className={`porta-nome${p.herdada ? ' herdada' : ''}`} x={n1(lab[0])} y={n1(lab[1])} textAnchor="middle" dy=".35em">{p.nome}</text>;
+      })}
+      {q.janelas.map((j) => {
+        const g = geoEl(q, j), w = g.b - g.a, v = j.abertura === 'abrir' ? Math.min(folhaDe(q, j) * 0.45, 30) : 19;
+        return <Txt key={j.id} cls="jan-nome" p={uv2xy(q, j.parede, g.a + w / 2, v)} rt={rotTexto(j.parede)}>{`${j.nome} · ${fmtM(w)}`}</Txt>;
+      })}
+      {q.ares.map((a) => { const g = geoEl(q, a); return <Txt key={a.id} cls="anot" p={uv2xy(q, a.parede, (g.a + g.b) / 2, AR_PROF + 7)} rt={horizontal(a.parede) ? 0 : -90}>{a.nome}</Txt>; })}
+      {q.interruptores.map((i) => { const g = geoEl(q, i); return <Txt key={i.id} cls="anot" p={uv2xy(q, i.parede, (g.a + g.b) / 2, -T - 6 - (faixas.get(i.id) || 0) * 11)} rt={rotTexto(i.parede)}>{i.nome}</Txt>; })}
+    </g>
+  );
+}
+
 /** Ponto na parede: uma placa com o símbolo do que ele é. */
-function Interruptor({ q, i, sel, ruim, faixa }: { q: Q; i: ElParede; sel: boolean; ruim: boolean; faixa: number }) {
+function Interruptor({ q, i, sel, ruim }: { q: Q; i: ElParede; sel: boolean; ruim: boolean }) {
   const g = geoEl(q, i), mid = (g.a + g.b) / 2, w = Math.max(6, g.b - g.a), hw = Math.max(12, w / 2 + 6), ponto = pontoDe(i), par = i.parede;
   const furo = (u: number, k: number) => { const c = uv2xy(q, par, u, 2.6); return <circle key={k} className="interr-f" cx={n1(c[0])} cy={n1(c[1])} r={0.9} />; };
   const circ = (v: number, r: number) => { const c = uv2xy(q, par, mid, v); return <circle className="interr-g" cx={n1(c[0])} cy={n1(c[1])} r={r} />; };
@@ -163,7 +193,6 @@ function Interruptor({ q, i, sel, ruim, faixa }: { q: Q; i: ElParede; sel: boole
       <rect className="hit" {...rectEm(q, par, mid - hw, -T, mid + hw, 14)} />
       <rect className="interr" rx={ponto === 'tomada' ? 2.5 : ehInterruptor(ponto) ? 1 : 1.5} {...rectEm(q, par, mid - w / 2, -1, mid + w / 2, 5)} />
       {simbolo[ponto]}
-      <Txt cls="anot" p={uv2xy(q, par, mid, -T - 6 - faixa * 11)} rt={rotTexto(par)}>{i.nome}</Txt>
     </g>
   );
 }
@@ -222,18 +251,16 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
   const ordem = lista.slice().sort((a, b) => Number(a.id === sel) - Number(b.id === sel));
   const comSetas = setasTodos ? lista : lista.filter((m) => m.id === sel);
   const probs = av.itens.length;
-  // em cima e à esquerda ficam as cotas do cômodo (fora da planta da casa): ali cabem só duas faixas de rótulo
-  const faixas = faixasRotulos(q, (p) => (!casa && (p === 'cima' || p === 'esquerda') ? 2 : 3));
   return (
     <>
-      <rect className={`piso${q.corredor ? ' corredor' : ''}`} x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
+      <rect className={`piso${q.corredor ? ' corredor' : ''}${q.tipo ? ' t-' + q.tipo : ''}`} x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
       {grade}
       {q.portas.map((p) => <Porta key={'p' + p.id + (p.herdada ? 'h' : '')} q={q} p={p} sel={selEl === p.id && !p.herdada} bloq={av.portasBloq.has(p.id)} vista={vista} />)}
       <Paredes q={q} />
       {(varios && foco) || selComodo ? <rect className={`sala-foco${selComodo ? ' forte' : ''}`} x={-T - 4} y={-T - 4} width={q.w + 2 * T + 8} height={q.h + 2 * T + 8} rx={4} /> : null}
       {q.ares.map((a) => <ArBase key={a.id} q={q} a={a} sel={selEl === a.id} />)}
       {q.janelas.map((j) => <Janela key={j.id} q={q} j={j} sel={selEl === j.id} ruim={av.elsRuins.has(j.id)} />)}
-      {q.interruptores.map((i) => <Interruptor key={i.id} q={q} i={i} sel={selEl === i.id} ruim={av.elsRuins.has(i.id)} faixa={faixas.get(i.id) || 0} />)}
+      {q.interruptores.map((i) => <Interruptor key={i.id} q={q} i={i} sel={selEl === i.id} ruim={av.elsRuins.has(i.id)} />)}
       {!casa && <Cotas q={q} />}
       {vista === 'lado' && ty != null && (
         <text className={`sala-t${foco ? ' ativo' : ''}`} data-qt={q.id} x={0} y={n1(ty)}>{q.nome}{probs ? ` · ${pl(probs, tx('problema', 'problem'), tx('problemas', 'problems'))}` : ''}</text>

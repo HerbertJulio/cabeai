@@ -10,6 +10,7 @@
   --ok:#15803D; --warn:#A16207; --bad:#B91C1C; --folga:#6B7280; --on-status:#FFFFFF;
   --ok-soft:#E5F3EA; --bad-soft:#FBE9E9; --sug:#7C3AED; --sug-soft:#F1EAFE;
   --glass:#0E7490; --glass-soft:rgba(14,116,144,.10); --sinal:#6D28D9;
+  --piso-varanda:#F1F6EC; --piso-agua:#EEF5F8; --piso-cozinha:#FAF5EC; --piso-garagem:#F1F2F3;
   --shadow:0 1px 2px rgba(20,24,30,.06),0 6px 20px rgba(20,24,30,.08);
   --sheet-shadow:0 -6px 30px rgba(20,24,30,.18);
   --f-display:var(--fonte-titulo),'Barlow Condensed','Arial Narrow',sans-serif;
@@ -27,6 +28,7 @@
   --ok:#4ADE80; --warn:#FACC15; --bad:#F87171; --folga:#9CA3AF; --on-status:#0E1114;
   --ok-soft:#14261B; --bad-soft:#2E1618; --sug:#C4B5FD; --sug-soft:#251D3A;
   --glass:#5CC8DC; --glass-soft:rgba(92,200,220,.14); --sinal:#C4B5FD;
+  --piso-varanda:#18201A; --piso-agua:#152026; --piso-cozinha:#221E18; --piso-garagem:#1C1F23;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
   --sheet-shadow:0 -6px 30px rgba(0,0,0,.55);
   color-scheme:dark;
@@ -42,6 +44,7 @@
   --ok:#4ADE80; --warn:#FACC15; --bad:#F87171; --folga:#9CA3AF; --on-status:#0E1114;
   --ok-soft:#14261B; --bad-soft:#2E1618; --sug:#C4B5FD; --sug-soft:#251D3A;
   --glass:#5CC8DC; --glass-soft:rgba(92,200,220,.14); --sinal:#C4B5FD;
+  --piso-varanda:#18201A; --piso-agua:#152026; --piso-cozinha:#221E18; --piso-garagem:#1C1F23;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
   --sheet-shadow:0 -6px 30px rgba(0,0,0,.55);
   color-scheme:dark;
@@ -130,6 +133,25 @@ button,input,select{font:inherit;color:inherit}
 .fab svg{width:20px;height:20px;flex:none}
 .fab.prim{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .fab#b-sug svg{color:var(--sug)}
+.fab#b-desenhar svg{color:var(--accent)}
+.foto-escolha{display:flex;align-items:center;justify-content:center;min-height:150px;margin:6px 0 4px;border:2px dashed var(--line);border-radius:14px;background:var(--paper-2);cursor:pointer;position:relative;overflow:hidden}
+.foto-escolha input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.foto-escolha span{display:flex;align-items:center;gap:8px;font:700 16px var(--f-display);color:var(--accent);letter-spacing:.02em;pointer-events:none}
+.foto-escolha span svg{width:24px;height:24px}
+.foto-escolha.com-foto{border-style:solid;background:var(--paper)}
+.foto-escolha img{display:block;max-width:100%;max-height:300px;object-fit:contain;pointer-events:none}
+
+.flut-desenho{left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));width:min(680px,calc(100% - 20px));background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.desenho-cab{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.desenho-t{margin:0;font:700 15px var(--f-display);letter-spacing:.02em;display:flex;align-items:center;gap:8px}
+.desenho-t svg{width:18px;height:18px;flex:none;color:var(--accent)}
+.tipos.tipos-desenho{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.tipos-desenho .tipo{flex:none}
+.app.desenhando ~ .toast{bottom:calc(170px + env(safe-area-inset-bottom,0px))}
+@media (max-width:899px){.app.desenhando ~ .toast{bottom:calc(140px + env(safe-area-inset-bottom,0px))}}
+.flut-desenho .nota{margin:0}
+@media (max-width:899px){.app.desenhando .flut-bd{display:none}.flut-desenho .nota{display:none}}
+@media (max-width:520px){.flut-be .fab:not(.prim) span{display:none}.flut-be .fab:not(.prim){padding:0;width:46px;justify-content:center}}
 .ctrl-grupo{display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
 .ctrl-grupo button{width:46px;height:44px;border:0;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .ctrl-grupo button+button{border-top:1px solid var(--line)}
@@ -258,6 +280,7 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 /* ---------- desenho (unidades = cm) ---------- */
 .piso{fill:var(--paper)}
 .piso.corredor{fill:var(--paper-2)}
+.piso.t-varanda{fill:var(--piso-varanda)}.piso.t-banheiro,.piso.t-servico{fill:var(--piso-agua)}.piso.t-cozinha{fill:var(--piso-cozinha)}.piso.t-garagem{fill:var(--piso-garagem)}
 .grade-l{stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
 .parede{fill:var(--wall)}
 .sala-t{font:700 17px var(--f-display);fill:var(--ink);letter-spacing:.04em;cursor:pointer}
@@ -290,7 +313,24 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .porta-nome{font:600 9px var(--f-display);fill:var(--ink-3);letter-spacing:.04em}
 .porta-el.herdada{cursor:default;pointer-events:none}
 .porta-el.herdada .folha-porta{stroke:var(--ink-3);stroke-dasharray:5 4}
-.porta-el.herdada .porta-nome{opacity:.8}
+.porta-nome.herdada{opacity:.8}
+#planta.desenhando{cursor:crosshair}
+.grade-desenho{pointer-events:none}
+.gd-m{fill:none;stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
+.gd-g{fill:none;stroke:var(--line);stroke-width:1;vector-effect:non-scaling-stroke}
+.risco-g{pointer-events:none}
+.risco-parede{fill:none;stroke:var(--wall);stroke-width:1;stroke-dasharray:4 4;opacity:.5;vector-effect:non-scaling-stroke}
+.risco{fill:var(--accent-soft);fill-opacity:.75;stroke:var(--accent);stroke-width:2;stroke-dasharray:7 4;vector-effect:non-scaling-stroke}
+.risco-t{font-family:var(--f-display);font-weight:700;fill:var(--accent);paint-order:stroke fill;stroke:var(--paper);stroke-width:3px;stroke-linejoin:round}
+.alca{fill:var(--paper);stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke;cursor:ew-resize}
+.alca-cima,.alca-baixo{cursor:ns-resize}
+.alca:hover{fill:var(--accent-soft)}
+.alca-girar{cursor:pointer}
+.alca-girar circle{fill:var(--accent);stroke:var(--paper);stroke-width:2;vector-effect:non-scaling-stroke}
+.alca-girar path{fill:none;stroke:var(--accent-ink);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.rotulos text{paint-order:stroke fill;stroke:var(--paper);stroke-width:2.4px;stroke-linejoin:round;pointer-events:none}
+.vao-l{stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
+.porta-el.vao.sel .vao-l,.porta-el.vao:focus-visible .vao-l{stroke:var(--accent);stroke-width:2.4}
 .anot{font:600 8.5px var(--f-display);fill:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;pointer-events:none}
 .interr{fill:var(--paper);stroke:var(--ink);stroke-width:1.2;vector-effect:non-scaling-stroke}
 .interr-g{fill:none;stroke:var(--ink);stroke-width:1.1;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}

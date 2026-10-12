@@ -1,12 +1,14 @@
 // IA online, grátis: modelos gratuitos do AI Gateway da Vercel (autenticação automática na Vercel)
 // ou o Gemini do Google AI Studio, quando GOOGLE_GENERATIVE_AI_API_KEY estiver configurada.
 // O navegador manda só o necessário de um cômodo; a resposta volta conferida com as medidas.
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
-import { gateway, generateText, type LanguageModel, type ModelMessage } from 'ai';
+import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import { TIPOS_PAREDE } from '@/lib/catalogo';
 import { normalizarComodo, normalizarEl, normalizarMovel } from '@/lib/dados';
 import { extrairJson, lerOpcoesIA, montarPrompt, pedidoCorrecao, type OpcaoIA } from '@/lib/ia';
+import {
+  criarLimite, ipDe, lerCorpo, listaDoGateway, mesmaOrigem, modelos, modelosGratis, perguntar, resposta, temGateway, temGemini, tipoDeFalha, type CodigoFalha
+} from '@/lib/servidor';
 import type { ComodoCompleto, ElParede, Movel, TipoParede } from '@/lib/tipos';
 
 export const runtime = 'nodejs';
@@ -15,33 +17,7 @@ export const maxDuration = 60;
 
 const ID_OK = /^[A-Za-z0-9_-]{1,80}$/;
 const MAX_CORPO = 96 * 1024;
-const PREFERIDOS = ['inclusionai/ling-3.1-flash-free', 'poolside/laguna-s-2.1-free'];
-
-/* ---------- proteção: mesmo site, tamanho e limite de uso ---------- */
-function mesmaOrigem(req: Request): boolean {
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
-  const origem = req.headers.get('origin');
-  if (origem) { try { return new URL(origem).host === host; } catch { return false; } }
-  const sfs = req.headers.get('sec-fetch-site');
-  return !sfs || sfs === 'same-origin';
-}
-
-const JANELA = 10 * 60_000, POR_IP = 8, TOTAL = 240;
-const usos = new Map<string, number[]>();
-let usosTotal: number[] = [];
-function passouDoLimite(ip: string): boolean {
-  const agora = Date.now(), dentro = (t: number) => agora - t < JANELA;
-  usosTotal = usosTotal.filter(dentro);
-  const meus = (usos.get(ip) || []).filter(dentro);
-  if (meus.length >= POR_IP || usosTotal.length >= TOTAL) { usos.set(ip, meus); return true; }
-  meus.push(agora); usosTotal.push(agora); usos.set(ip, meus);
-  if (usos.size > 5000) for (const [k, v] of usos) if (!v.some(dentro)) usos.delete(k);
-  return false;
-}
-const ipDe = (req: Request) => (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || req.headers.get('x-real-ip') || 'local';
-
-const resposta = (status: number, corpo: Record<string, unknown>) =>
-  Response.json(corpo, { status, headers: { 'cache-control': 'no-store' } });
+const passouDoLimite = criarLimite(8, 240);
 
 /* ---------- o pedido: um cômodo com portas, janelas etc. e os móveis dele ---------- */
 const registro = z.record(z.string(), z.unknown());
@@ -74,74 +50,17 @@ function montar(p: z.infer<typeof Pedido>): { q: ComodoCompleto; moveis: Movel[]
   return { q, moveis };
 }
 
-/* ---------- qual IA usar ---------- */
-interface Modelo { nome: string; modelo: LanguageModel }
-let cacheGratis: { t: number; ids: string[]; lista: boolean } | null = null;
-
-/** Os modelos gratuitos do AI Gateway (a lista muda com o tempo; guarda por 30 minutos). */
-async function modelosGratis(): Promise<string[]> {
-  const fixo = (process.env.CABEAI_MODELOS || '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (fixo.length) return fixo;
-  if (cacheGratis && Date.now() - cacheGratis.t < 30 * 60_000) return cacheGratis.ids;
-  let ids: string[] = [], lista = false;
-  try {
-    const { models } = await gateway.getAvailableModels();
-    lista = true;
-    ids = models
-      .filter((m) => (m.modelType == null || m.modelType === 'language') && (/-free$/.test(m.id) || (!!m.pricing && Number(m.pricing.input) === 0 && Number(m.pricing.output) === 0)))
-      .map((m) => m.id);
-  } catch { /* sem lista: usa os conhecidos */ }
-  const ordem = [...PREFERIDOS.filter((p) => !ids.length || ids.includes(p)), ...ids.filter((i) => !PREFERIDOS.includes(i))].slice(0, 4);
-  cacheGratis = { t: Date.now() - (lista ? 0 : 25 * 60_000), ids: ordem.length ? ordem : PREFERIDOS, lista };
-  return cacheGratis.ids;
-}
-
-const temGateway = (req: Request) => !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || req.headers.get('x-vercel-oidc-token'));
-const temGemini = () => !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-async function modelos(req: Request): Promise<Modelo[]> {
-  const out: Modelo[] = [];
-  if (temGemini()) {
-    const google = createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY });
-    const nome = process.env.CABEAI_GEMINI || 'gemini-flash-latest';
-    out.push({ nome: 'google/' + nome, modelo: google(nome) });
-  }
-  if (temGateway(req)) for (const id of await modelosGratis()) out.push({ nome: id, modelo: gateway(id) });
-  return out;
-}
-
 /* ---------- conversa com a IA ---------- */
 const total = (ops: OpcaoIA[]) => ops.reduce((t, o) => t + o.problemas, 0);
 const paraBruto = (ops: OpcaoIA[]) => ({
   opcoes: ops.map((o) => ({ titulo: o.titulo, explicacao: o.explicacao, moveis: Object.entries(o.itens).map(([id, i]) => ({ id, x: i.x, y: i.y, rot: i.rot })) }))
 });
-type Falha = { codigo: 'limite' | 'sem-ia' | 'invalido' | 'erro' };
-function tipoDeFalha(e: unknown): Falha['codigo'] {
-  const t = String((e as { name?: string })?.name || '') + ' ' + String((e as { message?: string })?.message || '');
-  const st = Number((e as { statusCode?: number })?.statusCode || 0);
-  if (st === 429 || /RateLimit|rate limit|quota|429/i.test(t)) return 'limite';
-  if (st === 401 || st === 403 || /Authentication|OIDC|API key|Forbidden|credit|payment|billing/i.test(t)) return 'sem-ia';
-  return 'erro';
-}
-
-async function perguntar(m: Modelo, messages: ModelMessage[], ms: number, sinal: AbortSignal): Promise<string> {
-  const r = await generateText({
-    model: m.modelo, messages, temperature: 0.5, maxOutputTokens: 4000, maxRetries: 0,
-    abortSignal: AbortSignal.any([sinal, AbortSignal.timeout(ms)])
-  });
-  return r.text;
-}
 
 export async function POST(req: Request) {
   if (!mesmaOrigem(req)) return resposta(403, { codigo: 'erro', erro: 'Pedido de outro site.' });
-  if (!(req.headers.get('content-type') || '').includes('application/json')) return resposta(415, { codigo: 'invalido', erro: 'Formato não aceito.' });
-  const tam = Number(req.headers.get('content-length') || 0);
-  if (tam > MAX_CORPO) return resposta(413, { codigo: 'grande' });
-  const texto = await req.text();
-  if (texto.length > MAX_CORPO) return resposta(413, { codigo: 'grande' });
-  let corpo: unknown;
-  try { corpo = JSON.parse(texto); } catch { return resposta(400, { codigo: 'invalido', erro: 'Pedido inválido.' }); }
-  const p = Pedido.safeParse(corpo);
+  const lido = await lerCorpo(req, MAX_CORPO);
+  if ('status' in lido) return resposta(lido.status, { codigo: lido.codigo, erro: 'Pedido inválido.' });
+  const p = Pedido.safeParse(lido.corpo);
   if (!p.success) return resposta(p.error.issues.some((i) => i.code === 'too_big') ? 413 : 400, { codigo: p.error.issues.some((i) => i.code === 'too_big') ? 'grande' : 'invalido', erro: 'Pedido inválido.' });
   const { q, moveis } = montar(p.data);
   const soltos = moveis.filter((m) => !m.fixo);
@@ -153,7 +72,7 @@ export async function POST(req: Request) {
 
   const inicio = Date.now(), resta = () => 55_000 - (Date.now() - inicio);
   const pedido = montarPrompt(q, soltos, moveis.filter((m) => m.fixo), p.data.idioma || 'pt');
-  let ultimaFalha: Falha['codigo'] = 'erro';
+  let ultimaFalha: CodigoFalha = 'erro';
   for (const m of lista) {
     if (resta() < 12_000) break;
     try {
@@ -184,7 +103,7 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   const gemini = temGemini(), gw = temGateway(req);
   const modelosGw = gw ? await modelosGratis() : [];
-  const info: Record<string, unknown> = { ia: gemini || gw, gemini, gateway: gw, listaDoGateway: !!cacheGratis?.lista, modelos: modelosGw };
+  const info: Record<string, unknown> = { ia: gemini || gw, gemini, gateway: gw, listaDoGateway: listaDoGateway(), modelos: modelosGw, visao: (await modelos(req, { visao: true })).map((m) => m.nome) };
   if (new URL(req.url).searchParams.get('teste') !== '1') return resposta(200, info);
   if (passouDoLimite(ipDe(req))) return resposta(429, { ...info, teste: 'limite' });
   for (const m of await modelos(req)) {

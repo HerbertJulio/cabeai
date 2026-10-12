@@ -113,6 +113,40 @@ export function imaComodo(c: Pos, x: number, y: number, outros: Pos[], lim: numb
   return { x: Math.round(mx <= lim ? bx : x), y: Math.round(my <= lim ? by : y) };
 }
 
+/* ---------- desenhar e esticar cômodos na planta ---------- */
+/** Ímã de uma borda: encosta na parede do vizinho (dividindo a parede), alinha com as bordas dele ou arredonda de 5 em 5 cm.
+ *  "v" é a coordenada de dentro do cômodo; "ini" é a borda da esquerda (ou de cima), "fim" a da direita (ou de baixo). */
+export function imaBorda(v: number, eixo: 'x' | 'y', outros: Pos[], lim: number, lado?: 'ini' | 'fim'): number {
+  let melhor = Math.round(v / 5) * 5, md = lim + 1e-9;
+  for (const o of outros) {
+    const a = eixo === 'x' ? o.x : o.y, t = eixo === 'x' ? o.w : o.h;
+    const cands = lado === 'ini' ? [a + t + T, a] : lado === 'fim' ? [a - T, a + t] : [a - T, a, a + t, a + t + T];
+    for (const c of cands) { const d = Math.abs(c - v); if (d < md) { md = d; melhor = c; } }
+  }
+  return Math.round(melhor);
+}
+
+/** O retângulo desenhado de "p0" até "p1", com o ímã em cada borda. */
+export function retDesenhado(p0: { x: number; y: number }, p1: { x: number; y: number }, outros: Pos[], lim: number): Pos {
+  const x1 = imaBorda(Math.min(p0.x, p1.x), 'x', outros, lim, 'ini'), x2 = imaBorda(Math.max(p0.x, p1.x), 'x', outros, lim, 'fim');
+  const y1 = imaBorda(Math.min(p0.y, p1.y), 'y', outros, lim, 'ini'), y2 = imaBorda(Math.max(p0.y, p1.y), 'y', outros, lim, 'fim');
+  return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
+}
+
+/** Trecho da parede de "a" que ele divide com "b" (cm ao longo da parede de "a", como o "inicio" das portas), ou null. */
+export function paredeDividida(a: Pos, b: Pos): { parede: Parede; u1: number; u2: number } | null {
+  const perto = (p: number, q: number) => Math.abs(p - q) < 1;
+  const trecho = (parede: Parede, i1: number, i2: number, j1: number, j2: number, base: number) => {
+    const u1 = Math.max(i1, j1) - base, u2 = Math.min(i2, j2) - base;
+    return u2 - u1 > 0.5 ? { parede, u1: Math.round(u1), u2: Math.round(u2) } : null;
+  };
+  if (perto(b.x, a.x + a.w + T)) return trecho('direita', a.y, a.y + a.h, b.y, b.y + b.h, a.y);
+  if (perto(a.x, b.x + b.w + T)) return trecho('esquerda', a.y, a.y + a.h, b.y, b.y + b.h, a.y);
+  if (perto(b.y, a.y + a.h + T)) return trecho('baixo', a.x, a.x + a.w, b.x, b.x + b.w, a.x);
+  if (perto(a.y, b.y + b.h + T)) return trecho('cima', a.x, a.x + a.w, b.x, b.x + b.w, a.x);
+  return null;
+}
+
 export type LadoCasa = 'esq' | 'dir' | 'cima' | 'baixo';
 export interface Espaco { lado: LadoCasa; gap: number; de: number; ate: number; em: number; eixo: 'x' | 'y'; vizinho: string }
 
@@ -198,7 +232,7 @@ export function portasVizinhas(c: ComodoEls, outros: ComodoEls[], els: ElParede[
       if (minhas.some((m) => m.parede === minha && m.inicio < u2 - 0.5 && m.inicio + m.largura > u1 + 0.5)) continue;
       out.push({
         id: e.id, tipo: 'porta', nome: `${e.nome} (${o.nome})`, comodo: c.id, parede: minha, inicio: Math.round(u1), largura: Math.round(u2 - u1),
-        criado: e.criado, dobradica: e.dobradica, abre: e.abre === 'dentro' ? 'fora' : 'dentro', herdada: true, origem: e.id, origemComodo: o.id
+        criado: e.criado, dobradica: e.dobradica, abre: e.abre === 'vao' ? 'vao' : e.abre === 'dentro' ? 'fora' : 'dentro', herdada: true, origem: e.id, origemComodo: o.id
       });
     }
   }

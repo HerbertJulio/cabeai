@@ -15,6 +15,8 @@ export type TipoParede = 'porta' | 'janela' | 'ar' | 'interruptor';
 /** Ponto na parede (o item de parede "interruptor"): elétrico (interruptor, tomada, os dois, arandela),
  *  de sinal (TV, internet) ou de água e gás (água, esgoto, gás). */
 export type Ponto = 'interruptor' | 'tomada' | 'ambos' | 'luz' | 'tv' | 'rede' | 'agua' | 'esgoto' | 'gas';
+/** O que é o cômodo (para o nome padrão, a cor do piso e as portas automáticas). */
+export type TipoComodo = 'sala' | 'quarto' | 'banheiro' | 'cozinha' | 'corredor' | 'varanda' | 'servico' | 'garagem' | 'outro';
 export type Vista = 'um' | 'lado' | 'casa';
 export type Modo = 'simples' | 'avancado';
 export type Escopo = 'casa' | 'comodo';
@@ -39,6 +41,8 @@ export interface Comodo {
   criado: number;
   /** Corredor: um cômodo comprido que liga outros. */
   corredor?: boolean;
+  /** Sala, quarto, banheiro… (cômodos antigos não têm). */
+  tipo?: TipoComodo;
 }
 
 export interface Movel {
@@ -91,7 +95,8 @@ export interface ElParede {
   largura: number;
   criado: number;
   dobradica?: 'a' | 'b';
-  abre?: 'dentro' | 'fora';
+  /** Para onde a folha abre; "vao" = vão livre, sem porta (passagem). */
+  abre?: 'dentro' | 'fora' | 'vao';
   abertura?: 'correr' | 'abrir';
   folhas?: 1 | 2;
   folga?: number;

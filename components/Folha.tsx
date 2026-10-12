@@ -6,7 +6,7 @@ import { moveisDo } from '@/lib/dados';
 import { valsMovel, valsParede, validarMovel, validarParede } from '@/lib/formularios';
 import { centrar } from '@/lib/geometria';
 import {
-  abrirDialogo, alternar, atualizar, duplicar, editarItem, focarComodo, girar, iniciarAdd, levar, pedirRemover, salvarEl, salvarMovel, travar, useApp
+  abrirDialogo, alternar, atualizar, duplicar, editarItem, focarComodo, girar, girarComodo, iniciarAdd, levar, pedirRemover, salvarEl, salvarMovel, travar, useApp
 } from '@/lib/store';
 import type { ElParede, Movel } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
@@ -113,7 +113,7 @@ export default function Folha() {
         <ChipsEl q={q} el={e} />
         <div className="grade-acoes">
           <button className="btn prim" type="button" data-f="editar" onClick={editarItem}>{tx('Editar', 'Edit')}</button>
-          {e.tipo === 'porta' && <>
+          {e.tipo === 'porta' && e.abre !== 'vao' && <>
             <button className="btn" type="button" data-f="dob" onClick={() => alternar('dob')}>{tx('Trocar lado da dobradiça', 'Switch hinge side')}</button>
             <button className="btn" type="button" data-f="abre" onClick={() => alternar('abre')}>{e.abre === 'dentro' ? tx('Abrir para fora', 'Open outward') : tx('Abrir para dentro', 'Open inward')}</button>
           </>}
@@ -130,6 +130,7 @@ export default function Folha() {
       <Topo t={c.nome} sub={`${fmtM(c.w)} × ${fmtM(c.h)} m${as.length > 1 ? ' · ' + (dados.andares[c.andar]?.nome || '') : ''}`} />
       <div className="grade-acoes">
         <button className="btn prim" type="button" data-f="q-editar" onClick={() => abrirDialogo('comodo', { id: c.id })}>{tx('Editar medidas', 'Edit measurements')}</button>
+        <button className="btn" type="button" data-f="q-girar" onClick={() => girarComodo(c.id)}>{tx('Girar 90°', 'Rotate 90°')}</button>
         <button className="btn" type="button" data-f="q-ver" onClick={() => focarComodo(c.id, true)}>{tx('Ver só este cômodo', 'View only this room')}</button>
         <button className="btn" type="button" data-f="q-add" onClick={() => iniciarAdd('movel', { comodo: c.id })}>{tx('Adicionar um item', 'Add an item')}</button>
         {Object.keys(dados.comodos).length > 1 && <button className="btn" type="button" data-f="q-lado" onClick={() => abrirDialogo('comodo', { id: c.id, onde: 'direita' })}>{tx('Ao lado de outro…', 'Next to another…')}</button>}
@@ -137,7 +138,7 @@ export default function Folha() {
         {as.length > 1 && <button className="btn" type="button" data-f="q-andar" onClick={() => abrirDialogo('andar-comodo', { id: c.id })}>{tx('Mudar de andar…', 'Move to another floor…')}</button>}
         <button className="btn perigo" type="button" data-f="q-remover" onClick={() => abrirDialogo('remover-comodo', { id: c.id })}>{tx('Remover cômodo', 'Remove room')}</button>
       </div>
-      <p className="nota">{tx('Arraste o cômodo pelo nome para mudar o lugar dele na planta. Perto de outro cômodo, o ímã encosta as paredes.', 'Drag the room by its name to move it on the floor plan. Near another room, snap pulls the walls together.')}</p>
+      <p className="nota">{tx('Arraste o cômodo pelo piso ou pelo nome para mudar o lugar dele, e as alças azuis das paredes para esticar. Perto de outro cômodo, o ímã encosta as paredes.', 'Drag the room by its floor or its name to move it, and the blue handles on the walls to stretch it. Near another room, snap pulls the walls together.')}</p>
     </>;
   } else return null;
   return (

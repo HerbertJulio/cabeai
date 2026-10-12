@@ -6,7 +6,7 @@ import { andaresOrdem, comodosDoAndar, comodosOrdem } from '@/lib/consultas';
 import { paraArquivo } from '@/lib/dados';
 import {
   abrirDialogo, alternar, duplicar, editarItem, fecharMenu, focarComodo, girar, iniciarAdd, levar, mudarIdioma, mudarModo, mudarVista, pedirRemover,
-  sairCenario, selecionarComodo, toast, travar, useApp, usarCenario, type InfoMenu
+  girarComodo, sairCenario, selecionarComodo, toast, travar, useApp, usarCenario, type InfoMenu
 } from '@/lib/store';
 import { tx } from '@/lib/i18n';
 import { clamp } from '@/lib/util';
@@ -36,7 +36,7 @@ function blocos(m: InfoMenu): Bloco[] {
     }
     if (m.eid && d.els[m.eid]) {
       const e = d.els[m.eid], its: Item[] = [{ a: 'editar', t: tx('Editar…', 'Edit…') }];
-      if (e.tipo === 'porta') its.push({ a: 'dob', t: tx('Trocar o lado da dobradiça', 'Switch the hinge side') }, { a: 'abre', t: e.abre === 'dentro' ? tx('Abrir para fora', 'Open outward') : tx('Abrir para dentro', 'Open inward') });
+      if (e.tipo === 'porta' && e.abre !== 'vao') its.push({ a: 'dob', t: tx('Trocar o lado da dobradiça', 'Switch the hinge side') }, { a: 'abre', t: e.abre === 'dentro' ? tx('Abrir para fora', 'Open outward') : tx('Abrir para dentro', 'Open inward') });
       if (e.tipo === 'janela') its.push({ a: 'jan', t: e.abertura === 'abrir' ? tx('Mudar para de correr', 'Change to sliding') : tx('Mudar para de abrir', 'Change to hinged') });
       its.push({ a: 'duplicar', t: tx('Duplicar', 'Duplicate') });
       return [{ titulo: e.nome, itens: its }, { itens: [{ a: 'remover', t: tx('Remover…', 'Remove…'), perigo: true }] }];
@@ -56,6 +56,7 @@ function blocos(m: InfoMenu): Bloco[] {
     return [{ titulo: q.nome, itens: [{ a: 'q-editar', t: tx('Editar nome e medidas…', 'Edit name and measurements…') }, { a: 'q-ver', t: tx('Ver só este cômodo', 'View only this room') }, { a: 'q-add', t: tx('Adicionar um item…', 'Add an item…') },
       ...(s.vista === 'casa' ? [{ a: 'q-sel', t: tx('Mover na planta da casa', 'Move on the home plan') }] : []),
       ...(comodosOrdem(d).length > 1 ? [{ a: 'q-lado', t: tx('Colocar ao lado de outro cômodo…', 'Place next to another room…') }] : []),
+      { a: 'q-girar', t: tx('Girar 90°', 'Rotate 90°') },
       { a: 'q-corredor', t: tx('Ligar por um corredor…', 'Connect with a hallway…') },
       ...(as.length > 1 ? [{ a: 'q-andar', t: tx('Mudar de andar…', 'Move to another floor…') }] : [])] },
     { itens: [{ a: 'q-remover', t: tx('Remover cômodo…', 'Remove room…'), perigo: true }] }];
@@ -108,10 +109,11 @@ function executar(a: string, m: InfoMenu) {
     case 'q-editar': abrirDialogo('comodo', { id: qid }); break;
     case 'q-ver': focarComodo(qid, true); break;
     case 'q-add': focarComodo(qid, false); iniciarAdd('movel', { comodo: qid }); break;
-    case 'q-sel': selecionarComodo(qid); toast(tx('Arraste o cômodo pelo nome para mudar o lugar dele. Setas do teclado também movem.', 'Drag the room by its name to move it. The arrow keys move it too.')); break;
+    case 'q-sel': selecionarComodo(qid); toast(tx('Arraste o cômodo pelo piso ou pelo nome para mudar o lugar dele; as alças azuis esticam as paredes. Setas do teclado também movem.', 'Drag the room by its floor or name to move it; the blue handles stretch the walls. The arrow keys move it too.')); break;
     case 'q-andar': abrirDialogo('andar-comodo', { id: qid }); break;
     case 'q-lado': abrirDialogo('comodo', { id: qid, onde: 'direita' }); break;
     case 'q-corredor': abrirDialogo('corredor', { a: qid }); break;
+    case 'q-girar': girarComodo(qid); break;
     case 'q-remover': abrirDialogo('remover-comodo', { id: qid }); break;
     case 'a-comodo': abrirDialogo('comodo', { andar: m.andar }); break;
     case 'a-nome': abrirDialogo('andar-nome', { id: m.andar }); break;

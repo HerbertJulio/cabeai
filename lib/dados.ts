@@ -1,5 +1,5 @@
 // Dados: normalização, arquivo (exportar/importar), leitura do formato antigo (versão 1) e o exemplo.
-import { LIM_BAU, LIM_CADEIRA, LIM_COMODO, LIM_MOVEL, MAX_CADEIRAS, PAREDES, TIPOS, TIPOS_PAREDE, pontoDe, tipoMovel } from './catalogo';
+import { LIM_BAU, LIM_CADEIRA, LIM_COMODO, LIM_MOVEL, MAX_CADEIRAS, PAREDES, TIPOS, TIPOS_PAREDE, ehTipoComodo, pontoDe, tipoMovel } from './catalogo';
 import { ordenarAndares, portasVizinhas, posicaoNova } from './casa';
 import { normRot } from './geometria';
 import { tx } from './i18n';
@@ -24,7 +24,8 @@ export function normalizarComodo(id: string, v: Record<string, unknown>, andar: 
     w: clamp(Math.round(num(v.w, 300)), LIM_COMODO.min, LIM_COMODO.max), h: clamp(Math.round(num(v.h, 300)), LIM_COMODO.min, LIM_COMODO.max),
     andar: typeof v.andar === 'string' && v.andar ? v.andar : andar,
     x: Math.round(num(v.x, 0)), y: Math.round(num(v.y, 0)), criado: num(v.criado, 0),
-    ...(v.corredor ? { corredor: true } : {})
+    ...(v.corredor || v.tipo === 'corredor' ? { corredor: true } : {}),
+    ...(ehTipoComodo(v.tipo) ? { tipo: v.tipo } : v.corredor ? { tipo: 'corredor' as const } : {})
   };
 }
 
@@ -59,7 +60,7 @@ export function normalizarEl(tipo: TipoParede, id: string, v: Record<string, unk
     parede: PAREDES.includes(v.parede as never) ? (v.parede as ElParede['parede']) : tp.parede,
     inicio: Math.max(0, num(v.inicio, 0)), largura: clamp(num(v.largura, tp.larg), tp.min, tp.max), criado: num(v.criado, 0)
   };
-  if (tipo === 'porta') { e.dobradica = v.dobradica === 'b' ? 'b' : 'a'; e.abre = v.abre === 'fora' ? 'fora' : 'dentro'; }
+  if (tipo === 'porta') { e.dobradica = v.dobradica === 'b' ? 'b' : 'a'; e.abre = v.abre === 'fora' || v.abre === 'vao' ? v.abre : 'dentro'; }
   if (tipo === 'janela') { e.abertura = v.abertura === 'abrir' ? 'abrir' : 'correr'; e.folhas = num(v.folhas, 2) === 1 ? 1 : 2; }
   if (tipo === 'ar') e.folga = clamp(num(v.folga, 30), 0, 200);
   if (tipo === 'interruptor') e.ponto = pontoDe(v);

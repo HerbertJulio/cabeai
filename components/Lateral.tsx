@@ -3,7 +3,7 @@ import { PAREDE_CURTA, pontoDe } from '@/lib/catalogo';
 import { andaresOrdem, avaliacao, comodosDoAndar, cq } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { geoEl } from '@/lib/geometria';
-import { abrirDialogo, atualizar, criarAndar, focarComodo, iniciarAdd, selecionar, toast, useApp } from '@/lib/store';
+import { abrirDialogo, atualizar, criarAndar, focarComodo, iniciarAdd, modoDesenho, selecionar, toast, useApp } from '@/lib/store';
 import { tx } from '@/lib/i18n';
 import { fmtM } from '@/lib/util';
 import { Icone } from './icones';
@@ -68,6 +68,8 @@ export default function Lateral() {
         {as.length > 0 && <div className="acoes">
           <button type="button" className="btn peq andar-novo" id="b-novo-andar" onClick={() => { const id = criarAndar(), nome = useApp.getState().dados.andares[id].nome; toast(tx(`${nome} criado. Agora crie os cômodos dele.`, `${nome} created. Now add its rooms.`)); abrirDialogo('comodo', { andar: id }); }}>{tx('+ Novo andar', '+ New floor')}</button>
           {Object.keys(dados.comodos).length > 0 && <button type="button" className="btn peq andar-novo" id="b-novo-corredor" onClick={() => { fecharGaveta(); abrirDialogo('corredor'); }}>{tx('+ Corredor', '+ Hallway')}</button>}
+          <button type="button" className="btn peq andar-novo" id="b-lat-desenhar" onClick={() => { fecharGaveta(); modoDesenho(true); }}><Icone n="lapis" />{tx('Desenhar', 'Draw')}</button>
+          <button type="button" className="btn peq andar-novo" id="b-lat-foto" onClick={() => { fecharGaveta(); abrirDialogo('foto-desenho'); }}><Icone n="camera" />{tx('Foto do desenho', 'Sketch photo')}</button>
         </div>}
       </section>
       <section className="lat-sec" id="lat-itens" aria-label={tx('Itens do cômodo', 'Room items')}>

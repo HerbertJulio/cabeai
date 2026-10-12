@@ -124,7 +124,7 @@ export function validarParede(v: Valores, tipo: TipoParede, q: Comodo, atual: El
   Object.assign(c, { parede, largura: larg, inicio: Math.round(clamp(d == null ? (L - larg) / 2 : d, 0, L - larg)) });
   const nome = s(v.nome).slice(0, 30);
   if (nome) c.nome = nome;
-  if (tipo === 'porta') { c.dobradica = v.dobradica === 'b' ? 'b' : 'a'; c.abre = v.abre === 'fora' ? 'fora' : 'dentro'; }
+  if (tipo === 'porta') { c.dobradica = v.dobradica === 'b' ? 'b' : 'a'; c.abre = v.abre === 'fora' || v.abre === 'vao' ? v.abre : 'dentro'; }
   if (tipo === 'janela') { c.abertura = v.abertura === 'abrir' ? 'abrir' : 'correr'; c.folhas = v.folhas === '1' ? 1 : 2; }
   if (tipo === 'interruptor') c.ponto = pontoDe(v);
   if (tipo === 'ar') {

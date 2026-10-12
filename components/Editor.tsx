@@ -7,7 +7,7 @@ import { CHAVE, lerArquivo, lerSalvo, normalizarDados, paraSalvar } from '@/lib/
 import { geoEl, prender } from '@/lib/geometria';
 import { ehIdioma, idiomaDoNavegador, tx } from '@/lib/i18n';
 import {
-  abrirDialogo, aplicarIdioma, atualizar, duplicar, enquadrar, estadoAtual, estreito, fecharMenu, garantirComodo, girar, limparSel, moverComodo, pedirRemover, salvarEl,
+  abrirDialogo, aplicarIdioma, atualizar, duplicar, enquadrar, estadoAtual, estreito, fecharMenu, garantirComodo, girar, limparSel, modoDesenho, moverComodo, pedirRemover, salvarEl,
   salvarMovel, selecionar, toast, useApp, zoomEm, type Estado
 } from '@/lib/store';
 import type { Modo, Vista } from '@/lib/tipos';
@@ -18,7 +18,7 @@ import Inspetor from './Inspetor';
 import Lateral from './Lateral';
 import Menu from './Menu';
 import Planta from './Planta';
-import { Avisos, Botoes, Controles, Vazio } from './Sobre';
+import { Avisos, BarraDesenho, Botoes, Controles, Vazio } from './Sobre';
 import Topo from './Topo';
 
 const PREFS = 'cabeai:prefs';
@@ -43,6 +43,7 @@ export default function Editor() {
   const latAberta = useApp((s) => s.latAberta);
   const est = useApp((s) => s.estreito);
   const lingua = useApp((s) => s.idioma);
+  const desenhando = useApp((s) => s.desenho.ativo);
   const arquivo = useRef<HTMLInputElement>(null);
 
   // abrir: dados salvos neste navegador e as preferências
@@ -112,6 +113,7 @@ export default function Editor() {
       if (e.key === 'Escape') {
         if (s.menu) { e.preventDefault(); fecharMenu(); return; }
         if (s.dlg) return;
+        if (s.desenho.ativo) { modoDesenho(false); return; }
         if (s.latAberta) { atualizar((x) => { x.latAberta = false; }); return; }
         if (s.folha) atualizar((x) => { x.folha = false; x.folhaModo = 'acoes'; });
         else if (s.sel || s.selEl || s.selComodo) limparSel();
@@ -180,7 +182,7 @@ export default function Editor() {
     r.readAsText(f);
   };
 
-  const cls = ['app', modo === 'avancado' ? 'avancado' : '', `vista-${vista}`, !lateral ? 'sem-lateral' : '', est && latAberta ? 'lat-aberta' : '', carregado ? 'pronto' : 'abrindo'].filter(Boolean).join(' ');
+  const cls = ['app', modo === 'avancado' ? 'avancado' : '', `vista-${vista}`, !lateral ? 'sem-lateral' : '', est && latAberta ? 'lat-aberta' : '', carregado ? 'pronto' : 'abrindo', desenhando ? 'desenhando' : ''].filter(Boolean).join(' ');
   // trocar o idioma monta a tela de novo, já com os textos no idioma escolhido
   return (
     <Fragment key={lingua}>
@@ -195,6 +197,7 @@ export default function Editor() {
               <Planta />
               <Avisos />
               <Botoes />
+              <BarraDesenho />
               <Controles />
               <Vazio />
             </div>
