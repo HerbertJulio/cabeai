@@ -80,7 +80,7 @@ export function portaEntre(a: Comodo, b: Comodo, els: ElParede[]): Omit<ElParede
 }
 
 /** Porta (ou vão) no meio do trecho de parede que "dono" divide com "outro", se couber e se ainda não houver porta ali. */
-function portaNaParede(dono: Comodo, outro: Comodo, abre: ElParede['abre'], els: ElParede[], minimo = 70): Omit<ElParede, 'id' | 'criado'> | null {
+function portaNaParede(dono: Comodo, outro: Comodo, abre: ElParede['abre'], els: ElParede[], minimo = 70, auto = true): Omit<ElParede, 'id' | 'criado'> | null {
   const pd = paredeDividida(dono, outro); if (!pd) return null;
   const vao = pd.u2 - pd.u1;
   if (vao < minimo) return null;
@@ -93,19 +93,67 @@ function portaNaParede(dono: Comodo, outro: Comodo, abre: ElParede['abre'], els:
   const cruza = (e: ElParede, comodo: string, parede: Parede, u1: number, u2: number) => e.comodo === comodo && e.tipo === 'porta' && e.parede === parede && e.inicio < u2 && e.inicio + e.largura > u1;
   if (els.some((e) => cruza(e, dono.id, pd.parede, pd.u1, pd.u2) || (pdOutro && cruza(e, outro.id, pdOutro.parede, pdOutro.u1, pdOutro.u2)))) return null;
   const nome = abre === 'vao' ? tx('Passagem', 'Opening') : entrada ? tx('Entrada', 'Entrance') : tx('Porta', 'Door');
-  return { tipo: 'porta', nome, comodo: dono.id, parede: pd.parede, inicio: Math.round(pd.u1 + (vao - largura) / 2), largura, dobradica: 'a', abre };
+  return { tipo: 'porta', nome, comodo: dono.id, parede: pd.parede, inicio: Math.round(pd.u1 + (vao - largura) / 2), largura, dobradica: 'a', abre, ...(auto ? { auto: true, liga: outro.id } : {}) };
 }
+
+/** Depois que cômodos mudaram de lugar ou de tamanho: as portas automáticas e as paredes tiradas que perderam o
+ *  vizinho saem; as que continuam encostadas se ajeitam no trecho de parede que sobrou (a parede tirada ocupa o
+ *  trecho inteiro; a porta fica onde está se ainda couber, senão vai para o meio e, se precisar, encolhe). */
+export function revisarLigacoes(comodos: Record<string, Comodo>, els: ElParede[]): { remover: string[]; mudar: { id: string; inicio: number; largura: number }[] } {
+  const remover: string[] = [], mudar: { id: string; inicio: number; largura: number }[] = [];
+  for (const e of els) {
+    if (e.tipo !== 'porta' || e.herdada || (!e.auto && !e.semParede) || !e.liga) continue;
+    const a = comodos[e.comodo], b = comodos[e.liga];
+    const pd = a && b && a.andar === b.andar ? paredeDividida(a, b) : null;
+    if (!pd || pd.parede !== e.parede) { remover.push(e.id); continue; }
+    const vao = pd.u2 - pd.u1;
+    if (e.semParede) {
+      if (vao < 10) remover.push(e.id);
+      else if (e.inicio !== pd.u1 || e.largura !== vao) mudar.push({ id: e.id, inicio: pd.u1, largura: vao });
+      continue;
+    }
+    if (e.inicio >= pd.u1 - 0.5 && e.inicio + e.largura <= pd.u2 + 0.5) continue;
+    const largura = Math.round(Math.min(e.largura, vao - 10));
+    if (largura < (e.abre === 'vao' ? 40 : 60)) { remover.push(e.id); continue; }
+    mudar.push({ id: e.id, inicio: Math.round(pd.u1 + (vao - largura) / 2), largura });
+  }
+  return { remover, mudar };
+}
+
+/** Tirar a parede entre "a" e "b": no lugar dela fica um vão do tamanho da parede dividida inteira (é como se os dois
+ *  cômodos fossem um espaço só, em L ou do jeito que ficarem). Portas, janelas e pontos que estavam nessa parede,
+ *  dos dois lados, saem junto. */
+export function paredeTirada(a: Comodo, b: Comodo, els: ElParede[]): { el: Omit<ElParede, 'id' | 'criado'>; remover: ElParede[] } | null {
+  if (a.andar !== b.andar) return null;
+  const pa = paredeDividida(a, b), pb = paredeDividida(b, a);
+  if (!pa || !pb || pa.u2 - pa.u1 < 10) return null;
+  const naParede = (e: ElParede, c: Comodo, p: { parede: Parede; u1: number; u2: number }) => {
+    if (e.comodo !== c.id || e.parede !== p.parede) return false;
+    const g = geoEl(c, e);
+    return g.a < p.u2 - 0.5 && g.b > p.u1 + 0.5;
+  };
+  const remover = els.filter((e) => !e.herdada && (naParede(e, a, pa) || naParede(e, b, pb)));
+  return {
+    el: { tipo: 'porta', nome: tx('Sem parede', 'No wall'), comodo: a.id, parede: pa.parede, inicio: pa.u1, largura: pa.u2 - pa.u1, dobradica: 'a', abre: 'vao', semParede: true, liga: b.id },
+    remover
+  };
+}
+
+/** A parede tirada entre "a" e "b" (de qualquer um dos lados), se houver. */
+export const semParedeEntre = (a: string, b: string, els: ElParede[]): ElParede | undefined =>
+  els.find((e) => e.tipo === 'porta' && e.semParede && !e.herdada && ((e.comodo === a && e.liga === b) || (e.comodo === b && e.liga === a)));
 
 /** Quem fica com a porta: ela abre para dentro do cômodo mais fechado (quarto, banheiro…); empate, para o menor. */
 const peso = (t: TipoComodo) => (t === 'corredor' || t === 'varanda' ? 0 : ABERTOS.includes(t) ? 1 : 2);
 
-/** Porta (ou passagem sem porta, com "porta" false) pedida entre dois cômodos que dividem a parede. */
+/** Porta (ou passagem sem porta, com "porta" false) pedida entre dois cômodos que dividem a parede. Ela é da casa,
+ *  não automática: fica onde está quando a pessoa acerta as medidas. */
 export function portaLigacao(a: Comodo, b: Comodo, porta: boolean, els: ElParede[]): Omit<ElParede, 'id' | 'criado'> | null {
   if (a.andar !== b.andar) return null;
-  if (!porta) return portaNaParede(a, b, 'vao', els);
+  if (!porta) return portaNaParede(a, b, 'vao', els, 70, false);
   const pa = peso(tipoDoComodo(a)), pb = peso(tipoDoComodo(b));
   const aDono = pa > pb || (pa === pb && a.w * a.h <= b.w * b.h);
-  return portaNaParede(aDono ? a : b, aDono ? b : a, 'dentro', els);
+  return portaNaParede(aDono ? a : b, aDono ? b : a, 'dentro', els, 70, false);
 }
 
 /** Quanto da parede do cômodo é dividido com vizinhos (de 0 a 1). */

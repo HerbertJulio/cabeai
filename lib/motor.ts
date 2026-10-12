@@ -19,7 +19,7 @@ export function aleatorio(semente: number): () => number {
 
 function estaticoOk(q: ComodoCompleto, m: Movel, r: Ret): boolean {
   if (r.x1 < -0.5 || r.y1 < -0.5 || r.x2 > q.w + 0.5 || r.y2 > q.h + 0.5) return false;
-  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && naFrentePorta(q, p, r)))) return false;
+  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && !p.semParede && naFrentePorta(q, p, r)))) return false;
   if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   return true;
@@ -119,7 +119,7 @@ function notaLocal(q: ComodoCompleto, m: Movel, c: Cand, col: Bloco[]): number {
   if (m.tipo === 'mesa') for (const j of q.janelas) { const g = geoEl(q, j); if (noTrecho(q, j.parede, g.a, g.b, c.r, 90)) { s += 10; break; } }
   if (m.tipo === 'fogao' || m.tipo === 'geladeira') { const pia = col.find((o) => o.m.tipo === 'pia'); if (pia) { const dd = distRet(c.r, pia.r); s += dd < 3 ? (m.tipo === 'fogao' ? 14 : 6) : -dd / 20; } }
   if (m.tipo === 'sofa') { const tv = col.find((o) => o.m.tipo === 'rack'); if (tv) { const dd = distRet(c.r, tv.r); s += dd >= 150 && dd <= 400 ? 14 : -6; } }
-  for (const p of q.portas) { const g = geoPorta(q, p); if (noTrecho(q, p.parede, g.a - 20, g.b + 20, c.r, g.r + 45)) s -= 14; }
+  for (const p of q.portas) { if (p.semParede) continue; const g = geoPorta(q, p); if (noTrecho(q, p.parede, g.a - 20, g.b + 20, c.r, g.r + 45)) s -= 14; }
   s += bonusPontos(pontosUsados(q, m.tipo, c.r));
   return s;
 }
@@ -129,8 +129,8 @@ function notaLocal(q: ComodoCompleto, m: Movel, c: Cand, col: Bloco[]): number {
 const bonusPontos = (ps: Ponto[]): number => ps.reduce((s, p) => s + (p === 'tomada' ? 5 : 16), 0);
 
 const PRIOR: Record<string, number> = {
-  'cama': 0, 'guarda-roupa': 1, 'sofa': 1, 'pia': 1, 'berco': 2, 'geladeira': 2, 'fogao': 2, 'armario': 3, 'comoda': 3,
-  'rack': 3, 'estante': 4, 'mesa': 4, 'lavadora': 4, 'outro': 5, 'cadeira': 6
+  'cama': 0, 'box': 0, 'banheira': 0, 'guarda-roupa': 1, 'sofa': 1, 'pia': 1, 'vaso': 1, 'berco': 2, 'geladeira': 2, 'fogao': 2, 'lavatorio': 2,
+  'armario': 3, 'comoda': 3, 'rack': 3, 'tanque': 3, 'estante': 4, 'mesa': 4, 'lavadora': 4, 'poltrona': 4, 'outro': 5, 'cabeceira': 5, 'cadeira': 6
 };
 
 type Pos = { x: number; y: number; rot: number; r: Ret };

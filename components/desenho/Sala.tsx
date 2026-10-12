@@ -1,9 +1,10 @@
 // Desenho de um cômodo (unidades = cm; origem = canto interno de cima à esquerda).
 import type { ReactNode } from 'react';
-import { AR_PROF, NOME_PAREDE, PAREDES, PONTO_NOME, T, ehInterruptor, horizontal, pontoDe } from '@/lib/catalogo';
+import { AR_PROF, NOME_PAREDE, PAREDES, PONTO_NOME, T, ehInterruptor, horizontal, pontoDe, tipoDoComodo } from '@/lib/catalogo';
 import { tx } from '@/lib/i18n';
 import { compParede, folgas, folhaDe, geoEl, geoPorta, nivel, uv2xy, zonaAr, type Folga } from '@/lib/geometria';
-import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Vista } from '@/lib/tipos';
+import { areaM2, fmtArea } from '@/lib/resumo';
+import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Ret, Vista } from '@/lib/tipos';
 import { fmtM, n1, pl } from '@/lib/util';
 import { Desenho, DesenhoAbertura, Rotulo, transfLocal } from './Movel';
 
@@ -41,8 +42,20 @@ function Paredes({ q }: { q: Q }) {
   return <>{out}</>;
 }
 
+/** Parede tirada: o piso continua pelo vão (uma linha tracejada clarinha marca onde um cômodo vira o outro). */
+function SemParede({ q, p }: { q: Q; p: ElParede }) {
+  const g = geoEl(q, p);
+  return (
+    <g className="sem-parede" aria-hidden="true">
+      <rect className={`piso piso-junta${q.corredor ? ' corredor' : ''} q-${tipoDoComodo(q)}`} {...rectEm(q, p.parede, g.a, -T - 0.5, g.b, 0.5)} />
+      <line className="junta-l" {...linhaEm(q, p.parede, g.a, -T / 2, g.b, -T / 2)} />
+    </g>
+  );
+}
+
 function Porta({ q, p, sel, bloq, vista }: { q: Q; p: ElParede; sel: boolean; bloq: boolean; vista: Vista }) {
   if (p.herdada && vista === 'casa') return null; // o vizinho já desenha essa porta; aqui fica só o vão
+  if (p.semParede) return <SemParede q={q} p={p} />;
   const g = geoPorta(q, p), cls = `porta-el${sel ? ' sel' : ''}${bloq ? ' bloq' : ''}${p.herdada ? ' herdada' : ''}${p.abre === 'vao' ? ' vao' : ''}`;
   const comoAbre = p.abre === 'vao' ? tx('vão livre, sem porta', 'open doorway, no door') : tx(`abre para ${p.abre}`, `opens ${p.abre === 'dentro' ? 'inward' : 'outward'}`);
   const aria = p.herdada ? undefined : tx(`${p.nome}, porta de ${fmtM(g.r)} metros na parede ${NOME_PAREDE[p.parede]}, ${comoAbre}. Enter abre as opções; setas movem pela parede.`, `${p.nome}, ${fmtM(g.r)}-meter door on the ${NOME_PAREDE[p.parede]} wall, ${comoAbre}. Enter opens the options; arrow keys move it along the wall.`);
@@ -121,13 +134,17 @@ const minuscula = (s: string): string => (/^.[A-Z]/.test(s) ? s : s.charAt(0).to
 
 /** Largura aproximada do rótulo de um ponto (cm do desenho; letras de 8,5 em caixa alta). */
 const larguraRotulo = (nome: string) => nome.length * 4.3 + 4;
-/** Rótulos dos pontos ficam do lado de fora da parede. Quando dois pontos estão perto na mesma parede (água e
- *  esgoto, TV e internet), o rótulo do segundo vai para uma faixa mais longe da parede, para não encavalar. */
-function faixasRotulos(q: Q, maxFaixas: (p: Parede) => number): Map<string, number> {
+const textoJanela = (q: Q, j: ElParede) => { const g = geoEl(q, j); return `${j.nome} · ${fmtM(g.b - g.a)}`; };
+/** Rótulos que ficam do lado de fora da parede: os dos pontos e, na planta da casa, os das janelas (dentro do cômodo
+ *  fica a etiqueta dele). Quando dois estão perto na mesma parede (água e esgoto, TV e internet), o segundo vai para
+ *  uma faixa mais longe da parede, para não encavalar. */
+function faixasRotulos(q: Q, maxFaixas: (p: Parede) => number, comJanelas: boolean, k: number): Map<string, number> {
   const out = new Map<string, number>();
   for (const parede of PAREDES) {
-    const its = q.interruptores.filter((i) => i.parede === parede)
-      .map((i) => { const g = geoEl(q, i), mid = (g.a + g.b) / 2, meia = larguraRotulo(i.nome) / 2; return { id: i.id, a: mid - meia, b: mid + meia }; })
+    const fora = q.interruptores.filter((i) => i.parede === parede).map((i) => ({ el: i, txt: i.nome }))
+      .concat(comJanelas ? q.janelas.filter((j) => j.parede === parede).map((j) => ({ el: j, txt: textoJanela(q, j) })) : []);
+    const its = fora
+      .map(({ el, txt }) => { const g = geoEl(q, el), mid = (g.a + g.b) / 2, meia = (larguraRotulo(txt) * k) / 2; return { id: el.id, a: mid - meia, b: mid + meia }; })
       .sort((x, y) => x.a - y.a);
     const fim: number[] = [], n = maxFaixas(parede);
     for (const it of its) {
@@ -143,26 +160,52 @@ function faixasRotulos(q: Q, maxFaixas: (p: Parede) => number): Map<string, numb
 
 /** Nomes das portas, janelas, ar-condicionado e pontos. A planta desenha esta camada depois de todos os cômodos,
  *  para os nomes ficarem por cima dos móveis e dos cômodos vizinhos. */
-export function RotulosSala({ q, vista }: { q: Q; vista: Vista }) {
+export function RotulosSala({ q, vista, k = 1 }: { q: Q; vista: Vista; k?: number }) {
   const casa = vista === 'casa';
   // em cima e à esquerda ficam as cotas do cômodo (fora da planta da casa): ali cabem só duas faixas de rótulo
-  const faixas = faixasRotulos(q, (p) => (!casa && (p === 'cima' || p === 'esquerda') ? 2 : 3));
+  const faixas = faixasRotulos(q, (p) => (!casa && (p === 'cima' || p === 'esquerda') ? 2 : 3), casa, k);
+  const fora = (id: string) => -T - 6 * k - (faixas.get(id) || 0) * 11 * k;
   return (
-    <g className="rotulos" aria-hidden="true">
+    <g className="rotulos" aria-hidden="true" style={k !== 1 ? ({ '--k': Math.round(k * 100) / 100 } as React.CSSProperties) : undefined}>
       {q.portas.map((p) => {
-        if (p.herdada && casa) return null;
+        if ((p.herdada && casa) || p.semParede) return null;
         const g = geoPorta(q, p);
         const lab = p.abre === 'vao' ? uv2xy(q, p.parede, (g.a + g.b) / 2, 10) : uv2xy(q, p.parede, g.hu + g.du * g.r * 0.55, g.sv * g.r * 0.3);
         return <text key={'p' + p.id + (p.herdada ? 'h' : '')} className={`porta-nome${p.herdada ? ' herdada' : ''}`} x={n1(lab[0])} y={n1(lab[1])} textAnchor="middle" dy=".35em">{p.nome}</text>;
       })}
       {q.janelas.map((j) => {
-        const g = geoEl(q, j), w = g.b - g.a, v = j.abertura === 'abrir' ? Math.min(folhaDe(q, j) * 0.45, 30) : 19;
-        return <Txt key={j.id} cls="jan-nome" p={uv2xy(q, j.parede, g.a + w / 2, v)} rt={rotTexto(j.parede)}>{`${j.nome} · ${fmtM(w)}`}</Txt>;
+        const g = geoEl(q, j), w = g.b - g.a, v = casa ? fora(j.id) : j.abertura === 'abrir' ? Math.min(folhaDe(q, j) * 0.45, 30) : 19;
+        return <Txt key={j.id} cls="jan-nome" p={uv2xy(q, j.parede, g.a + w / 2, v)} rt={rotTexto(j.parede)}>{textoJanela(q, j)}</Txt>;
       })}
-      {q.ares.map((a) => { const g = geoEl(q, a); return <Txt key={a.id} cls="anot" p={uv2xy(q, a.parede, (g.a + g.b) / 2, AR_PROF + 7)} rt={horizontal(a.parede) ? 0 : -90}>{a.nome}</Txt>; })}
-      {q.interruptores.map((i) => { const g = geoEl(q, i); return <Txt key={i.id} cls="anot" p={uv2xy(q, i.parede, (g.a + g.b) / 2, -T - 6 - (faixas.get(i.id) || 0) * 11)} rt={rotTexto(i.parede)}>{i.nome}</Txt>; })}
+      {q.ares.map((a) => { const g = geoEl(q, a); return <Txt key={a.id} cls="anot ar-nome" p={uv2xy(q, a.parede, (g.a + g.b) / 2, AR_PROF + 7 * k)} rt={horizontal(a.parede) ? 0 : -90}>{a.nome}</Txt>; })}
+      {q.interruptores.map((i) => { const g = geoEl(q, i); return <Txt key={i.id} cls="anot ponto-nome" p={uv2xy(q, i.parede, (g.a + g.b) / 2, fora(i.id))} rt={rotTexto(i.parede)}>{i.nome}</Txt>; })}
     </g>
   );
+}
+
+/** Retângulo (no cômodo) de um trecho dado em coordenadas da parede. */
+function retUV(q: Q, parede: Parede, u1: number, v1: number, u2: number, v2: number): Ret {
+  const a = uv2xy(q, parede, u1, v1), b = uv2xy(q, parede, u2, v2);
+  return { x1: Math.min(a[0], b[0]), y1: Math.min(a[1], b[1]), x2: Math.max(a[0], b[0]), y2: Math.max(a[1], b[1]) };
+}
+/** Onde fica a etiqueta do cômodo na planta da casa: no canto de cima à esquerda, a não ser que ali abra uma porta,
+ *  fique o ar-condicionado ou o nome de uma porta; aí ela vai para o canto mais livre. */
+export function lugarEtiqueta(q: Q, w: number, h: number): { x: number; y: number } {
+  const m = 6, cands = [{ x: m, y: m }, { x: q.w - m - w, y: m }, { x: m, y: q.h - m - h }, { x: q.w - m - w, y: q.h - m - h }];
+  const ocupado: Ret[] = [];
+  for (const p of q.portas) {
+    if (p.semParede) continue;
+    const g = geoPorta(q, p);
+    // a folha que abre para dentro deste cômodo (dele ou do vizinho) e o nome de um vão dele
+    if (p.abre === 'dentro') ocupado.push(retUV(q, p.parede, Math.min(g.hu, g.hu + g.du * g.r), 0, Math.max(g.hu, g.hu + g.du * g.r), g.r));
+    else if (p.abre === 'vao' && !p.herdada) ocupado.push(retUV(q, p.parede, g.a, 0, g.b, 18));
+  }
+  for (const a of q.ares) { const z = zonaAr(q, a); ocupado.push(retUV(q, a.parede, z.a, 0, z.b, AR_PROF + 14)); }
+  for (const i of q.interruptores) { const g = geoEl(q, i); ocupado.push(retUV(q, i.parede, g.a - 4, 0, g.b + 4, 7)); }
+  const sobra = (c: { x: number; y: number }) => ocupado.reduce((t, r) => t + Math.max(0, Math.min(r.x2, c.x + w) - Math.max(r.x1, c.x)) * Math.max(0, Math.min(r.y2, c.y + h) - Math.max(r.y1, c.y)), 0);
+  let melhor = cands[0], menor = Infinity;
+  for (const c of cands) { if (c.x < 0 || c.y < 0) continue; const s = sobra(c); if (s < menor - 1) { menor = s; melhor = c; } if (s === 0) break; }
+  return melhor;
 }
 
 /** Ponto na parede: uma placa com o símbolo do que ele é. */
@@ -253,7 +296,7 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
   const probs = av.itens.length;
   return (
     <>
-      <rect className={`piso${q.corredor ? ' corredor' : ''}${q.tipo ? ' t-' + q.tipo : ''}`} x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
+      <rect className={`piso${q.corredor ? ' corredor' : ''} q-${tipoDoComodo(q)}`} x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
       {grade}
       {q.portas.map((p) => <Porta key={'p' + p.id + (p.herdada ? 'h' : '')} q={q} p={p} sel={selEl === p.id && !p.herdada} bloq={av.portasBloq.has(p.id)} vista={vista} />)}
       <Paredes q={q} />
@@ -276,14 +319,16 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
       {q.ares.map((a) => <ArTopo key={'t' + a.id} q={q} a={a} sel={selEl === a.id} />)}
       {/* na planta da casa, a etiqueta fica por cima dos móveis: é por ela que se arrasta o cômodo */}
       {casa && (() => {
-        const med = `${fmtM(q.w)} × ${fmtM(q.h)}`, nw = q.nome.length * 7.4 + 30, mw = med.length * 5.7 + 8;
-        const comMed = nw + mw + 10 <= q.w - 12, w = Math.max(40, Math.min(q.w - 12, nw + (comMed ? mw : 0) + 10));
+        const dimensoes = `${fmtM(q.w)} × ${fmtM(q.h)}`, area = fmtArea(areaM2(q)), nw = q.nome.length * 7.4 + 30;
+        const cabe = (t: string) => nw + t.length * 5.7 + 8 + 10 <= q.w - 12;
+        const med = cabe(`${dimensoes} · ${area}`) ? `${dimensoes} · ${area}` : cabe(dimensoes) ? dimensoes : '';
+        const w = Math.max(40, Math.min(q.w - 12, nw + (med ? med.length * 5.7 + 8 : 0) + 10)), pos = lugarEtiqueta(q, w, 26);
         return (
-          <g className={`sala-rot${foco ? ' ativo' : ''}${probs ? ' ruim' : ''}`} data-qt={q.id} role="button" tabIndex={0}
-            aria-label={tx(`${q.nome}, ${fmtM(q.w)} por ${fmtM(q.h)} metros${probs ? ', ' + pl(probs, 'problema', 'problemas') : ''}. Arraste para mudar o cômodo de lugar na planta.`, `${q.nome}, ${fmtM(q.w)} by ${fmtM(q.h)} meters${probs ? ', ' + pl(probs, 'problem', 'problems') : ''}. Drag to move the room on the floor plan.`)}>
+          <g className={`sala-rot${foco ? ' ativo' : ''}${probs ? ' ruim' : ''}`} data-qt={q.id} role="button" tabIndex={0} transform={pos.x !== 6 || pos.y !== 6 ? `translate(${n1(pos.x - 6)} ${n1(pos.y - 6)})` : undefined}
+            aria-label={tx(`${q.nome}, ${fmtM(q.w)} por ${fmtM(q.h)} metros, ${area}${probs ? ', ' + pl(probs, 'problema', 'problemas') : ''}. Arraste para mudar o cômodo de lugar na planta.`, `${q.nome}, ${fmtM(q.w)} by ${fmtM(q.h)} meters, ${area}${probs ? ', ' + pl(probs, 'problem', 'problems') : ''}. Drag to move the room on the floor plan.`)}>
             <rect className="sala-rot-bg" x={6} y={6} width={n1(w)} height={26} rx={7} />
             <g transform="translate(11 10) scale(0.75)"><path className="sala-rot-i" d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" /></g>
-            <text className="sala-rot-t" x={33} y={24}>{q.nome}{comMed && <tspan className="sala-rot-m" dx={6}>{med}</tspan>}</text>
+            <text className="sala-rot-t" x={33} y={24}>{q.nome}{med && <tspan className="sala-rot-m" dx={6}>{med}</tspan>}</text>
           </g>
         );
       })()}

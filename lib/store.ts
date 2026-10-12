@@ -1,11 +1,12 @@
 // Estado do app (Zustand + Immer): os dados da casa e o estado da tela.
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { COMODO_NOME, LIM_COMODO, PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, nomePadraoPonto, pontoDe, tipoMovel } from './catalogo';
-import { nomeAndarNovo, planoCorredor, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
+import { COMODO_NOME, GRUPOS_DO_COMODO, LIM_COMODO, MOVEL_DO_COMODO, PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, nomePadraoPonto, pontoDe, tipoDoComodo, tipoMovel } from './catalogo';
+import { invade, nomeAndarNovo, planoCorredor, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
 import { alvoSel, andaresOrdem, cenariosLista, comodosDoAndar, comodosOrdem, cq, idsVisiveis } from './consultas';
 import { exemplo, moveisDo } from './dados';
-import { acomodar, esticarComodo, girarComodo90, janelaNaParede, portaDeEntrada, portaEntre, portaLigacao, type Borda } from './edicao';
+import { acomodar, esticarComodo, girarComodo90, janelaNaParede, paredeTirada, portaDeEntrada, portaEntre, portaLigacao, revisarLigacoes, semParedeEntre, type Borda } from './edicao';
+import { Historico, aparar, lerPontos, novoPonto, CHAVE_PONTOS, type InfoPasso, type InfoPonto, type PontoRestauracao } from './historico';
 import { lerPlanta, type PlantaIA } from './planta';
 import { centrar, geoEl, lugarLivre, normRot, posNoPonto, posValida, prender } from './geometria';
 import { sugerirCasa, sugerirComodo, type Opcao } from './motor';
@@ -17,6 +18,11 @@ import { novoId, pl } from './util';
 export interface CtxAdd { comodo?: string; x?: number; y?: number; parede?: Parede; u?: number }
 export interface Dialogo { tipo: string; dados: Record<string, unknown> }
 export interface InfoMenu { x: number; y: number; tipo: string; id?: string; eid?: string; comodo?: string; andar?: string; cen?: string; px?: number; py?: number; parede?: Parede; u?: number; btn?: string; teclado?: boolean }
+/** O que aparece na planta (dá para esconder os móveis para mexer nos pontos, e vice-versa). */
+export interface Camadas { moveis: boolean; portas: boolean; ar: boolean; pontos: boolean; nomes: boolean; grade: boolean }
+export type Camada = keyof Camadas;
+export type Tema = 'auto' | 'claro' | 'escuro';
+export const CAMADAS_TODAS: Camadas = { moveis: true, portas: true, ar: true, pontos: true, nomes: true, grade: true };
 
 export interface Estado {
   dados: Dados;
@@ -53,10 +59,20 @@ export interface Estado {
   planta: { busy: boolean; msg: string };
   plantaCtl: AbortController | null;
   menu: InfoMenu | null;
-  toast: { msg: string; tipo: '' | 'erro'; n: number } | null;
+  /** Aviso rápido; "acao" põe um botão nele (por enquanto, o de desfazer, que vale só enquanto o passo do
+   *  aviso for o último: "marca" é a do histórico naquela hora). */
+  toast: { msg: string; tipo: '' | 'erro'; n: number; acao?: 'desfazer'; marca?: number } | null;
   arrastando: boolean;
   /** Desenhar cômodos arrastando na planta da casa, e o tipo do próximo. */
   desenho: { ativo: boolean; tipo: TipoComodo };
+  /** Trena: arrastar na planta mede a distância entre dois pontos. */
+  medir: boolean;
+  camadas: Camadas;
+  tema: Tema;
+  /** Dá para desfazer ou refazer agora; "v" muda a cada passo novo (a lista do histórico se atualiza). */
+  hist: { desfazer: boolean; refazer: boolean; v: number };
+  /** Pontos de restauração guardados neste navegador (sem os dados, só para mostrar). */
+  pontos: InfoPonto[];
   /** Tela estreita (celular): painéis viram gaveta e folha. */
   estreito: boolean;
 }
@@ -73,7 +89,8 @@ const inicial = (): Estado => ({
   verCen: null, cenBase: null, idioma: 'pt', folha: false, folhaModo: 'acoes', dlg: null, avisosAbertos: false,
   add: { tipo: 'guarda-roupa', ctx: null, rascunho: {} },
   sug: { busy: false, msg: '' }, ia: { busy: false, msg: '' }, iaCtl: null, planta: { busy: false, msg: '' }, plantaCtl: null,
-  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto' }, estreito: false
+  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto' }, medir: false, camadas: { ...CAMADAS_TODAS }, tema: 'auto',
+  hist: { desfazer: false, refazer: false, v: 0 }, pontos: [], estreito: false
 });
 
 export const useApp = create<Estado>()(immer(() => inicial()));
@@ -81,7 +98,136 @@ const set = useApp.setState as (f: (s: Estado) => void) => void;
 const get = useApp.getState;
 
 /* ---------- avisos rápidos ---------- */
-export function toast(msg: string, tipo: '' | 'erro' = '') { set((s) => { s.toast = { msg, tipo, n: Date.now() }; }); }
+export function toast(msg: string, tipo: '' | 'erro' = '', acao?: 'desfazer') {
+  // o botão de desfazer do aviso é do passo que acabou de acontecer: ele fecha agora, e qualquer passo depois tira o botão
+  if (acao) hist.confirmar();
+  set((s) => { s.toast = { msg, tipo, n: Date.now(), ...(acao ? { acao, marca: hist.marca } : {}) }; });
+}
+/** O "Desfazer" do aviso ainda é do último passo? */
+export const desfazerDoAviso = (marca: number | undefined): boolean => marca != null && marca === hist.marca;
+
+/* ---------- desfazer, refazer e histórico ---------- */
+let aplicando = false;
+const hist = new Historico((lista) => queueMicrotask(() => {
+  const s = get();
+  if (!lista && s.hist.desfazer === hist.podeDesfazer && s.hist.refazer === hist.podeRefazer) return;
+  set((x) => { x.hist = { desfazer: hist.podeDesfazer, refazer: hist.podeRefazer, v: x.hist.v + (lista ? 1 : 0) }; });
+}));
+useApp.subscribe((s, p) => {
+  if (!p.carregado && s.carregado) { hist.iniciar(s.dados); return; }
+  if (!s.carregado || aplicando) return;
+  if (s.dados !== p.dados) hist.registrar(s.dados, s.arrastando);
+  if (p.arrastando && !s.arrastando) hist.fimGesto();
+});
+/** Faz a mudança como um passo só do histórico, com este nome. */
+function comRotulo<R>(rotulo: string, fn: () => R): R {
+  hist.anotar(rotulo);
+  try { return fn(); } finally { hist.confirmar(); hist.esquecerRotulo(); }
+}
+/** Fecha a mudança pendente (para o próximo passo começar limpo). */
+export function confirmarHistorico() { hist.confirmar(); }
+export const listaHistorico = (): { feitos: InfoPasso[]; desfeitos: InfoPasso[] } => hist.lista();
+
+/** Troca os dados sem virar passo do histórico (desfazer, refazer); a seleção que apontava para o que sumiu sai. */
+function aplicarDados(d: Dados) {
+  aplicando = true;
+  try {
+    set((s) => {
+      s.dados = d;
+      if (s.sel && !d.moveis[s.sel]) s.sel = null;
+      if (s.selEl && !d.els[s.selEl]) s.selEl = null;
+      if (s.selComodo && !d.comodos[s.selComodo]) s.selComodo = null;
+      if (s.verCen && !d.cenarios[s.verCen]) s.verCen = null;
+      if (s.cenBase && !d.cenarios[s.cenBase]) s.cenBase = null;
+      if (!s.sel && !s.selEl && !s.selComodo) { s.folha = false; s.folhaModo = 'acoes'; }
+      s.menu = null;
+    });
+  } finally { aplicando = false; }
+  garantirComodo();
+}
+export function desfazer(): boolean {
+  if (get().arrastando) return false;
+  const p = hist.desfazer();
+  if (!p) { toast(tx('Nada para desfazer.', 'Nothing to undo.')); return false; }
+  aplicarDados(p.antes);
+  toast(tx(`Desfeito: ${p.rotulo}`, `Undone: ${p.rotulo}`));
+  return true;
+}
+export function refazer(): boolean {
+  if (get().arrastando) return false;
+  const p = hist.refazer();
+  if (!p) { toast(tx('Nada para refazer.', 'Nothing to redo.')); return false; }
+  aplicarDados(p.depois);
+  toast(tx(`Refeito: ${p.rotulo}`, `Redone: ${p.rotulo}`));
+  return true;
+}
+/** Desfaz (n > 0) ou refaz (n < 0) vários passos de uma vez. */
+export function andarNoHistorico(n: number): void {
+  let ultimo: Dados | null = null;
+  for (let k = 0; k < Math.abs(n); k++) { const p = n > 0 ? hist.desfazer() : hist.refazer(); if (!p) break; ultimo = n > 0 ? p.antes : p.depois; }
+  if (ultimo) aplicarDados(ultimo);
+}
+
+/* ---------- pontos de restauração ---------- */
+let pontos: PontoRestauracao[] = [], ultimoAuto = 0;
+const infoPontos = () => pontos.map(({ dados: _d, ...info }) => { void _d; return info; });
+const pontosGuardados = (): PontoRestauracao[] | null => { try { return lerPontos(localStorage.getItem(CHAVE_PONTOS)); } catch { return null; } };
+/** Grava os pontos juntando com o que outra aba do Cabeaí já guardou (entra "novo", sai "tirar"). */
+function gravarPontos(mud: { novo?: PontoRestauracao; tirar?: Set<string> } = {}) {
+  const guardados = pontosGuardados();
+  const porId = new Map<string, PontoRestauracao>();
+  for (const p of [...(guardados || []), ...pontos]) porId.set(p.id, p);
+  if (mud.novo) porId.set(mud.novo.id, mud.novo);
+  for (const id of mud.tirar || []) porId.delete(id);
+  const r = aparar([...porId.values()]);
+  pontos = r.lista;
+  try { localStorage.setItem(CHAVE_PONTOS, r.texto); } catch { /* sem espaço ou sem armazenamento: ficam só nesta sessão */ }
+  set((s) => { s.pontos = infoPontos(); });
+}
+export function carregarPontos() {
+  pontos = pontosGuardados() || [];
+  set((s) => { s.pontos = infoPontos(); });
+}
+const casaVazia = (d: Dados) => !Object.keys(d.comodos).length;
+/** Guarda a casa de agora como ponto de restauração (com o nome que a pessoa deu). */
+export function criarPonto(nome: string): string | null {
+  hist.confirmar();
+  const d = get().dados;
+  if (casaVazia(d)) { toast(tx('A casa está vazia: não há o que guardar.', 'The home is empty: nothing to save.')); return null; }
+  const p = novoPonto(d, nome || tx('Meu ponto', 'My point'), false);
+  gravarPontos({ novo: p });
+  return p.id;
+}
+/** Ponto automático (ao abrir, antes de importar, a cada 10 minutos…), se a casa mudou desde o último. */
+export function pontoAutomatico(motivo: string): boolean {
+  hist.confirmar();
+  const d = get().dados;
+  if (casaVazia(d) || (pontos[0] && JSON.stringify(pontos[0].dados) === JSON.stringify(d))) return false;
+  ultimoAuto = Date.now();
+  gravarPontos({ novo: novoPonto(d, motivo, true) });
+  return true;
+}
+/** De 10 em 10 minutos de uso, se a casa mudou. */
+export function pontoPeriodico() { if (Date.now() - ultimoAuto >= 10 * 60_000) pontoAutomatico(tx('Guardado sozinho (a cada 10 minutos)', 'Saved automatically (every 10 minutes)')); }
+export function restaurarPonto(id: string): boolean {
+  const p = pontos.find((x) => x.id === id);
+  if (!p) return false;
+  pontoAutomatico(tx(`Antes de voltar para “${p.nome}”`, `Before going back to “${p.nome}”`));
+  comRotulo(tx(`Voltou para “${p.nome}”`, `Went back to “${p.nome}”`), () => trocarDados(p.dados));
+  toast(tx(`A casa voltou para “${p.nome}”.`, `The home went back to “${p.nome}”.`), '', 'desfazer');
+  return true;
+}
+export function apagarPonto(id: string) { pontos = pontos.filter((p) => p.id !== id); gravarPontos({ tirar: new Set([id]) }); }
+/** Sem espaço no navegador para a casa: tira a metade mais velha dos pontos automáticos e, se não houver mais
+ *  nenhum, o ponto mais velho da pessoa (a casa vale mais). Devolve se tirou algum. */
+export function liberarEspaco(): boolean {
+  const autos = pontos.filter((p) => p.auto).sort((a, b) => a.t - b.t), meus = pontos.filter((p) => !p.auto).sort((a, b) => a.t - b.t);
+  const sai = new Set((autos.length ? autos.slice(0, Math.max(1, Math.ceil(autos.length / 2))) : meus.slice(0, 1)).map((p) => p.id));
+  if (!sai.size) return false;
+  pontos = pontos.filter((p) => !sai.has(p.id));
+  gravarPontos({ tirar: sai });
+  return true;
+}
 
 /* ---------- seleção e foco ---------- */
 export function garantirComodo() {
@@ -233,6 +379,7 @@ export function criarComodo(v: { nome: string; w: number; h: number; andar?: str
     const ref = v.junto ? s.dados.comodos[v.junto.ref] : null;
     const p = ref && v.junto ? posicaoAoLado({ w: v.w, h: v.h }, ref, v.junto.lado, v.junto.alinhar, v.junto.espaco || 0) : posicaoNova(comodosDoAndar(s.dados, andar), v.w, v.h);
     s.dados.comodos[id] = { id, nome: v.nome.slice(0, 30), w: v.w, h: v.h, andar, x: p.x, y: p.y, criado: Date.now() };
+    ligar(s.dados, s.dados.comodos[id]);
     s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.latAberta = false; s.folha = false;
   });
   return id;
@@ -246,7 +393,106 @@ export function posicionarComodo(id: string, j: Junto) {
     c.andar = ref.andar;
     const p = posicaoAoLado(c, ref, j.lado, j.alinhar, j.espaco || 0);
     c.x = p.x; c.y = p.y;
+    revisar(s.dados); ligar(s.dados, c);
   });
+}
+
+/* ---------- ligações entre cômodos: portas automáticas e paredes tiradas ---------- */
+/** As portas automáticas e as paredes tiradas que perderam o vizinho saem; as outras se ajeitam na parede que sobrou. */
+function revisar(d: Dados) {
+  const r = revisarLigacoes(d.comodos, Object.values(d.els));
+  for (const id of r.remover) delete d.els[id];
+  for (const m of r.mudar) { const e = d.els[m.id]; if (e) { e.inicio = m.inicio; e.largura = m.largura; } }
+}
+/** Porta (ou passagem) entre o cômodo e cada vizinho de parede, quando um dos dois é corredor ou varanda. Devolve os nomes de quem ganhou ligação. */
+function ligar(d: Dados, c: Comodo): string[] {
+  const novos: string[] = [];
+  let k = 0;
+  for (const o of comodosDoAndar(d, c.andar)) {
+    if (o.id === c.id) continue;
+    const p = portaEntre(c, o, Object.values(d.els));
+    if (!p) continue;
+    const eid = novoId('e');
+    d.els[eid] = { ...p, id: eid, criado: Date.now() + k++ };
+    novos.push(o.nome);
+  }
+  return novos;
+}
+/** Depois de mover, esticar ou girar o cômodo: revê as ligações e põe porta para quem ele encostou agora. */
+export function conectarComodo(id: string): string[] {
+  let novos: string[] = [];
+  set((s) => {
+    const c = s.dados.comodos[id]; if (!c) return;
+    revisar(s.dados);
+    novos = ligar(s.dados, c);
+  });
+  return novos;
+}
+/** "Corredor ligado a Quarto 1 e Banheiro." */
+export function avisarLigacoes(id: string, nomes: string[]) {
+  const c = get().dados.comodos[id];
+  if (!c || !nomes.length) return;
+  const lista = nomes.length === 1 ? nomes[0] : nomes.slice(0, -1).join(', ') + tx(' e ', ' and ') + nomes[nomes.length - 1];
+  toast(tx(`${c.nome} se ligou a ${lista}: a porta já está na parede.`, `${c.nome} is now connected to ${lista}: the door is already on the wall.`));
+}
+
+/** Tira a parede entre dois cômodos que se encostam: eles viram um espaço só (um L, por exemplo). */
+export function tirarParede(a: string, b: string): boolean {
+  const d0 = get().dados, A = d0.comodos[a], B = d0.comodos[b];
+  if (!A || !B) return false;
+  const r = paredeTirada(A, B, Object.values(d0.els));
+  if (!r) { toast(tx(`${A.nome} e ${B.nome} não dividem uma parede.`, `${A.nome} and ${B.nome} don’t share a wall.`), 'erro'); return false; }
+  comRotulo(tx(`Tirou a parede entre ${A.nome} e ${B.nome}`, `Removed the wall between ${A.nome} and ${B.nome}`), () => set((s) => {
+    for (const e of r.remover) delete s.dados.els[e.id];
+    const eid = novoId('e');
+    s.dados.els[eid] = { ...r.el, id: eid, criado: Date.now() };
+    if (s.selEl && !s.dados.els[s.selEl]) s.selEl = null;
+  }));
+  const saiu = r.remover.map((e) => e.nome);
+  toast(saiu.length
+    ? tx(`Parede tirada: ${A.nome} e ${B.nome} viraram um espaço só. Saíram junto: ${saiu.join(', ')}.`, `Wall removed: ${A.nome} and ${B.nome} are now one space. Also removed: ${saiu.join(', ')}.`)
+    : tx(`Parede tirada: ${A.nome} e ${B.nome} viraram um espaço só.`, `Wall removed: ${A.nome} and ${B.nome} are now one space.`), '', 'desfazer');
+  return true;
+}
+/** Põe de volta a parede que tinha sido tirada entre dois cômodos. */
+export function porParede(a: string, b: string): boolean {
+  const d0 = get().dados, e = semParedeEntre(a, b, Object.values(d0.els));
+  if (!e) return false;
+  const A = d0.comodos[a], B = d0.comodos[b];
+  // com a parede de volta, o corredor (ou a varanda) ganha de novo a porta automática
+  comRotulo(tx(`Pôs de volta a parede entre ${A?.nome} e ${B?.nome}`, `Put back the wall between ${A?.nome} and ${B?.nome}`), () => set((s) => {
+    delete s.dados.els[e.id];
+    const c = s.dados.comodos[a]; if (c) ligar(s.dados, c);
+  }));
+  toast(tx(`A parede entre ${A?.nome} e ${B?.nome} voltou.`, `The wall between ${A?.nome} and ${B?.nome} is back.`));
+  return true;
+}
+export function alternarParede(a: string, b: string): boolean {
+  return semParedeEntre(a, b, Object.values(get().dados.els)) ? porParede(a, b) : tirarParede(a, b);
+}
+
+/** Cópia do cômodo, com os móveis e os itens de parede, ao lado dele. */
+export function duplicarComodo(id: string): string | null {
+  const c = get().dados.comodos[id];
+  if (!c) return null;
+  const nid = novoId('c');
+  comRotulo(tx(`Duplicou ${c.nome}`, `Duplicated ${c.nome}`), () => set((s) => {
+    const d = s.dados, outros = comodosDoAndar(d, c.andar), agora = Date.now();
+    const lados: Lado4[] = ['direita', 'abaixo', 'esquerda', 'acima'];
+    const p = lados.map((l) => posicaoAoLado(c, c, l)).find((pp) => !outros.some((o) => invade({ ...pp, w: c.w, h: c.h }, o))) || posicaoNova(outros, c.w, c.h);
+    d.comodos[nid] = { ...c, id: nid, nome: nomeLivre(Object.values(d.comodos), c.nome), x: p.x, y: p.y, criado: agora };
+    let k = 0;
+    for (const m of moveisDo(d, id)) { const mid = novoId('m'); d.moveis[mid] = { ...m, id: mid, comodo: nid, criado: agora + ++k }; }
+    for (const e of Object.values(d.els)) {
+      if (e.comodo !== id || e.auto || e.semParede) continue;
+      const eid = novoId('e'), copia: ElParede = { ...e, id: eid, comodo: nid, criado: agora + ++k };
+      delete copia.liga;
+      d.els[eid] = copia;
+    }
+    ligar(d, d.comodos[nid]);
+    s.comodo = nid; s.selComodo = s.vista === 'casa' ? nid : null; s.sel = null; s.selEl = null; s.verCen = null; s.folha = false;
+  }));
+  return nid;
 }
 
 export function nomeCorredorNovo(d: Dados): string {
@@ -276,15 +522,15 @@ export function criarCorredor(o: { nome: string; a: string; b: string | null; la
   set((s) => {
     const c = plano.corredor;
     s.dados.comodos[id] = { id, nome: (o.nome || nomeCorredorNovo(s.dados)).slice(0, 30), w: c.w, h: c.h, andar: A.andar, x: c.x, y: c.y, criado: Date.now(), corredor: true };
-    if (B && plano.b) { const bb = s.dados.comodos[B.id]; bb.x = plano.b.x; bb.y = plano.b.y; }
+    if (B && plano.b) { const bb = s.dados.comodos[B.id]; bb.x = plano.b.x; bb.y = plano.b.y; revisar(s.dados); }
     if (o.portas) {
       const larg = Math.max(40, Math.min(80, o.largura - 10)), inicio = Math.round((o.largura - larg) / 2), pa = PAREDE_DE_SAIDA[o.lado];
-      const porta = (parede: Parede, k: number) => {
+      const porta = (parede: Parede, k: number, liga: string) => {
         const eid = novoId('e');
-        s.dados.els[eid] = { id: eid, tipo: 'porta', nome: k === 1 ? tx('Porta', 'Door') : tx(`Porta ${k}`, `Door ${k}`), comodo: id, parede, inicio, largura: larg, criado: Date.now() + k, dobradica: 'a', abre: 'fora' };
+        s.dados.els[eid] = { id: eid, tipo: 'porta', nome: k === 1 ? tx('Porta', 'Door') : tx(`Porta ${k}`, `Door ${k}`), comodo: id, parede, inicio, largura: larg, criado: Date.now() + k, dobradica: 'a', abre: 'fora', auto: true, liga };
       };
-      porta(pa, 1);
-      if (B) porta(OPOSTA[pa], 2);
+      porta(pa, 1, A.id);
+      if (B) porta(OPOSTA[pa], 2, B.id);
     }
     s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = id; s.verCen = null; s.latAberta = false; s.folha = false;
   });
@@ -299,8 +545,10 @@ export function salvarComodo(id: string, campos: Partial<Comodo>) {
       const p = posicaoNova(comodosDoAndar(s.dados, campos.andar), campos.w ?? c.w, campos.h ?? c.h);
       campos = { ...campos, x: p.x, y: p.y };
     }
+    const antes = { x: c.x, y: c.y, w: c.w, h: c.h, andar: c.andar };
     Object.assign(c, campos);
     acomodar(c, Object.values(s.dados.moveis).filter((m) => m.comodo === id), Object.values(s.dados.els).filter((e) => e.comodo === id));
+    if (antes.x !== c.x || antes.y !== c.y || antes.w !== c.w || antes.h !== c.h || antes.andar !== c.andar) { revisar(s.dados); ligar(s.dados, c); }
   });
 }
 
@@ -311,13 +559,18 @@ const doComodo = (d: Dados, id: string) => ({
   itens: Object.values(d.cenarios).flatMap((cen) => Object.entries(cen.itens).filter(([, it]) => it.comodo === id).map(([mid, item]) => ({ item, m: d.moveis[mid] })).filter((x) => !!x.m))
 });
 
-/** Gira o cômodo 90° (sentido do relógio) com tudo o que tem dentro; o meio dele fica no mesmo lugar. */
-export function girarComodo(id: string) {
+/** Gira o cômodo 90° (sentido do relógio) com tudo o que tem dentro; o meio dele fica no mesmo lugar.
+ *  As portas automáticas se refazem para os vizinhos que ele encostar depois de girar. */
+export function girarComodo(id: string): string[] {
+  let novos: string[] = [];
   set((s) => {
     const c = s.dados.comodos[id]; if (!c) return;
     const o = doComodo(s.dados, id);
     girarComodo90(c, o.moveis, o.els, o.itens);
+    revisar(s.dados);
+    novos = ligar(s.dados, c);
   });
+  return novos;
 }
 
 /** Arrastando a alça de uma parede: leva aquela borda até "v" (na planta do andar). */
@@ -328,20 +581,27 @@ export function esticar(id: string, borda: Borda, v: number) {
     esticarComodo(c, borda, v, LIM_COMODO.min, o.moveis, o.els, o.itens.map((x) => x.item));
   });
 }
-/** Soltou a alça: o que ficou fora do cômodo volta para dentro. */
-export function fimEsticar(id: string) {
+/** Soltou a alça: o que ficou fora do cômodo volta para dentro, e as ligações com os vizinhos se refazem. */
+export function fimEsticar(id: string): string[] {
+  let novos: string[] = [];
   set((s) => {
     const c = s.dados.comodos[id]; if (!c) return;
     const o = doComodo(s.dados, id);
     acomodar(c, o.moveis, o.els);
+    revisar(s.dados);
+    novos = ligar(s.dados, c);
   });
+  return novos;
 }
 
 /* ---------- desenhar cômodos ---------- */
 export function modoDesenho(ativo: boolean, tipo?: TipoComodo) {
   set((s) => {
+    const entrou = ativo && !s.desenho.ativo, saiu = !ativo && s.desenho.ativo;
     s.desenho = { ativo, tipo: tipo || s.desenho.tipo };
-    if (ativo) { s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.verCen = null; s.menu = null; s.latAberta = false; }
+    if (entrou) { s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.verCen = null; s.menu = null; s.latAberta = false; s.medir = false; }
+    // no Pronto, o último cômodo desenhado deixa de estar selecionado (um toque nele volta a selecionar)
+    if (saiu) { s.selComodo = null; s.folha = false; }
   });
 }
 
@@ -355,34 +615,25 @@ export function nomeTipoNovo(d: Dados, tipo: TipoComodo): string {
   return `${base} ${k}`;
 }
 
-/** Cria as portas (ou vãos) entre um cômodo e os vizinhos de parede, quando um deles é corredor ou varanda. */
-function ligarVizinhos(d: Dados, c: Comodo) {
-  let k = 0;
-  for (const o of comodosDoAndar(d, c.andar)) {
-    if (o.id === c.id) continue;
-    const p = portaEntre(c, o, Object.values(d.els));
-    if (!p) continue;
-    const eid = novoId('e');
-    d.els[eid] = { ...p, id: eid, criado: Date.now() + k++ };
-  }
-}
-
-/** Cômodo desenhado na planta da casa (medidas de dentro, posição na planta do andar). */
-export function desenharComodo(v: { andar: string | null; x: number; y: number; w: number; h: number; tipo: TipoComodo }): { id: string; nome: string } {
-  const andar = v.andar && get().dados.andares[v.andar] ? v.andar : andarPadrao();
-  const id = novoId('c');
-  let nome = '';
-  set((s) => {
-    nome = nomeTipoNovo(s.dados, v.tipo);
-    const c: Comodo = {
-      id, nome, w: Math.max(LIM_COMODO.min, Math.round(v.w)), h: Math.max(LIM_COMODO.min, Math.round(v.h)), andar, x: Math.round(v.x), y: Math.round(v.y),
-      criado: Date.now(), tipo: v.tipo, ...(v.tipo === 'corredor' ? { corredor: true } : {})
-    };
-    s.dados.comodos[id] = c;
-    ligarVizinhos(s.dados, c);
-    s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.folha = false;
+/** Cômodo desenhado na planta da casa (medidas de dentro, posição na planta do andar). No modo de desenhar ele já
+ *  fica selecionado, com as alças para acertar as paredes. */
+export function desenharComodo(v: { andar: string | null; x: number; y: number; w: number; h: number; tipo: TipoComodo }): { id: string; nome: string; ligados: string[] } {
+  const id = novoId('c'), nome = nomeTipoNovo(get().dados, v.tipo);
+  let ligados: string[] = [];
+  comRotulo(tx(`Desenhou ${nome}`, `Drew ${nome}`), () => {
+    // o primeiro cômodo cria o térreo junto (é um passo só no histórico)
+    const andar = v.andar && get().dados.andares[v.andar] ? v.andar : andarPadrao();
+    set((s) => {
+      const c: Comodo = {
+        id, nome, w: Math.max(LIM_COMODO.min, Math.round(v.w)), h: Math.max(LIM_COMODO.min, Math.round(v.h)), andar, x: Math.round(v.x), y: Math.round(v.y),
+        criado: Date.now(), tipo: v.tipo, ...(v.tipo === 'corredor' ? { corredor: true } : {})
+      };
+      s.dados.comodos[id] = c;
+      ligados = ligar(s.dados, c);
+      s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = s.desenho.ativo ? id : null; s.verCen = null; s.folha = false;
+    });
   });
-  return { id, nome };
+  return { id, nome, ligados };
 }
 export function moverComodo(id: string, x: number, y: number) { set((s) => { const c = s.dados.comodos[id]; if (c) { c.x = Math.round(x); c.y = Math.round(y); } }); }
 
@@ -396,6 +647,7 @@ export function removerComodo(id: string) {
       for (const [k, p] of Object.entries(c.itens)) if (p.comodo === id) delete c.itens[k];
     }
     delete d.comodos[id];
+    revisar(d);
     if (s.comodo === id) s.comodo = null;
     s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.folha = false;
   });
@@ -415,6 +667,9 @@ export function salvarEl(id: string, campos: Partial<ElParede>) {
     if (e.tipo === 'interruptor' && campos.ponto && campos.ponto !== antes && (campos.nome == null || campos.nome === e.nome) && nomePadraoPonto(e.nome, antes)) {
       campos = { ...campos, nome: proximoNomeEl(s.dados, e.comodo, 'interruptor', campos.ponto) };
     }
+    // a pessoa mudou a porta automática de parede, de lugar ou de largura: ela passa a ser uma porta dela
+    // (não some nem volta para o meio quando os cômodos mudarem)
+    if (e.auto && ((campos.parede != null && campos.parede !== e.parede) || (campos.inicio != null && campos.inicio !== e.inicio) || (campos.largura != null && campos.largura !== e.largura))) { delete e.auto; delete e.liga; }
     Object.assign(e, campos);
   });
 }
@@ -475,7 +730,7 @@ export function duplicar() {
   } else {
     const e = a.obj, q = s.dados.comodos[e.comodo]; if (!q) return;
     const g = geoEl(q, e), w = g.b - g.a, inicio = g.b + 10 + w <= g.L ? g.b + 10 : Math.max(0, g.a - 10 - w);
-    const { id: _id, ...dados } = { ...e, nome: proximoNomeEl(s.dados, e.comodo, e.tipo), inicio: Math.round(inicio), criado: Date.now() }; void _id;
+    const { id: _id, auto: _a, liga: _l, ...dados } = { ...e, nome: proximoNomeEl(s.dados, e.comodo, e.tipo), inicio: Math.round(inicio), criado: Date.now() }; void _id; void _a; void _l;
     selecionar({ eid: criarEl(dados) });
   }
 }
@@ -486,6 +741,9 @@ export function iniciarAdd(tipo: string, ctx: CtxAdd | null = null) {
   if (!Object.keys(s.dados.comodos).length) { abrirDialogo('comodo'); return; }
   if (tipo === 'movel') tipo = ehParede(s.add.tipo) ? 'guarda-roupa' : s.add.tipo;
   if (!tipoMovel(tipo) && !ehParede(tipo)) tipo = 'guarda-roupa';
+  // no banheiro começa pelo vaso, na cozinha pela geladeira… (se o último móvel escolhido não combina com o cômodo)
+  const qAlvo = s.dados.comodos[(ctx && ctx.comodo) || s.comodo || ''], tc = qAlvo ? tipoDoComodo(qAlvo) : 'outro';
+  if (tipoMovel(tipo) && GRUPOS_DO_COMODO[tc].length && !GRUPOS_DO_COMODO[tc].includes(TIPOS[tipo].grupo) && MOVEL_DO_COMODO[tc]) tipo = MOVEL_DO_COMODO[tc]!;
   set((e) => {
     e.add = { tipo, ctx, rascunho: {} };
     e.sel = null; e.selEl = null; e.selComodo = null; e.verCen = null; e.folha = false; e.latAberta = false;
@@ -576,7 +834,8 @@ export function abrirCenario(id: string) {
 }
 export function sairCenario() { set((s) => { s.verCen = null; }); }
 export function usarCenario(id: string) {
-  set((s) => {
+  const nome = get().dados.cenarios[id]?.nome || '';
+  comRotulo(tx(`Usou o cenário “${nome}”`, `Used the scenario “${nome}”`), () => set((s) => {
     const c = s.dados.cenarios[id]; if (!c) return;
     for (const [mid, p] of Object.entries(c.itens)) {
       const m = s.dados.moveis[mid], q = s.dados.comodos[p.comodo]; if (!m || !q) continue;
@@ -584,7 +843,7 @@ export function usarCenario(id: string) {
       Object.assign(m, { comodo: p.comodo, x: pos.x, y: pos.y, rot });
     }
     s.verCen = null; s.folha = false; s.folhaModo = 'acoes'; s.cenBase = id;
-  });
+  }));
 }
 export function sobrescreverCenario(id: string) {
   set((s) => { const c = s.dados.cenarios[id]; if (!c) return; c.itens = itensAtuais(s.dados, c.escopo, c.comodo); c.sugestao = false; c.explicacao = ''; s.cenBase = id; });
@@ -645,11 +904,75 @@ export function trocarDados(d: Dados, comodo?: string | null) {
   enquadrar();
 }
 export function criarExemplo() {
-  trocarDados(exemplo(), 'q2');
+  pontoAutomatico(tx('Antes de abrir o exemplo', 'Before opening the example'));
+  comRotulo(tx('Abriu o exemplo', 'Opened the example'), () => trocarDados(exemplo(), 'q2'));
   set((s) => { s.vista = 'casa'; });
   enquadrar();
   toast(tx('Exemplo pronto: uma casa de dois andares. Arraste os móveis ou toque em ✦ Sugestões.', 'Example ready: a two-story home. Drag the furniture or tap ✦ Suggestions.'));
 }
+/** Troca tudo pelo que veio no arquivo (guarda um ponto de restauração antes). */
+export function importarDados(d: Dados) {
+  pontoAutomatico(tx('Antes de importar um arquivo', 'Before importing a file'));
+  comRotulo(tx('Importou um arquivo', 'Imported a file'), () => trocarDados(d));
+  set((s) => { s.vista = 'casa'; });
+}
+/** Apaga a casa toda (dá para desfazer, e fica um ponto de restauração com o que havia). */
+export function apagarTudo() {
+  pontoAutomatico(tx('Antes de apagar tudo', 'Before deleting everything'));
+  comRotulo(tx('Apagou tudo', 'Deleted everything'), () => trocarDados(vazio()));
+  limparSel();
+}
+
+/* ---------- copiar e colar ---------- */
+let copiado: { tipo: 'movel'; obj: Movel } | { tipo: 'parede'; obj: ElParede } | null = null;
+export const temCopia = (): boolean => !!copiado;
+export function copiar(): boolean {
+  const s = get(), a = alvoSel(s.dados, s.sel, s.selEl);
+  if (!a) return false;
+  copiado = a.tipo === 'movel' ? { tipo: 'movel', obj: { ...a.obj } } : { tipo: 'parede', obj: { ...a.obj } };
+  toast(tx(`${a.obj.nome} copiado. Para colar: Ctrl+V, ou segure o dedo (botão direito) no cômodo e escolha Colar.`, `${a.obj.nome} copied. To paste: Ctrl+V, or press and hold (right-click) in a room and choose Paste.`));
+  return true;
+}
+/** Cola a cópia no cômodo do contexto (ou no que está em foco), no ponto escolhido ou num lugar livre. */
+export function colar(ctx: CtxAdd | null = null): boolean {
+  const s = get();
+  if (!copiado) return false;
+  const cid = ctx && ctx.comodo && s.dados.comodos[ctx.comodo] ? ctx.comodo : s.comodo, q = cq(s.dados, cid);
+  if (!q || !cid) return false;
+  if (copiado.tipo === 'movel') {
+    const m = copiado.obj, outros = moveisDo(s.dados, cid);
+    const novo: Movel = { ...m, id: '', comodo: cid, nome: nomeLivre(outros, m.nome), fixo: false, criado: Date.now() };
+    if (ctx && ctx.x != null && ctx.y != null) Object.assign(novo, posNoPonto(q, novo, ctx.x, ctx.y));
+    else {
+      const p = prender(q, novo, m.comodo === cid ? m.x + 20 : m.x, m.comodo === cid ? m.y + 20 : m.y);
+      Object.assign(novo, posValida(q, novo, p.x, p.y, novo.rot, outros, false) ? p : lugarLivre(q, novo, outros));
+    }
+    const { id: _id, ...dados } = novo; void _id;
+    comRotulo(tx(`Colou ${novo.nome}`, `Pasted ${novo.nome}`), () => selecionar({ id: criarMovel(dados) }));
+    return true;
+  }
+  const e = copiado.obj, parede = (ctx && ctx.parede) || e.parede;
+  const novo: ElParede = { ...e, id: '', comodo: cid, parede, nome: proximoNomeEl(s.dados, cid, e.tipo, e.ponto), criado: Date.now() };
+  delete novo.herdada; delete novo.origem; delete novo.origemComodo; delete novo.auto; delete novo.liga; delete novo.semParede;
+  const L = parede === 'cima' || parede === 'baixo' ? q.w : q.h, w = Math.min(e.largura, L);
+  novo.largura = w;
+  novo.inicio = ctx && ctx.u != null ? Math.round(Math.min(Math.max(0, ctx.u - w / 2), L - w)) : e.comodo === cid && e.parede === parede ? Math.round(Math.min(e.inicio + w + 10, Math.max(0, L - w))) : Math.round(Math.min(e.inicio, L - w));
+  const { id: _id, ...dados } = novo; void _id;
+  comRotulo(tx(`Colou ${novo.nome}`, `Pasted ${novo.nome}`), () => selecionar({ eid: criarEl(dados) }));
+  return true;
+}
+
+/* ---------- o que aparece na planta, trena e tema ---------- */
+export function alternarCamada(k: Camada) { set((s) => { s.camadas[k] = !s.camadas[k]; }); }
+export function mostrarTudo() { set((s) => { s.camadas = { ...CAMADAS_TODAS }; }); }
+export function modoMedir(ativo: boolean) { set((s) => { s.medir = ativo; if (ativo) { s.desenho.ativo = false; s.menu = null; } }); }
+export function aplicarTema(t: Tema) {
+  try {
+    const el = document.documentElement;
+    if (t === 'claro') el.dataset.theme = 'light'; else if (t === 'escuro') el.dataset.theme = 'dark'; else delete el.dataset.theme;
+  } catch { /* fora do navegador */ }
+}
+export function mudarTema(t: Tema) { aplicarTema(t); set((s) => { s.tema = t; s.menu = null; }); }
 
 /* ---------- idioma ---------- */
 export function aplicarIdioma(i: Idioma) {
@@ -688,6 +1011,8 @@ export function pedirRemover() { const s = get(); if (alvoSel(s.dados, s.sel, s.
 /** Cria os cômodos que a IA leu do desenho, com portas, passagens, a entrada e as janelas. Se a casa já tem
  *  cômodos, tudo vai para um andar novo ("Do desenho"), para não misturar com o que já existe. */
 export function montarDoDesenho(pl: PlantaIA): { andar: string; n: number } {
+  pontoAutomatico(tx('Antes de montar pelo desenho', 'Before building from the sketch'));
+  hist.anotar(tx('Montou a planta pelo desenho', 'Built the plan from the sketch'));
   const temCasa = Object.keys(get().dados.comodos).length > 0;
   const andar = temCasa ? criarAndar(tx('Do desenho', 'From the sketch')) : andarPadrao();
   set((s) => {
@@ -707,6 +1032,7 @@ export function montarDoDesenho(pl: PlantaIA): { andar: string; n: number } {
     for (const j of pl.janelas) if (ids[j.comodo]) poe(janelaNaParede(d.comodos[ids[j.comodo]], j.parede, novos(), Object.values(d.els)));
     s.vista = 'casa'; s.comodo = ids[0] || null; s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.folha = false; s.desenho.ativo = false;
   });
+  hist.confirmar(); hist.esquecerRotulo();
   enquadrar();
   return { andar, n: pl.comodos.length };
 }

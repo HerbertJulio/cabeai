@@ -1,9 +1,10 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import { NOME_PAREDE } from '@/lib/catalogo';
-import { alvoSel, cenariosVisiveis, comodosDoCenario, idsVisiveis, nomeComodo, problemasDe } from '@/lib/consultas';
+import { alvoSel, cenariosVisiveis, comodosDoCenario, espacoAberto, idsVisiveis, nomeComodo, problemasDe, vizinhosDeParede } from '@/lib/consultas';
 import { geoEl } from '@/lib/geometria';
-import { abrirCenario, abrirDialogo, editarItem, girar, girarComodo, limparSel, sairCenario, useApp } from '@/lib/store';
+import { areaM2, fmtArea } from '@/lib/resumo';
+import { abrirCenario, abrirDialogo, avisarLigacoes, editarItem, girar, girarComodo, limparSel, sairCenario, useApp } from '@/lib/store';
 import type { Comodo, ElParede } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
 import { fmtM, pl } from '@/lib/util';
@@ -12,6 +13,7 @@ import { abrirMenuEmBotao } from './Topo';
 
 export function descEl(q: Comodo, e: ElParede): string {
   const g = geoEl(q, e), w = fmtM(g.b - g.a), par = tx('parede ' + NOME_PAREDE[e.parede], NOME_PAREDE[e.parede] + ' wall');
+  if (e.tipo === 'porta' && e.semParede) return `${w} m · ${par} · ${tx('sem parede', 'no wall')}`;
   if (e.tipo === 'porta') return `${w} m · ${par} · ${e.abre === 'vao' ? tx('vão livre', 'open doorway') : tx(`abre para ${e.abre}`, `opens ${e.abre === 'dentro' ? 'inward' : 'outward'}`)}`;
   if (e.tipo === 'janela') return `${w} m · ${par} · ${e.abertura === 'abrir' ? tx('de abrir', 'hinged') : tx('de correr', 'sliding')}`;
   if (e.tipo === 'ar') return tx(`aparelho de ${w} m · ${par}`, `${w} m unit · ${par}`);
@@ -55,12 +57,15 @@ export default function Faixa() {
     );
   }
   if (selComodo && dados.comodos[selComodo] && !verCen) {
-    const c = dados.comodos[selComodo], a = dados.andares[c.andar];
+    const c = dados.comodos[selComodo], a = dados.andares[c.andar], temViz = vista === 'casa' && vizinhosDeParede(dados, c.id).length > 0;
+    // sem parede com os vizinhos: a área do espaço todo (um L, por exemplo)
+    const junto = espacoAberto(dados, c.id), aberto = junto.length > 1 ? ` · ${tx('espaço aberto', 'open space')} ${fmtArea(junto.reduce((t, id) => t + areaM2(dados.comodos[id]), 0))}` : '';
     return (
       <div className="faixa" id="faixa">
-        <div className="barra-txt"><span className="barra-nome">{c.nome}</span> <span className="barra-med">{fmtM(c.w)} × {fmtM(c.h)} m{a ? ` · ${a.nome}` : ''}</span></div>
+        <div className="barra-txt"><span className="barra-nome">{c.nome}</span> <span className="barra-med">{fmtM(c.w)} × {fmtM(c.h)} m · {fmtArea(areaM2(c))}{aberto}{a && Object.keys(dados.andares).length > 1 ? ` · ${a.nome}` : ''}</span></div>
         <div className="acoes">
-          <button className="btn" type="button" data-acao="q-girar" aria-label={tx(`Girar ${c.nome} 90 graus`, `Rotate ${c.nome} 90 degrees`)} onClick={() => girarComodo(c.id)}><Icone n="girar" /><span className="rot-longo">{tx('Girar', 'Rotate')}</span></button>
+          <button className="btn" type="button" data-acao="q-girar" aria-label={tx(`Girar ${c.nome} 90 graus`, `Rotate ${c.nome} 90 degrees`)} onClick={() => avisarLigacoes(c.id, girarComodo(c.id))}><Icone n="girar" /><span className="rot-longo">{tx('Girar', 'Rotate')}</span></button>
+          {temViz && <button className="btn" type="button" id="b-paredes" data-acao="q-paredes" aria-haspopup="menu" aria-label={tx(`Paredes de ${c.nome} com os vizinhos`, `${c.nome}’s walls with its neighbors`)} onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'paredes', { comodo: c.id })}><Icone n="tesoura" /><span className="rot-longo">{tx('Paredes', 'Walls')}</span></button>}
           <button className="btn" type="button" data-acao="q-editar" onClick={() => abrirDialogo('comodo', { id: c.id })}>{tx('Editar', 'Edit')}</button>
           <button className="ico-btn" type="button" id="b-comodo-mais" aria-label={tx(`Mais opções de ${c.nome}`, `More options for ${c.nome}`)} aria-haspopup="menu" onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'comodo', { comodo: c.id })}><Icone n="mais" /></button>
           <button className="ico-btn" type="button" data-acao="desmarcar" aria-label={tx('Tirar a seleção', 'Clear selection')} onClick={limparSel}><Icone n="x" /></button>

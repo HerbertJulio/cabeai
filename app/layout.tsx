@@ -45,7 +45,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className={`${corpo.variable} ${titulo.variable}`}>
+    <html lang="pt-BR" className={`${corpo.variable} ${titulo.variable}`} suppressHydrationWarning>
+      <head>
+        {/* tema escolhido (claro ou escuro) antes de pintar a tela, sem piscar */}
+        <script dangerouslySetInnerHTML={{ __html: "try{var p=JSON.parse(localStorage.getItem('cabeai:prefs')||'{}');if(p.tema==='claro')document.documentElement.dataset.theme='light';else if(p.tema==='escuro')document.documentElement.dataset.theme='dark'}catch(e){}" }} />
+      </head>
       <body>
         {children}
         <noscript><p className="sem-js">O Cabeaí precisa do JavaScript ligado no navegador. · Cabeaí needs JavaScript enabled in your browser.</p></noscript>

@@ -1,6 +1,8 @@
 // Planta pelo desenho em papel: o pedido para a IA (foto do rascunho e/ou descrição da casa), a leitura da
 // resposta e o ajuste das medidas, para os cômodos vizinhos dividirem a parede certinho.
-import { COMODO_NOME, LIM_COMODO, T, ehTipoComodo } from './catalogo';
+import { COMODO_NOME, LIM_COMODO, T, tipoPorNome } from './catalogo';
+
+export { tipoPorNome };
 import { tx, type Idioma } from './i18n';
 import type { Parede, TipoComodo } from './tipos';
 
@@ -41,20 +43,6 @@ export function montarPromptPlanta(texto: string, temFoto: boolean, lingua: Idio
 }
 
 /** Tipo de cômodo a partir do que a IA escreveu (aceita sinônimos como suíte, lavabo, alpendre…). */
-export function tipoPorNome(tipo: unknown, nome: string): TipoComodo {
-  if (ehTipoComodo(tipo)) return tipo;
-  const t = `${typeof tipo === 'string' ? tipo : ''} ${nome}`.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  if (/corredor|hall|circula|corridor|hallway/.test(t)) return 'corredor';
-  if (/varanda|alpendre|sacada|terraco|porch|balcon|deck|patio/.test(t)) return 'varanda';
-  if (/banheiro|lavabo|\bwc\b|bath|toilet/.test(t)) return 'banheiro';
-  if (/servico|lavanderia|laundry|tanque/.test(t)) return 'servico';
-  if (/garagem|garage/.test(t)) return 'garagem';
-  if (/cozinha|copa|kitchen/.test(t)) return 'cozinha';
-  if (/quarto|suite|dormit|bedroom|room 1/.test(t)) return 'quarto';
-  if (/sala|estar|jantar|living|dining/.test(t)) return 'sala';
-  return 'outro';
-}
-
 const num = (v: unknown): number => { const n = typeof v === 'string' ? Number(v.replace(',', '.')) : Number(v); return Number.isFinite(n) ? n : NaN; };
 const r5 = (v: number) => Math.round(v / 5) * 5;
 

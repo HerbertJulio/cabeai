@@ -20,7 +20,7 @@ export interface InfoTipo {
   frente?: number;
   /** O que a pessoa faz na frente (para as mensagens). */
   uso?: string;
-  grupo: 'quarto' | 'sala' | 'cozinha' | 'outro';
+  grupo: 'quarto' | 'sala' | 'cozinha' | 'banheiro' | 'outro';
 }
 
 type TextosTipo = { rot: string; chip: string; novo: string; a: string; b: string; uso?: string };
@@ -34,31 +34,47 @@ function tipo(pt: TextosTipo, en: TextosTipo, d: { alto: boolean; ea: number; eb
 const LARG = { a: 'Largura', b: 'Profundidade' }, WIDTH = { a: 'Width', b: 'Depth' };
 const FRENTE_PT = { a: 'Largura (frente)', b: 'Profundidade' }, FRENTE_EN = { a: 'Width (front)', b: 'Depth' };
 const COMPR = { a: 'Largura', b: 'Comprimento' }, LENGTH = { a: 'Width', b: 'Length' };
+/** Banheira: o comprimento fica ao longo da parede (é a frente). */
+const BANHEIRA_PT = { a: 'Comprimento', b: 'Largura' }, BANHEIRA_EN = { a: 'Length', b: 'Width' };
 
 export const TIPOS: Record<TipoMovel, InfoTipo> = {
   'cama': tipo({ rot: 'Cama', chip: 'Cama', novo: 'Nova cama', ...COMPR }, { rot: 'Bed', chip: 'Bed', novo: 'New bed', ...LENGTH }, { alto: false, ea: 162, eb: 202, grupo: 'quarto' }),
   'guarda-roupa': tipo({ rot: 'Guarda-roupa', chip: 'Guarda-roupa', novo: 'Novo guarda-roupa', ...FRENTE_PT }, { rot: 'Wardrobe', chip: 'Wardrobe', novo: 'New wardrobe', ...FRENTE_EN }, { alto: true, ea: 180, eb: 55, ab: ['abrir', 'correr'], grupo: 'quarto' }),
   'berco': tipo({ rot: 'Berço', chip: 'Berço', novo: 'Novo berço', ...COMPR }, { rot: 'Crib', chip: 'Crib', novo: 'New crib', ...LENGTH }, { alto: false, ea: 70, eb: 130, grupo: 'quarto' }),
   'comoda': tipo({ rot: 'Cômoda', chip: 'Cômoda', novo: 'Nova cômoda', ...FRENTE_PT }, { rot: 'Dresser', chip: 'Dresser', novo: 'New dresser', ...FRENTE_EN }, { alto: false, ea: 100, eb: 45, ab: ['gavetas', 'abrir'], grupo: 'quarto' }),
+  'cabeceira': tipo({ rot: 'Criado-mudo', chip: 'Criado-mudo', novo: 'Novo criado-mudo', ...LARG }, { rot: 'Nightstand', chip: 'Nightstand', novo: 'New nightstand', ...WIDTH }, { alto: false, ea: 45, eb: 40, grupo: 'quarto' }),
   'mesa': tipo({ rot: 'Mesa', chip: 'Mesa', novo: 'Nova mesa', ...LARG }, { rot: 'Table', chip: 'Table / desk', novo: 'New table', ...WIDTH }, { alto: false, ea: 100, eb: 50, grupo: 'sala' }),
   'cadeira': tipo({ rot: 'Cadeira', chip: 'Cadeira', novo: 'Nova cadeira', ...LARG }, { rot: 'Chair', chip: 'Chair', novo: 'New chair', ...WIDTH }, { alto: false, ea: 45, eb: 50, grupo: 'sala' }),
   'sofa': tipo({ rot: 'Sofá', chip: 'Sofá', novo: 'Novo sofá', ...LARG, uso: 'sentar' }, { rot: 'Sofa', chip: 'Sofa', novo: 'New sofa', ...WIDTH, uso: 'sit down' }, { alto: false, ea: 210, eb: 90, frente: 50, grupo: 'sala' }),
+  'poltrona': tipo({ rot: 'Poltrona', chip: 'Poltrona', novo: 'Nova poltrona', ...LARG, uso: 'sentar' }, { rot: 'Armchair', chip: 'Armchair', novo: 'New armchair', ...WIDTH, uso: 'sit down' }, { alto: false, ea: 80, eb: 80, frente: 40, grupo: 'sala' }),
   'rack': tipo({ rot: 'Rack', chip: 'Rack / TV', novo: 'Novo rack', ...LARG }, { rot: 'TV stand', chip: 'TV stand', novo: 'New TV stand', ...WIDTH }, { alto: false, ea: 180, eb: 45, grupo: 'sala' }),
   'estante': tipo({ rot: 'Estante', chip: 'Estante', novo: 'Nova estante', ...LARG }, { rot: 'Bookcase', chip: 'Bookcase', novo: 'New bookcase', ...WIDTH }, { alto: true, ea: 80, eb: 35, grupo: 'sala' }),
   'geladeira': tipo({ rot: 'Geladeira', chip: 'Geladeira', novo: 'Nova geladeira', ...LARG }, { rot: 'Fridge', chip: 'Fridge', novo: 'New fridge', ...WIDTH }, { alto: true, ea: 70, eb: 75, ab: ['abrir'], grupo: 'cozinha' }),
   'fogao': tipo({ rot: 'Fogão', chip: 'Fogão', novo: 'Novo fogão', ...LARG, uso: 'abrir o forno' }, { rot: 'Stove', chip: 'Stove', novo: 'New stove', ...WIDTH, uso: 'open the oven' }, { alto: false, ea: 76, eb: 60, frente: 70, grupo: 'cozinha' }),
   'pia': tipo({ rot: 'Pia', chip: 'Pia / bancada', novo: 'Nova pia', ...LARG, uso: 'usar a pia' }, { rot: 'Sink', chip: 'Sink / counter', novo: 'New sink', ...WIDTH, uso: 'use the sink' }, { alto: false, ea: 120, eb: 55, frente: 60, grupo: 'cozinha' }),
   'lavadora': tipo({ rot: 'Máquina de lavar', chip: 'Máquina de lavar', novo: 'Nova máquina de lavar', ...LARG, uso: 'usar a máquina' }, { rot: 'Washing machine', chip: 'Washing machine', novo: 'New washing machine', ...WIDTH, uso: 'use the machine' }, { alto: false, ea: 60, eb: 65, frente: 60, grupo: 'cozinha' }),
+  'tanque': tipo({ rot: 'Tanque', chip: 'Tanque', novo: 'Novo tanque', ...LARG, uso: 'usar o tanque' }, { rot: 'Utility sink', chip: 'Utility sink', novo: 'New utility sink', ...WIDTH, uso: 'use the sink' }, { alto: false, ea: 60, eb: 55, frente: 60, grupo: 'cozinha' }),
   'armario': tipo({ rot: 'Armário', chip: 'Armário', novo: 'Novo armário', ...FRENTE_PT }, { rot: 'Cabinet', chip: 'Cabinet', novo: 'New cabinet', ...FRENTE_EN }, { alto: true, ea: 80, eb: 45, ab: ['abrir', 'correr'], grupo: 'cozinha' }),
+  'vaso': tipo({ rot: 'Vaso sanitário', chip: 'Vaso sanitário', novo: 'Novo vaso sanitário', ...LARG, uso: 'usar o vaso' }, { rot: 'Toilet', chip: 'Toilet', novo: 'New toilet', ...WIDTH, uso: 'use the toilet' }, { alto: false, ea: 40, eb: 65, frente: 60, grupo: 'banheiro' }),
+  'lavatorio': tipo({ rot: 'Pia do banheiro', chip: 'Pia do banheiro', novo: 'Nova pia do banheiro', ...LARG, uso: 'usar a pia' }, { rot: 'Bathroom sink', chip: 'Bathroom sink', novo: 'New bathroom sink', ...WIDTH, uso: 'use the sink' }, { alto: false, ea: 60, eb: 45, frente: 60, grupo: 'banheiro' }),
+  'box': tipo({ rot: 'Box do chuveiro', chip: 'Box / chuveiro', novo: 'Novo box', ...LARG, uso: 'entrar no box' }, { rot: 'Shower', chip: 'Shower', novo: 'New shower', ...WIDTH, uso: 'step into the shower' }, { alto: false, ea: 90, eb: 90, frente: 60, grupo: 'banheiro' }),
+  'banheira': tipo({ rot: 'Banheira', chip: 'Banheira', novo: 'Nova banheira', ...BANHEIRA_PT, uso: 'entrar na banheira' }, { rot: 'Bathtub', chip: 'Bathtub', novo: 'New bathtub', ...BANHEIRA_EN, uso: 'get into the tub' }, { alto: false, ea: 170, eb: 75, frente: 60, grupo: 'banheiro' }),
   'escada': tipo({ rot: 'Escada', chip: 'Escada', novo: 'Nova escada', ...COMPR, uso: 'subir a escada' }, { rot: 'Stairs', chip: 'Stairs', novo: 'New stairs', ...LENGTH, uso: 'use the stairs' }, { alto: false, ea: 90, eb: 300, frente: 80, grupo: 'outro' }),
   'outro': tipo({ rot: 'Móvel', chip: 'Outro móvel', novo: 'Novo móvel', ...FRENTE_PT }, { rot: 'Furniture', chip: 'Other', novo: 'New piece', ...FRENTE_EN }, { alto: false, ea: 80, eb: 40, ab: ['nenhuma', 'abrir', 'correr', 'gavetas'], grupo: 'outro' })
 };
 export const ORDEM_TIPOS = Object.keys(TIPOS) as TipoMovel[];
 const GRUPO_NOME = registro<InfoTipo['grupo']>(
-  { quarto: 'Quarto', sala: 'Sala e escritório', cozinha: 'Cozinha e serviço', outro: 'Outro' },
-  { quarto: 'Bedroom', sala: 'Living room and office', cozinha: 'Kitchen and laundry', outro: 'Other' }
+  { quarto: 'Quarto', sala: 'Sala e escritório', cozinha: 'Cozinha e serviço', banheiro: 'Banheiro', outro: 'Outro' },
+  { quarto: 'Bedroom', sala: 'Living room and office', cozinha: 'Kitchen and laundry', banheiro: 'Bathroom', outro: 'Other' }
 );
-export const GRUPOS_TIPOS: { id: InfoTipo['grupo']; rot: string }[] = (['quarto', 'sala', 'cozinha', 'outro'] as const).map((id) => ({ id, get rot() { return GRUPO_NOME[id]; } }));
+export const GRUPOS_TIPOS: { id: InfoTipo['grupo']; rot: string }[] = (['quarto', 'sala', 'cozinha', 'banheiro', 'outro'] as const).map((id) => ({ id, get rot() { return GRUPO_NOME[id]; } }));
+/** Os grupos de móveis que combinam com cada tipo de cômodo (o menu de "adicionar aqui" mostra esses primeiro). */
+export const GRUPOS_DO_COMODO: Record<TipoComodo, InfoTipo['grupo'][]> = {
+  sala: ['sala'], quarto: ['quarto'], banheiro: ['banheiro'], cozinha: ['cozinha'], servico: ['cozinha'],
+  corredor: ['sala', 'outro'], varanda: ['sala'], garagem: ['outro', 'cozinha'], outro: []
+};
+/** O primeiro móvel sugerido ao adicionar num cômodo desse tipo. */
+export const MOVEL_DO_COMODO: Partial<Record<TipoComodo, TipoMovel>> = { sala: 'sofa', quarto: 'cama', banheiro: 'vaso', cozinha: 'geladeira', servico: 'lavadora', varanda: 'poltrona' };
 
 export const AB_NOME = registro<Abertura>(
   { nenhuma: 'Não tem portas', abrir: 'Portas de abrir', correr: 'Portas de correr', gavetas: 'Gavetas' },
@@ -145,11 +161,11 @@ export const ehInterruptor = (p: Ponto): boolean => p === 'interruptor' || p ===
  *  (a geladeira na tomada ou na água, a estante da TV) não conta como tapando. */
 export const PONTO_USA: Record<Ponto, TipoMovel[]> = {
   interruptor: [], ambos: [], luz: ['cama'],
-  tomada: ['geladeira', 'lavadora'],
+  tomada: ['geladeira', 'lavadora', 'cabeceira'],
   tv: ['rack', 'estante'],
   rede: ['rack', 'mesa'],
-  agua: ['pia', 'lavadora', 'geladeira'],
-  esgoto: ['pia', 'lavadora'],
+  agua: ['pia', 'lavadora', 'geladeira', 'tanque', 'vaso', 'lavatorio', 'box', 'banheira'],
+  esgoto: ['pia', 'lavadora', 'tanque', 'vaso', 'lavatorio', 'box', 'banheira'],
   gas: ['fogao']
 };
 /** "do ponto de TV", "do esgoto" (para as explicações das sugestões). */
@@ -165,8 +181,23 @@ export const COMODO_NOME = registro<TipoComodo>(
   { sala: 'Living room', quarto: 'Bedroom', banheiro: 'Bathroom', cozinha: 'Kitchen', corredor: 'Hallway', varanda: 'Porch', servico: 'Laundry', garagem: 'Garage', outro: 'Other' }
 );
 export const ehTipoComodo = (v: unknown): v is TipoComodo => typeof v === 'string' && (TIPOS_COMODO as string[]).includes(v);
-/** O tipo de um cômodo, mesmo dos antigos (corredor pela marca; o resto vira "outro"). */
-export const tipoDoComodo = (c: { tipo?: TipoComodo; corredor?: boolean }): TipoComodo => (c.corredor ? 'corredor' : c.tipo || 'outro');
+/** O tipo pelo que veio escrito (o tipo ou o nome: "Suíte" é quarto, "Lavabo" é banheiro, "Alpendre" é varanda…). */
+export function tipoPorNome(tipo: unknown, nome: string): TipoComodo {
+  if (ehTipoComodo(tipo)) return tipo;
+  const t = `${typeof tipo === 'string' ? tipo : ''} ${nome}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/corredor|hall|circula|corridor|hallway/.test(t)) return 'corredor';
+  if (/varanda|alpendre|sacada|terraco|porch|balcon|deck|patio/.test(t)) return 'varanda';
+  if (/banheiro|lavabo|\bwc\b|bath|toilet/.test(t)) return 'banheiro';
+  if (/servico|lavanderia|laundry|tanque/.test(t)) return 'servico';
+  if (/garagem|garage/.test(t)) return 'garagem';
+  if (/cozinha|copa|kitchen/.test(t)) return 'cozinha';
+  if (/quarto|suite|dormit|bedroom|room 1/.test(t)) return 'quarto';
+  if (/sala|estar|jantar|living|dining/.test(t)) return 'sala';
+  return 'outro';
+}
+/** O tipo de um cômodo, mesmo dos antigos: corredor pela marca e, sem tipo, pelo nome ("Cozinha", "Suíte"…). */
+export const tipoDoComodo = (c: { tipo?: TipoComodo; corredor?: boolean; nome?: string }): TipoComodo =>
+  c.corredor ? 'corredor' : c.tipo || (c.nome && !/^(c[oô]modo|room)\s*\d*$/i.test(c.nome.trim()) ? tipoPorNome(undefined, c.nome) : 'outro');
 
 export const ehParede = (tipo: string): tipo is TipoParede => tem(TIPOS_PAREDE, tipo);
 export const tipoMovel = (tipo: string): tipo is TipoMovel => tem(TIPOS, tipo);

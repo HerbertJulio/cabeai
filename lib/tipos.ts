@@ -3,8 +3,8 @@
 
 export type Parede = 'cima' | 'baixo' | 'esquerda' | 'direita';
 export type TipoMovel =
-  | 'cama' | 'guarda-roupa' | 'berco' | 'comoda' | 'mesa' | 'cadeira' | 'sofa' | 'estante' | 'rack'
-  | 'geladeira' | 'fogao' | 'pia' | 'lavadora' | 'armario' | 'escada' | 'outro';
+  | 'cama' | 'guarda-roupa' | 'berco' | 'comoda' | 'cabeceira' | 'mesa' | 'cadeira' | 'sofa' | 'poltrona' | 'estante' | 'rack'
+  | 'geladeira' | 'fogao' | 'pia' | 'lavadora' | 'tanque' | 'armario' | 'vaso' | 'lavatorio' | 'box' | 'banheira' | 'escada' | 'outro';
 /** Escada reta (degraus em linha) ou caracol (redonda). */
 export type FormaEscada = 'reta' | 'caracol';
 export type Abertura = 'nenhuma' | 'abrir' | 'correr' | 'gavetas';
@@ -106,6 +106,12 @@ export interface ElParede {
   herdada?: boolean;
   origem?: string;
   origemComodo?: string;
+  /** Porta posta sozinha quando dois cômodos se encostaram (sai se eles se separarem). */
+  auto?: boolean;
+  /** O cômodo vizinho que esta porta (ou a parede tirada) liga. */
+  liga?: string;
+  /** A parede entre os dois cômodos foi tirada: o espaço continua no vizinho (a "porta" ocupa a parede dividida inteira). */
+  semParede?: boolean;
 }
 
 export interface ItemCenario {

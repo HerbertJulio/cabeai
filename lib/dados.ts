@@ -55,12 +55,18 @@ export function normalizarMovel(id: string, v: Record<string, unknown>): Movel {
 
 export function normalizarEl(tipo: TipoParede, id: string, v: Record<string, unknown>): ElParede {
   const tp = TIPOS_PAREDE[tipo];
+  // a parede tirada ocupa a parede dividida inteira (pode passar do tamanho máximo de uma porta)
+  const semParede = tipo === 'porta' && !!v.semParede && typeof v.liga === 'string' && ID_OK.test(v.liga);
   const e: ElParede = {
     id, tipo, nome: txt(v.nome, tp.rot, 30), comodo: String(v.comodo || v.quarto || ''),
     parede: PAREDES.includes(v.parede as never) ? (v.parede as ElParede['parede']) : tp.parede,
-    inicio: Math.max(0, num(v.inicio, 0)), largura: clamp(num(v.largura, tp.larg), tp.min, tp.max), criado: num(v.criado, 0)
+    inicio: Math.max(0, num(v.inicio, 0)), largura: semParede ? clamp(num(v.largura, tp.larg), 10, LIM_COMODO.max) : clamp(num(v.largura, tp.larg), tp.min, tp.max), criado: num(v.criado, 0)
   };
-  if (tipo === 'porta') { e.dobradica = v.dobradica === 'b' ? 'b' : 'a'; e.abre = v.abre === 'fora' || v.abre === 'vao' ? v.abre : 'dentro'; }
+  if (tipo === 'porta') {
+    e.dobradica = v.dobradica === 'b' ? 'b' : 'a'; e.abre = semParede ? 'vao' : v.abre === 'fora' || v.abre === 'vao' ? v.abre : 'dentro';
+    if (typeof v.liga === 'string' && ID_OK.test(v.liga)) e.liga = v.liga;
+    if (semParede) e.semParede = true; else if (v.auto && e.liga) e.auto = true;
+  }
   if (tipo === 'janela') { e.abertura = v.abertura === 'abrir' ? 'abrir' : 'correr'; e.folhas = num(v.folhas, 2) === 1 ? 1 : 2; }
   if (tipo === 'ar') e.folga = clamp(num(v.folga, 30), 0, 200);
   if (tipo === 'interruptor') e.ponto = pontoDe(v);
@@ -111,6 +117,12 @@ export function normalizarDados(bruto: unknown): Dados {
     if (!ID_OK.test(id) || !obj(v) || typeof v.tipo !== 'string' || !(v.tipo in TIPOS_PAREDE)) continue;
     const e = normalizarEl(v.tipo as TipoParede, id, v);
     if (d.comodos[e.comodo]) d.els[id] = e;
+  }
+  // ligação com um cômodo que não existe mais: a parede tirada volta; a porta fica, mas sem a ligação
+  for (const e of Object.values(d.els)) {
+    if (!e.liga || d.comodos[e.liga]) continue;
+    if (e.semParede) delete d.els[e.id];
+    else { delete e.liga; delete e.auto; }
   }
   for (const [id, v] of Object.entries(pega('cenarios'))) {
     if (!ID_OK.test(id) || !obj(v)) continue;
@@ -218,10 +230,10 @@ export function exemplo(): Dados {
   return normalizarDados({
     andares: { terreo: { nome: tx('Térreo', 'Ground floor'), ordem: 0, criado: c }, a1: { nome: tx('1º andar', '1st floor'), ordem: 1, criado: c + 1 } },
     comodos: {
-      sala: { nome: tx('Sala', 'Living room'), w: 420, h: 380, andar: 'terreo', x: 0, y: 0, criado: 1 },
-      cozinha: { nome: tx('Cozinha', 'Kitchen'), w: 280, h: 380, andar: 'terreo', x: 435, y: 0, criado: 2 },
-      q1: { nome: tx('Quarto 1', 'Bedroom 1'), w: 300, h: 300, andar: 'a1', x: 0, y: 0, criado: 3 },
-      q2: { nome: tx('Quarto 2', 'Bedroom 2'), w: 300, h: 400, andar: 'a1', x: 315, y: 0, criado: 4 }
+      sala: { nome: tx('Sala', 'Living room'), w: 420, h: 380, andar: 'terreo', x: 0, y: 0, criado: 1, tipo: 'sala' },
+      cozinha: { nome: tx('Cozinha', 'Kitchen'), w: 280, h: 380, andar: 'terreo', x: 435, y: 0, criado: 2, tipo: 'cozinha' },
+      q1: { nome: tx('Quarto 1', 'Bedroom 1'), w: 300, h: 300, andar: 'a1', x: 0, y: 0, criado: 3, tipo: 'quarto' },
+      q2: { nome: tx('Quarto 2', 'Bedroom 2'), w: 300, h: 400, andar: 'a1', x: 315, y: 0, criado: 4, tipo: 'quarto' }
     },
     els: {
       'p-entrada': { tipo: 'porta', nome: tx('Entrada', 'Entrance'), comodo: 'sala', parede: 'baixo', inicio: 40, largura: 90, dobradica: 'a', abre: 'dentro', criado: 1 },

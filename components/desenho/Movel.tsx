@@ -85,6 +85,39 @@ function corpo(m: Movel, A: number, B: number): ReactNode {
     return <>{base}<rect className="mv-l" x={n1(bx)} y={n1(B * 0.22)} width={n1(bw)} height={n1(B * 0.6)} rx={6} /><circle className="mv-l" cx={n1(A * 0.5)} cy={n1(B * 0.12)} r={2.5} /></>;
   }
   if (t === 'lavadora') return <>{base}<circle className="mv-l" cx={n1(A / 2)} cy={n1(B * 0.55)} r={n1(Math.min(A, B) * 0.32)} /><line className="mv-l forte" x1={0} y1={B - 2} x2={A} y2={B - 2} /></>;
+  if (t === 'cabeceira') return <>{base}<line className="mv-l" x1={4} y1={n1(B * 0.5)} x2={A - 4} y2={n1(B * 0.5)} /><circle className="mv-l" cx={n1(A / 2)} cy={n1(B * 0.75)} r={1.6} /><line className="mv-l forte" x1={0} y1={B - 2} x2={A} y2={B - 2} /></>;
+  if (t === 'poltrona') {
+    const enc = Math.min(20, B * 0.26), braco = Math.min(14, A * 0.18);
+    return <>{base}
+      <rect className="mv-estofo" x={0} y={0} width={A} height={n1(enc)} rx={4} />
+      <rect className="mv-estofo" x={0} y={0} width={n1(braco)} height={B} rx={4} />
+      <rect className="mv-estofo" x={n1(A - braco)} y={0} width={n1(braco)} height={B} rx={4} />
+    </>;
+  }
+  if (t === 'tanque') {
+    return <>{base}<rect className="mv-l" x={n1(A * 0.12)} y={n1(B * 0.24)} width={n1(A * 0.76)} height={n1(B * 0.6)} rx={4} />
+      <circle className="mv-l" cx={n1(A * 0.5)} cy={n1(B * 0.12)} r={2.5} /><line className="mv-l fino" x1={n1(A * 0.2)} y1={n1(B * 0.62)} x2={n1(A * 0.8)} y2={n1(B * 0.62)} /></>;
+  }
+  if (t === 'vaso') {
+    // caixa acoplada nas costas e a bacia oval na frente
+    const cx = B * 0.26;
+    return <>
+      <rect className="hit" x={0} y={0} width={A} height={B} />
+      <rect className={`mv-base t-${t}`} x={0} y={0} width={A} height={n1(cx)} rx={3} />
+      <ellipse className={`mv-base t-${t}`} cx={n1(A / 2)} cy={n1(cx + (B - cx) / 2)} rx={n1(A * 0.44)} ry={n1((B - cx) / 2 - 0.5)} />
+      <ellipse className="mv-l" cx={n1(A / 2)} cy={n1(cx + (B - cx) / 2 + 2)} rx={n1(A * 0.28)} ry={n1((B - cx) / 2 - 8)} />
+    </>;
+  }
+  if (t === 'lavatorio') return <>{base}<ellipse className="mv-l" cx={n1(A / 2)} cy={n1(B * 0.56)} rx={n1(Math.min(A * 0.32, 24))} ry={n1(B * 0.28)} /><circle className="mv-l" cx={n1(A / 2)} cy={n1(B * 0.14)} r={2.2} /></>;
+  if (t === 'box') {
+    // piso do chuveiro com o ralo no meio; a frente (por onde se entra) é o vidro
+    return <>{base}<line className="mv-l fino" x1={3} y1={3} x2={A - 3} y2={B - 3} /><line className="mv-l fino" x1={A - 3} y1={3} x2={3} y2={B - 3} />
+      <circle className="mv-l" cx={n1(A / 2)} cy={n1(B / 2)} r={3.5} /><line className="mv-vidro" x1={2} y1={B - 2} x2={A - 2} y2={B - 2} /></>;
+  }
+  if (t === 'banheira') {
+    const m = Math.min(8, B * 0.12);
+    return <>{base}<rect className="mv-l" x={n1(m)} y={n1(m)} width={n1(A - 2 * m)} height={n1(B - 2 * m)} rx={n1(Math.min(B / 2 - m, 26))} /><circle className="mv-l" cx={n1(A - m - 12)} cy={n1(B / 2)} r={2.5} /></>;
+  }
   if (t === 'escada') {
     if (m.escada === 'caracol') {
       // degraus em leque em volta do pilar do meio; a seta mostra o sentido de subida

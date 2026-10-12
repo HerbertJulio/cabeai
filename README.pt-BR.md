@@ -6,16 +6,20 @@
 
 *Read in English: [README.md](README.md)*
 
-- **Desenhe a planta** arrastando o dedo ou o mouse: escolha sala, quarto, banheiro, cozinha, corredor, varanda… O ímã junta as paredes, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam.
+- **Desenhe a planta** arrastando o dedo ou o mouse: escolha sala, quarto, banheiro, cozinha, corredor, varanda… Arraste o cômodo pelo piso ou pelo nome para mudar de lugar; perto de outro cômodo as paredes grudam, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam (e ela sai se eles se separarem).
+- **Tire a parede** entre dois cômodos e eles viram um espaço só (um cômodo em L, por exemplo); dá para pôr a parede de volta quando quiser.
 - **Foto do desenho em papel**: tire uma foto do rascunho e a IA monta os cômodos, os corredores, as portas e as janelas.
 - Casa com **andares** e **cômodos**: veja um cômodo, os cômodos **lado a lado** ou a **planta da casa montada** (andares lado a lado; cômodos que se arrastam, esticam pelas paredes e giram, com ímã que encosta as paredes e setas com a distância entre eles).
 - **Portas (ou vão livre, sem porta), janelas, ar-condicionado e pontos** em cada parede: interruptor, tomada, arandela, TV, internet, água, esgoto e gás. Uma porta na parede dividida entre dois cômodos vale para os dois.
 - Coloque um cômodo **à direita, à esquerda, acima ou abaixo** de outro, crie **corredores** ligando dois cômodos com o comprimento que quiser e **escadas retas ou caracol**.
-- **Móveis com medidas reais**: cama (com **baú** na cabeceira, nos pés ou nos dois, mais largo que a cama, centralizado, à esquerda, à direita ou com ajuste), guarda-roupa, berço, cômoda, **mesa com cadeiras** (na frente, dos dois lados ou em volta, com o espaço para puxar), cadeira, sofá, rack, estante, geladeira, fogão, pia, lavadora, armário e outros.
+- **Móveis com medidas reais**: cama (com **baú** na cabeceira, nos pés ou nos dois, mais largo que a cama, centralizado, à esquerda, à direita ou com ajuste), guarda-roupa, berço, cômoda, criado-mudo, **mesa com cadeiras** (na frente, dos dois lados ou em volta, com o espaço para puxar), cadeira, sofá, poltrona, rack, estante, geladeira, fogão, pia, lavadora, tanque, armário, vaso sanitário, pia do banheiro, box, banheira e outros.
 - **Espaço livre na frente** de cada móvel calculado pelas portas e gavetas, e editável para móveis planejados.
 - **Avisos** quando algo não cabe: porta batendo em móvel, janela tapada, interruptor, tomada ou outro ponto tapado, cadeira sem espaço, cômodos um em cima do outro.
 - **Cenários** para comparar arrumações de um cômodo ou da casa toda (atualize o que está em uso ou salve um novo), e **3 sugestões** automáticas ou pela **IA**, que põem o rack no ponto de TV, a pia e a máquina de lavar na água e no esgoto e o fogão no gás.
-- Tudo fica **salvo no navegador**; dá para **exportar e importar** um arquivo.
+- **Desfazer e refazer** (↶ ↷ no topo, ou Ctrl+Z e Ctrl+Shift+Z), **histórico** de tudo o que mudou e **pontos de restauração**, que guardam a casa inteira no navegador (automáticos e os seus) para voltar depois.
+- **Esconda os móveis** (ou portas e janelas, ar-condicionado, pontos, nomes e a grade) para mexer no que está por baixo, use a **trena** para medir qualquer distância e veja a **área** de cada cômodo, andar e da casa, com o chão livre.
+- **Duplique um cômodo** com tudo dentro, **copie e cole** móveis e itens de parede, veja o **resumo com a lista de móveis** para copiar e **salve a planta como imagem** (PNG, ou compartilhe no celular).
+- Tudo fica **salvo no navegador**; dá para **exportar e importar** um arquivo. Tema claro, escuro ou automático.
 - Funciona no **celular** e no **computador**, em modo **simples** ou **avançado** (painel de propriedades, posição exata, travar móveis), em **português** e **inglês**.
 
 ## IA grátis
@@ -48,6 +52,18 @@ npm test          # testes (Vitest)
 npm run typecheck # TypeScript
 npm run build     # build de produção
 ```
+
+## Como o código está organizado
+
+```
+app/            páginas (Next.js App Router), estilos, fontes e as rotas /api/ia e /api/planta
+components/     a tela em React (planta em SVG, painéis, diálogos, menus)
+  desenho/      o desenho em escala dos cômodos e dos móveis (1 unidade = 1 cm)
+lib/            a lógica sem tela: geometria, avisos, casa, sugestões, IA, dados, idiomas
+tests/          testes (Vitest)
+```
+
+O `lib/store.ts` guarda o estado e é o único lugar que muda a casa; o resto de `lib/` só calcula: `geometria.ts` (medidas e avisos), `casa.ts` (planta da casa e ímã), `edicao.ts` (girar, esticar, portas automáticas e paredes tiradas), `consultas.ts`, `historico.ts` (desfazer, refazer e pontos de restauração), `resumo.ts` (áreas e resumo), `exportar.ts` (imagem da planta), `motor.ts` (sugestões), `ia.ts` e `planta.ts` (IA).
 
 ## Publicar
 

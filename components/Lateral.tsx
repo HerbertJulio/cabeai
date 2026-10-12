@@ -3,7 +3,8 @@ import { PAREDE_CURTA, pontoDe } from '@/lib/catalogo';
 import { andaresOrdem, avaliacao, comodosDoAndar, cq } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { geoEl } from '@/lib/geometria';
-import { abrirDialogo, atualizar, criarAndar, focarComodo, iniciarAdd, modoDesenho, selecionar, toast, useApp } from '@/lib/store';
+import { abrirDialogo, atualizar, criarAndar, focarComodo, iniciarAdd, modoDesenho, porParede, selecionar, toast, useApp } from '@/lib/store';
+import { areaM2, fmtArea } from '@/lib/resumo';
 import { tx } from '@/lib/i18n';
 import { fmtM } from '@/lib/util';
 import { Icone } from './icones';
@@ -23,12 +24,14 @@ export default function Lateral() {
 
   const fecharGaveta = () => atualizar((s) => { s.latAberta = false; });
   const grupos = q ? ([
-    [tx('Portas', 'Doors'), 'porta', 'porta', q.portas.filter((p) => !p.herdada), tx('Nenhuma porta.', 'No doors.'), tx('porta', 'door')],
+    [tx('Portas', 'Doors'), 'porta', 'porta', q.portas.filter((p) => !p.herdada && !p.semParede), tx('Nenhuma porta.', 'No doors.'), tx('porta', 'door')],
     [tx('Janelas', 'Windows'), 'janela', 'jan', q.janelas, tx('Nenhuma janela.', 'No windows.'), tx('janela', 'window')],
     [tx('Ar-condicionado', 'Air conditioners'), 'ar', 'ar', q.ares, tx('Nenhum.', 'None.'), tx('ar-condicionado', 'air conditioner')],
     [tx('Tomadas e outros pontos', 'Outlets and hookups'), 'interruptor', 'interruptor', q.interruptores, tx('Nenhum.', 'None.'), tx('tomada, interruptor, ponto de TV, água ou gás', 'outlet, switch, TV, water or gas hookup')]
   ] as const) : [];
-  const herdadas = q ? q.portas.filter((p) => p.herdada) : [];
+  const herdadas = q ? q.portas.filter((p) => p.herdada && !p.semParede) : [];
+  // paredes tiradas (deste lado ou do vizinho): o cômodo continua no vizinho
+  const abertas = q ? q.portas.filter((p) => p.semParede).map((p) => (p.herdada ? p.origemComodo : p.liga)).filter((id): id is string => !!id && !!dados.comodos[id]) : [];
 
   return (
     <aside className="lateral" id="lateral" aria-label={tx('Cômodos e itens', 'Rooms and items')}>
@@ -53,7 +56,7 @@ export default function Lateral() {
                   const n = avaliacao(dados, null, c.id)?.itens.length || 0;
                   return (
                     <li key={c.id}>
-                      <button type="button" className="item sala-item" data-q={c.id} aria-current={c.id === comodo} onClick={() => focarComodo(c.id, false)}>
+                      <button type="button" className="item sala-item" data-q={c.id} aria-current={c.id === comodo} title={`${fmtM(c.w)} × ${fmtM(c.h)} m · ${fmtArea(areaM2(c))}`} onClick={() => focarComodo(c.id, false)}>
                         <span className={`dot${n ? ' bad' : ''}`} aria-hidden="true" /><span className="nm">{c.nome}</span><span className="med">{fmtM(c.w)} × {fmtM(c.h)}</span>
                       </button>
                       <button type="button" className="ico-btn peq" id={`qm-${c.id}`} data-qmenu={c.id} aria-label={tx(`Opções de ${c.nome}`, `Options for ${c.nome}`)} aria-haspopup="menu" onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'comodo', { comodo: c.id })}><Icone n="mais" /></button>
@@ -98,6 +101,9 @@ export default function Lateral() {
                 </ul>
               ) : <p className="nota">{vazio}</p>}
               {tipo === 'porta' && herdadas.length > 0 && <p className="nota">{tx('Na parede dividida:', 'On the shared wall:')} {herdadas.map((p) => p.nome).join(', ')}.</p>}
+              {tipo === 'porta' && abertas.map((id) => (
+                <p key={id} className="nota sem-parede-nota">{tx(`Sem parede com ${dados.comodos[id].nome}: é um espaço só.`, `No wall with ${dados.comodos[id].nome}: it’s one space.`)} <button type="button" className="link" data-acao="por-parede" onClick={() => porParede(q.id, id)}>{tx('Pôr a parede de volta', 'Put the wall back')}</button></p>
+              ))}
             </div>
           ))}
         </>}

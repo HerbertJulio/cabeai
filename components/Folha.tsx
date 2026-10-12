@@ -6,8 +6,10 @@ import { moveisDo } from '@/lib/dados';
 import { valsMovel, valsParede, validarMovel, validarParede } from '@/lib/formularios';
 import { centrar } from '@/lib/geometria';
 import {
-  abrirDialogo, alternar, atualizar, duplicar, editarItem, focarComodo, girar, girarComodo, iniciarAdd, levar, pedirRemover, salvarEl, salvarMovel, travar, useApp
+  abrirDialogo, abrirMenu, alternar, atualizar, avisarLigacoes, duplicar, duplicarComodo, editarItem, focarComodo, girar, girarComodo, iniciarAdd, levar, pedirRemover, salvarEl, salvarMovel, toast, travar, useApp
 } from '@/lib/store';
+import { vizinhosDeParede } from '@/lib/consultas';
+import { areaLivre, areaM2, fmtArea } from '@/lib/resumo';
 import type { ElParede, Movel } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
 import { fmtM } from '@/lib/util';
@@ -125,12 +127,14 @@ export default function Folha() {
       </>}
     </>;
   } else if (selComodo && dados.comodos[selComodo]) {
-    const c = dados.comodos[selComodo], as = andaresOrdem(dados);
+    const c = dados.comodos[selComodo], as = andaresOrdem(dados), livre = areaLivre(c, moveisDo(dados, c.id)), temViz = vizinhosDeParede(dados, c.id).length > 0;
     corpo = <>
-      <Topo t={c.nome} sub={`${fmtM(c.w)} × ${fmtM(c.h)} m${as.length > 1 ? ' · ' + (dados.andares[c.andar]?.nome || '') : ''}`} />
+      <Topo t={c.nome} sub={`${fmtM(c.w)} × ${fmtM(c.h)} m · ${fmtArea(areaM2(c))} · ${tx('livre', 'free')} ${fmtArea(livre.m2)}${as.length > 1 ? ' · ' + (dados.andares[c.andar]?.nome || '') : ''}`} />
       <div className="grade-acoes">
         <button className="btn prim" type="button" data-f="q-editar" onClick={() => abrirDialogo('comodo', { id: c.id })}>{tx('Editar medidas', 'Edit measurements')}</button>
-        <button className="btn" type="button" data-f="q-girar" onClick={() => girarComodo(c.id)}>{tx('Girar 90°', 'Rotate 90°')}</button>
+        <button className="btn" type="button" data-f="q-girar" onClick={() => avisarLigacoes(c.id, girarComodo(c.id))}>{tx('Girar 90°', 'Rotate 90°')}</button>
+        {temViz && <button className="btn" type="button" id="f-paredes" data-f="q-paredes" aria-haspopup="menu" onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); abrirMenu({ x: r.left, y: r.top - 8, tipo: 'paredes', comodo: c.id, btn: 'f-paredes' }); }}><Icone n="tesoura" />{tx('Paredes…', 'Walls…')}</button>}
+        <button className="btn" type="button" data-f="q-duplicar" onClick={() => { const nid = duplicarComodo(c.id), n = nid ? useApp.getState().dados.comodos[nid] : null; if (n) toast(tx(`${n.nome} criado ao lado, com tudo o que tinha dentro.`, `${n.nome} created next to it, with everything inside.`), '', 'desfazer'); }}><Icone n="duplicar" />{tx('Duplicar', 'Duplicate')}</button>
         <button className="btn" type="button" data-f="q-ver" onClick={() => focarComodo(c.id, true)}>{tx('Ver só este cômodo', 'View only this room')}</button>
         <button className="btn" type="button" data-f="q-add" onClick={() => iniciarAdd('movel', { comodo: c.id })}>{tx('Adicionar um item', 'Add an item')}</button>
         {Object.keys(dados.comodos).length > 1 && <button className="btn" type="button" data-f="q-lado" onClick={() => abrirDialogo('comodo', { id: c.id, onde: 'direita' })}>{tx('Ao lado de outro…', 'Next to another…')}</button>}
@@ -138,7 +142,7 @@ export default function Folha() {
         {as.length > 1 && <button className="btn" type="button" data-f="q-andar" onClick={() => abrirDialogo('andar-comodo', { id: c.id })}>{tx('Mudar de andar…', 'Move to another floor…')}</button>}
         <button className="btn perigo" type="button" data-f="q-remover" onClick={() => abrirDialogo('remover-comodo', { id: c.id })}>{tx('Remover cômodo', 'Remove room')}</button>
       </div>
-      <p className="nota">{tx('Arraste o cômodo pelo piso ou pelo nome para mudar o lugar dele, e as alças azuis das paredes para esticar. Perto de outro cômodo, o ímã encosta as paredes.', 'Drag the room by its floor or its name to move it, and the blue handles on the walls to stretch it. Near another room, snap pulls the walls together.')}</p>
+      <p className="nota">{tx('Arraste o cômodo pelo piso ou pelo nome para mudar o lugar dele, e as alças azuis das paredes para esticar. Perto de outro cômodo, as paredes grudam; a tesoura na parede junta os dois num espaço só.', 'Drag the room by its floor or its name to move it, and the blue handles on the walls to stretch it. Near another room, the walls snap together; the scissors on a wall join both into one space.')}</p>
     </>;
   } else return null;
   return (

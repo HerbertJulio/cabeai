@@ -4,11 +4,14 @@ import { Fragment, useEffect, useRef } from 'react';
 import { horizontal } from '@/lib/catalogo';
 import { alvoSel } from '@/lib/consultas';
 import { CHAVE, lerArquivo, lerSalvo, normalizarDados, paraSalvar } from '@/lib/dados';
+import { CHAVE_PONTOS } from '@/lib/historico';
 import { geoEl, prender } from '@/lib/geometria';
 import { ehIdioma, idiomaDoNavegador, tx } from '@/lib/i18n';
 import {
-  abrirDialogo, aplicarIdioma, atualizar, duplicar, enquadrar, estadoAtual, estreito, fecharMenu, garantirComodo, girar, limparSel, modoDesenho, moverComodo, pedirRemover, salvarEl,
-  salvarMovel, selecionar, toast, useApp, zoomEm, type Estado
+  CAMADAS_TODAS, abrirDialogo, desfazerDoAviso, aplicarIdioma, aplicarTema, atualizar, avisarLigacoes, carregarPontos, colar, conectarComodo, copiar, desfazer, duplicar, duplicarComodo, enquadrar, estadoAtual, estreito,
+  liberarEspaco,
+  fecharMenu, garantirComodo, girar, girarComodo, limparSel, modoDesenho, modoMedir, moverComodo, pedirRemover, pontoAutomatico, pontoPeriodico, refazer, salvarEl, salvarMovel, selecionar,
+  temCopia, toast, useApp, zoomEm, type Camadas, type Estado, type Tema
 } from '@/lib/store';
 import type { Modo, Vista } from '@/lib/tipos';
 import Dialogo from './Dialogo';
@@ -22,17 +25,24 @@ import { Avisos, BarraDesenho, Botoes, Controles, Vazio } from './Sobre';
 import Topo from './Topo';
 
 const PREFS = 'cabeai:prefs';
-type Prefs = Pick<Estado, 'modo' | 'vista' | 'lateral' | 'inspetor' | 'setasTodos' | 'imaOn' | 'comodo' | 'idioma' | 'cenBase'>;
+type Prefs = Pick<Estado, 'modo' | 'vista' | 'lateral' | 'inspetor' | 'setasTodos' | 'imaOn' | 'comodo' | 'idioma' | 'cenBase' | 'camadas' | 'tema'>;
+const ehTema = (v: unknown): v is Tema => v === 'auto' || v === 'claro' || v === 'escuro';
 
 function Toast() {
   const t = useApp((s) => s.toast);
+  useApp((s) => s.hist.v); // um passo novo depois do aviso tira o botão de desfazer
   useEffect(() => {
     if (!t) return;
-    const id = setTimeout(() => atualizar((s) => { if (s.toast && s.toast.n === t.n) s.toast = null; }), t.tipo === 'erro' ? 6500 : 3400);
+    const id = setTimeout(() => atualizar((s) => { if (s.toast && s.toast.n === t.n) s.toast = null; }), t.tipo === 'erro' || t.acao ? 6500 : 3400);
     return () => clearTimeout(id);
   }, [t]);
   if (!t) return null;
-  return <div className={`toast${t.tipo === 'erro' ? ' erro' : ''}`} id="toast" role="status" aria-live="polite">{t.msg}</div>;
+  return (
+    <div className={`toast${t.tipo === 'erro' ? ' erro' : ''}${t.acao ? ' com-acao' : ''}`} id="toast" role="status" aria-live="polite">
+      <span>{t.msg}</span>
+      {t.acao === 'desfazer' && desfazerDoAviso(t.marca) && <button type="button" className="toast-acao" data-acao="toast-desfazer" onClick={() => { atualizar((s) => { s.toast = null; }); if (desfazerDoAviso(t.marca)) desfazer(); }}>{tx('Desfazer', 'Undo')}</button>}
+    </div>
+  );
 }
 
 export default function Editor() {
@@ -55,9 +65,11 @@ export default function Editor() {
     const dados = lerSalvo(bruto);
     const lingua = ehIdioma(prefs.idioma) ? prefs.idioma : idiomaDoNavegador();
     aplicarIdioma(lingua);
+    const tema: Tema = ehTema(prefs.tema) ? prefs.tema : 'auto';
+    aplicarTema(tema);
     atualizar((s) => {
       if (dados) s.dados = dados;
-      s.idioma = lingua;
+      s.idioma = lingua; s.tema = tema;
       if (typeof prefs.cenBase === 'string' && s.dados.cenarios[prefs.cenBase]) s.cenBase = prefs.cenBase;
       s.carregado = true; s.persistente = persistente; s.estreito = estreito();
       if (prefs.modo === 'simples' || prefs.modo === 'avancado') s.modo = prefs.modo as Modo;
@@ -67,8 +79,14 @@ export default function Editor() {
       if (typeof prefs.setasTodos === 'boolean') s.setasTodos = prefs.setasTodos;
       if (typeof prefs.imaOn === 'boolean') s.imaOn = prefs.imaOn;
       if (typeof prefs.comodo === 'string') s.comodo = prefs.comodo;
+      if (prefs.camadas && typeof prefs.camadas === 'object') for (const k of Object.keys(CAMADAS_TODAS) as (keyof Camadas)[]) { const v = (prefs.camadas as Partial<Camadas>)[k]; if (typeof v === 'boolean') s.camadas[k] = v; }
     });
     garantirComodo();
+    // pontos de restauração: os que estavam guardados, mais um da casa como ela abriu
+    carregarPontos();
+    pontoAutomatico(tx('Ao abrir o Cabeaí', 'When Cabeaí was opened'));
+    const periodico = window.setInterval(pontoPeriodico, 60_000);
+    return () => clearInterval(periodico);
   }, []);
 
   // salvar: um instante depois de cada mudança
@@ -81,17 +99,24 @@ export default function Editor() {
         t = window.setTimeout(() => {
           const st = estadoAtual();
           if (!st.persistente) return;
-          try { localStorage.setItem(CHAVE, paraSalvar(st.dados)); if (st.erroDb) atualizar((x) => { x.erroDb = ''; }); }
-          catch { atualizar((x) => { x.persistente = false; x.erroDb = tx('O navegador não deixou salvar (memória cheia ou bloqueada). Use "Exportar" para guardar um arquivo.', 'The browser couldn’t save (storage full or blocked). Use "Export" to keep a file.'); }); }
+          const gravar = (): boolean => { try { localStorage.setItem(CHAVE, paraSalvar(estadoAtual().dados)); return true; } catch { return false; } };
+          // memória cheia: os pontos de restauração mais velhos saem (os automáticos primeiro) até a casa caber
+          let ok = gravar();
+          while (!ok && liberarEspaco()) ok = gravar();
+          if (ok) { if (estadoAtual().erroDb) atualizar((x) => { x.erroDb = ''; }); }
+          else atualizar((x) => { x.persistente = false; x.erroDb = tx('O navegador não deixou salvar (memória cheia ou bloqueada). Use "Exportar" para guardar um arquivo.', 'The browser couldn’t save (storage full or blocked). Use "Export" to keep a file.'); });
         }, 350);
       }
-      if (s.modo !== p.modo || s.vista !== p.vista || s.lateral !== p.lateral || s.inspetor !== p.inspetor || s.setasTodos !== p.setasTodos || s.imaOn !== p.imaOn || s.comodo !== p.comodo || s.idioma !== p.idioma || s.cenBase !== p.cenBase) {
-        try { localStorage.setItem(PREFS, JSON.stringify({ modo: s.modo, vista: s.vista, lateral: s.lateral, inspetor: s.inspetor, setasTodos: s.setasTodos, imaOn: s.imaOn, comodo: s.comodo, idioma: s.idioma, cenBase: s.cenBase })); } catch { /* sem armazenamento */ }
+      if (s.modo !== p.modo || s.vista !== p.vista || s.lateral !== p.lateral || s.inspetor !== p.inspetor || s.setasTodos !== p.setasTodos || s.imaOn !== p.imaOn || s.comodo !== p.comodo || s.idioma !== p.idioma || s.cenBase !== p.cenBase || s.camadas !== p.camadas || s.tema !== p.tema) {
+        const prefs: Prefs = { modo: s.modo, vista: s.vista, lateral: s.lateral, inspetor: s.inspetor, setasTodos: s.setasTodos, imaOn: s.imaOn, comodo: s.comodo, idioma: s.idioma, cenBase: s.cenBase, camadas: s.camadas, tema: s.tema };
+        try { localStorage.setItem(PREFS, JSON.stringify(prefs)); } catch { /* sem armazenamento */ }
       }
     });
     const outraAba = (e: StorageEvent) => {
+      if (e.key === CHAVE_PONTOS) { carregarPontos(); return; }
       if (e.key !== CHAVE || !e.newValue) return;
       try { const o = JSON.parse(e.newValue); if (o && o.dados) { atualizar((s) => { s.dados = normalizarDados(o.dados); }); garantirComodo(); } } catch { /* ignora */ }
+      return;
     };
     window.addEventListener('storage', outraAba);
     return () => { un(); clearTimeout(t); window.removeEventListener('storage', outraAba); };
@@ -107,12 +132,12 @@ export default function Editor() {
 
   // teclado
   useEffect(() => {
-    const timers: Record<string, number> = {};
     const tecla = (e: KeyboardEvent) => {
       const s = estadoAtual();
       if (e.key === 'Escape') {
         if (s.menu) { e.preventDefault(); fecharMenu(); return; }
         if (s.dlg) return;
+        if (s.medir) { modoMedir(false); return; }
         if (s.desenho.ativo) { modoDesenho(false); return; }
         if (s.latAberta) { atualizar((x) => { x.latAberta = false; }); return; }
         if (s.folha) atualizar((x) => { x.folha = false; x.folhaModo = 'acoes'; });
@@ -124,7 +149,20 @@ export default function Editor() {
       const alvoEl = e.target as Element | null;
       if (s.dlg || (alvoEl && alvoEl.closest && alvoEl.closest('#menu'))) return;
       const tag = (alvoEl && (alvoEl as HTMLElement).tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button') return;
+      const campo = tag === 'input' || tag === 'textarea' || tag === 'select' || !!(alvoEl && (alvoEl as HTMLElement).isContentEditable);
+      // desfazer, refazer, copiar e colar valem até com o foco num botão (nos campos de texto, o navegador cuida)
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !campo) {
+        const k = e.key.toLowerCase(), textoMarcado = !!(window.getSelection && String(window.getSelection() || ''));
+        if (k === 'z') { e.preventDefault(); if (e.shiftKey) refazer(); else desfazer(); return; }
+        if (k === 'y') { e.preventDefault(); refazer(); return; }
+        if (k === 'c' && !textoMarcado && alvoSel(s.dados, s.sel, s.selEl)) { e.preventDefault(); copiar(); return; }
+        if (k === 'v' && temCopia()) { e.preventDefault(); colar(); return; }
+      }
+      if (campo || tag === 'button') return;
+      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === '?') { e.preventDefault(); abrirDialogo('ajuda'); return; }
+        if ((e.key === 'm' || e.key === 'M') && Object.keys(s.dados.comodos).length) { e.preventDefault(); modoMedir(!s.medir); return; }
+      }
       if (!e.ctrlKey && !e.metaKey && !e.altKey) {
         if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomEm(1.25); return; }
         if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomEm(0.8); return; }
@@ -136,9 +174,16 @@ export default function Editor() {
         const a = gFoco.hasAttribute('data-eid') ? { eid: gFoco.getAttribute('data-eid')! } : { id: gFoco.getAttribute('data-id')! };
         if (a.id ? s.sel !== a.id : s.selEl !== a.eid) selecionar(a, { painel: false });
       }
-      const s2 = estadoAtual();
-      if ((e.key === 'Delete' || e.key === 'Backspace') && alvoSel(s2.dados, s2.sel, s2.selEl)) { e.preventDefault(); pedirRemover(); return; }
-      if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey) && alvoSel(s2.dados, s2.sel, s2.selEl)) { e.preventDefault(); duplicar(); return; }
+      const s2 = estadoAtual(), item = alvoSel(s2.dados, s2.sel, s2.selEl), qSel = !item && s2.selComodo && s2.dados.comodos[s2.selComodo] ? s2.selComodo : null;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && item) { e.preventDefault(); pedirRemover(); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && qSel) { e.preventDefault(); abrirDialogo('remover-comodo', { id: qSel }); return; }
+      if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey) && item) { e.preventDefault(); duplicar(); return; }
+      if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey) && qSel) {
+        e.preventDefault();
+        const nid = duplicarComodo(qSel), n = nid ? estadoAtual().dados.comodos[nid] : null;
+        if (n) toast(tx(`${n.nome} criado ao lado, com tudo o que tinha dentro.`, `${n.nome} created next to it, with everything inside.`), '', 'desfazer');
+        return;
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const passo = e.shiftKey ? 10 : 1;
       let dx = 0, dy = 0;
@@ -160,11 +205,13 @@ export default function Editor() {
         salvarMovel(m.id, { x: c.x, y: c.y });
         return;
       }
+      if (s2.selComodo && s2.vista === 'casa' && (e.key === 'r' || e.key === 'R')) { e.preventDefault(); avisarLigacoes(s2.selComodo, girarComodo(s2.selComodo)); return; }
       if (s2.selComodo && s2.vista === 'casa' && (dx || dy)) {
         const c = s2.dados.comodos[s2.selComodo]; if (!c) return;
         e.preventDefault();
         moverComodo(c.id, c.x + dx, c.y + dy);
-        clearTimeout(timers.q);
+        // encostou em alguém? a porta entra na hora (e sai, se ele se afastou); tudo no mesmo passo do histórico
+        avisarLigacoes(c.id, conectarComodo(c.id));
       }
     };
     document.addEventListener('keydown', tecla);

@@ -64,8 +64,8 @@ button,input,select{font:inherit;color:inherit}
 .logo{width:30px;height:30px;flex:none}
 .logo-bg{fill:var(--accent)}.logo-l{stroke:var(--accent-ink)}.logo-f{fill:var(--accent-ink)}
 .topo-quarto{min-width:0;flex:1 1 auto;display:flex;align-items:baseline;gap:8px;overflow:hidden;white-space:nowrap;padding-left:6px;border-left:1px solid var(--line);margin-left:2px}
-.topo-quarto b{font:700 19px var(--f-display);letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis}
-.topo-quarto span{color:var(--ink-3);font:600 15px var(--f-display);font-variant-numeric:tabular-nums}
+.topo-quarto b{flex:0 1 auto;min-width:3.5em;font:700 19px var(--f-display);letter-spacing:.01em;overflow:hidden;text-overflow:ellipsis}
+.topo-quarto span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--ink-3);font:600 15px var(--f-display);font-variant-numeric:tabular-nums}
 .topo-ctrl{display:flex;gap:8px;align-items:center;flex:none}
 .corpo{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:var(--lat-w) minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr)}
 .lateral{grid-column:1;grid-row:1;min-height:0;overflow:auto;background:var(--paper);border-right:1px solid var(--line);padding:14px 12px 18px;display:flex;flex-direction:column;gap:18px;overscroll-behavior:contain}
@@ -280,7 +280,7 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 /* ---------- desenho (unidades = cm) ---------- */
 .piso{fill:var(--paper)}
 .piso.corredor{fill:var(--paper-2)}
-.piso.t-varanda{fill:var(--piso-varanda)}.piso.t-banheiro,.piso.t-servico{fill:var(--piso-agua)}.piso.t-cozinha{fill:var(--piso-cozinha)}.piso.t-garagem{fill:var(--piso-garagem)}
+.piso.q-varanda{fill:var(--piso-varanda)}.piso.q-banheiro,.piso.q-servico{fill:var(--piso-agua)}.piso.q-cozinha{fill:var(--piso-cozinha)}.piso.q-garagem{fill:var(--piso-garagem)}
 .grade-l{stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
 .parede{fill:var(--wall)}
 .sala-t{font:700 17px var(--f-display);fill:var(--ink);letter-spacing:.04em;cursor:pointer}
@@ -329,6 +329,44 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .alca-girar circle{fill:var(--accent);stroke:var(--paper);stroke-width:2;vector-effect:non-scaling-stroke}
 .alca-girar path{fill:none;stroke:var(--accent-ink);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .rotulos text{paint-order:stroke fill;stroke:var(--paper);stroke-width:2.4px;stroke-linejoin:round;pointer-events:none}
+.rotulos .porta-nome{font-size:calc(9px * var(--k,1))}.rotulos .jan-nome,.rotulos .anot{font-size:calc(8.5px * var(--k,1))}
+/* parede tirada: o piso continua de um cômodo para o outro */
+.piso-junta{pointer-events:none}
+.junta-l{stroke:var(--line);stroke-width:1.2;stroke-dasharray:2 5;stroke-linecap:round;vector-effect:non-scaling-stroke}
+/* arrastando um cômodo: a parede que ele divide com o vizinho acende */
+.junta{stroke:var(--accent);stroke-opacity:.55;stroke-linecap:butt;pointer-events:none}
+.parede-btn{cursor:pointer}
+.parede-btn circle{fill:var(--paper);stroke:var(--restrict);stroke-width:2;vector-effect:non-scaling-stroke}
+.parede-btn path,.parede-btn g circle{fill:none;stroke:var(--restrict);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.parede-btn g circle{stroke-width:2}
+.parede-btn.tirada circle{stroke:var(--accent)}.parede-btn.tirada path{stroke:var(--accent)}
+.parede-btn:hover > circle{fill:var(--restrict-soft)}.parede-btn.tirada:hover > circle{fill:var(--accent-soft)}
+.andar-area{font-size:20px;fill:var(--ink-3);letter-spacing:.04em;text-transform:none}
+/* trena */
+#planta.medindo,#planta.medindo *{cursor:crosshair!important}
+.trena-g,.trena-p{pointer-events:none}
+.trena-l{stroke:var(--sug);stroke-width:2.2;stroke-linecap:round;vector-effect:non-scaling-stroke}
+.trena-p{fill:var(--sug)}
+.trena-pill{fill:var(--sug)}
+.trena-t{font-family:var(--f-display);font-weight:700;fill:var(--on-status);font-variant-numeric:tabular-nums}
+.trena-sub{font-family:var(--f-display);font-weight:700;fill:var(--sug);paint-order:stroke fill;stroke:var(--paper);stroke-width:3px;stroke-linejoin:round;font-variant-numeric:tabular-nums}
+/* espaço segurado (ou botão do meio): arrastar move a planta */
+#planta.pan-espaco,#planta.pan-espaco *{cursor:grab!important}
+/* modo de desenhar: os cômodos se arrastam pelo piso; os itens dentro deles não atrapalham */
+#planta.desenhando .piso,#planta.vista-casa g.sala.sel-q .piso{cursor:grab}
+#planta.arrastando .piso{cursor:grabbing}
+#planta.desenhando .mv,#planta.desenhando .mv-abre,#planta.desenhando .porta-el,#planta.desenhando .jan,#planta.desenhando .arel,#planta.desenhando .interr-el{pointer-events:none}
+/* camadas escondidas: ficam só um vulto (e não pegam o toque), para mexer no que está por baixo */
+#planta.sem-moveis .mv:not(.sel),#planta.sem-moveis .mv-abre{opacity:.12;pointer-events:none}
+#planta.sem-moveis .mv:not(.sel) .mv-txt,#planta.sem-moveis .seta{display:none}
+#planta.sem-portas .porta-el:not(.sel),#planta.sem-portas .jan:not(.sel){opacity:.18;pointer-events:none}
+#planta.sem-portas .porta-nome,#planta.sem-portas .jan-nome{display:none}
+#planta.sem-ar .arel:not(.sel),#planta.sem-ar .ar-top:not(.sel){opacity:.15;pointer-events:none}
+#planta.sem-ar .ar-nome{display:none}
+#planta.sem-pontos .interr-el:not(.sel){opacity:.15;pointer-events:none}
+#planta.sem-pontos .ponto-nome{display:none}
+#planta.sem-nomes .rotulos{display:none}
+#planta.sem-grade .grade-l,#planta.sem-grade .grade-desenho{display:none}
 .vao-l{stroke:var(--ink-3);stroke-width:1.2;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
 .porta-el.vao.sel .vao-l,.porta-el.vao:focus-visible .vao-l{stroke:var(--accent);stroke-width:2.4}
 .anot{font:600 8.5px var(--f-display);fill:var(--ink-3);letter-spacing:.06em;text-transform:uppercase;pointer-events:none}
@@ -368,7 +406,9 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .mv:focus-visible .mv-base{stroke:var(--accent);stroke-width:3}
 .mv-base{stroke:var(--ink);stroke-width:1.5;vector-effect:non-scaling-stroke}
 .t-cama{fill:var(--sheet)}.t-guarda-roupa,.t-comoda,.t-rack,.t-estante,.t-armario{fill:var(--wood)}.t-berco,.t-mesa,.t-outro,.t-cadeira{fill:var(--soft)}
-.t-bau{fill:var(--wood-2)}.t-sofa{fill:var(--fabric)}.t-geladeira,.t-fogao,.t-lavadora{fill:var(--metal)}.t-pia{fill:var(--stone)}
+.t-bau{fill:var(--wood-2)}.t-sofa,.t-poltrona{fill:var(--fabric)}.t-geladeira,.t-fogao,.t-lavadora{fill:var(--metal)}.t-pia,.t-tanque{fill:var(--stone)}
+.t-cabeceira{fill:var(--wood)}.t-vaso,.t-lavatorio,.t-banheira{fill:var(--paper)}.t-box{fill:var(--glass-soft)}
+.mv-vidro{stroke:var(--glass);stroke-width:2.4;vector-effect:non-scaling-stroke}
 .mv-estofo{fill:var(--fabric-2);stroke:var(--ink-2);stroke-width:1;vector-effect:non-scaling-stroke}
 .mv-tv{fill:var(--ink-2)}
 .t-escada{fill:var(--paper-2)}
@@ -438,3 +478,45 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
   .aviso-card .btn{min-height:38px;padding:6px 10px}
   .aviso-cab strong{font-size:15px}
 }
+/* desfazer, refazer e histórico: sempre à mão, no topo */
+.topo-hist{display:flex;align-items:center;gap:0;flex:none}
+.topo-hist .ico-btn:disabled{opacity:.35;cursor:default;background:transparent}
+@media (max-width:899px){.topo-hist .ico-btn{min-width:40px}}
+@media (max-width:360px){#b-historico{display:none}}
+.ctrl-grupo button{position:relative}
+.ctrl-grupo .risco-ico{position:absolute;left:11px;right:11px;top:50%;height:2px;background:currentColor;transform:rotate(-38deg);border-radius:2px}
+.ctrl-grupo .ponto-aviso{position:absolute;top:9px;right:9px;width:8px;height:8px;border-radius:50%;background:var(--restrict);box-shadow:0 0 0 2px var(--paper)}
+/* camadas: caixinha de marcar no menu */
+.menu button.caixa::before{content:"";width:18px;height:18px;flex:none;border:2px solid var(--ink-3);border-radius:5px;box-sizing:border-box}
+.menu button.caixa[aria-checked="true"]::before{background:var(--accent);border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--paper)}
+.menu button.caixa[aria-checked="true"]::after{content:none}
+.menu button:disabled{color:var(--ink-3);cursor:default}
+.link{all:unset;cursor:pointer;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.link:focus-visible{outline:2px solid var(--accent)}
+.toast.com-acao{display:flex;align-items:center;gap:12px;padding-right:8px}
+.toast-acao{flex:none;min-height:36px;padding:6px 12px;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit;font:700 14px var(--f-body);cursor:pointer}
+.toast-acao:hover{background:rgba(255,255,255,.12)}
+/* histórico e pontos de restauração */
+.hist-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:min(38vh,320px);overflow:auto;border:1px solid var(--line);border-radius:12px;padding:4px}
+.hist-lista li{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;min-height:44px}
+.hist-lista li:hover{background:var(--soft)}
+.hist-t{flex:1 1 auto;min-width:0;font-size:14px;display:flex;flex-direction:column}
+.hist-t small{color:var(--ink-3);font-size:12.5px}
+.hist-h{flex:none;font:600 13px var(--f-display);color:var(--ink-3);font-variant-numeric:tabular-nums}
+.hist-b{flex:none;display:flex;align-items:center;gap:2px}
+.hist-lista li.agora{min-height:30px;font-weight:700;color:var(--accent);border-top:2px solid var(--accent);border-radius:0;margin:2px 0}
+.hist-lista li.agora:hover{background:transparent}
+.hist-lista li.desfeito .hist-t{color:var(--ink-3);text-decoration:line-through;text-decoration-color:var(--line)}
+.hist-lista li.meu .hist-t{font-weight:600}
+.hist-novo{flex-direction:row;gap:8px}
+.hist-novo input{flex:1 1 auto;min-width:0;min-height:44px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--paper);font:500 16px var(--f-body)}
+/* resumo da casa */
+.resumo-total{margin:0;font-size:15px}.resumo-total b{font:700 20px var(--f-display)}
+.resumo-tab{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+.resumo-tab th,.resumo-tab td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.resumo-tab thead th{font:700 12px var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.resumo-tab tbody th{font-weight:700}
+.resumo-tab td:last-child{text-align:right;white-space:nowrap}
+.resumo-movel td{color:var(--ink-2);font-size:13px;padding-top:3px;padding-bottom:3px}
+.resumo-movel td:first-child{padding-left:20px}
+.resumo-movel td:last-child{text-align:left}

@@ -369,7 +369,7 @@ export function avaliar(q: ComodoCompleto, lista: Movel[]): Avaliacao {
     if (r.x1 < -0.5 || r.y1 < -0.5 || r.x2 > q.w + 0.5 || r.y2 > q.h + 0.5) anota(tx(`${m.nome} está saindo do cômodo.`, `${m.nome} is sticking out of the room.`), m.id);
     for (const p of q.portas) {
       if (p.abre === 'dentro' && bloqueiaPorta(q, p, r)) { anota(tx(`${m.nome} atrapalha a abertura de “${p.nome}”.`, `${m.nome} blocks “${p.nome}” from opening.`), m.id, p.id); portasBloq.add(p.id); }
-      else if (p.abre !== 'dentro' && naFrentePorta(q, p, r)) { anota(tx(`${m.nome} fica na frente de “${p.nome}”.`, `${m.nome} is in front of “${p.nome}”.`), m.id, p.id); portasBloq.add(p.id); }
+      else if (p.abre !== 'dentro' && !p.semParede && naFrentePorta(q, p, r)) { anota(tx(`${m.nome} fica na frente de “${p.nome}”.`, `${m.nome} is in front of “${p.nome}”.`), m.id, p.id); portasBloq.add(p.id); }
     }
     for (const i of q.interruptores) {
       if (!cobreInterruptor(q, i, r, m.alto, m.tipo)) continue;
@@ -409,7 +409,7 @@ export function avaliar(q: ComodoCompleto, lista: Movel[]): Avaliacao {
   const vaos = q.portas.concat(q.janelas);
   for (let i = 0; i < vaos.length; i++) for (let j = i + 1; j < vaos.length; j++) {
     const A = vaos[i], B = vaos[j];
-    if (A.parede !== B.parede) continue;
+    if (A.parede !== B.parede || (A.semParede && B.semParede)) continue;
     const ga = geoEl(q, A), gb = geoEl(q, B);
     if (ga.a < gb.b - 0.5 && ga.b > gb.a + 0.5) { anota(tx(`${A.nome} e ${B.nome} estão no mesmo lugar da parede. Arraste um deles.`, `${A.nome} and ${B.nome} are in the same spot on the wall. Drag one of them.`), null, A.id); elsRuins.add(B.id); }
   }
@@ -438,7 +438,7 @@ export function posValida(q: ComodoCompleto, m: Movel, x: number, y: number, rot
   const d = dims(m, rot), r = { x1: x, y1: y, x2: x + d.w, y2: y + d.h };
   if (x < 0 || y < 0 || r.x2 > q.w || r.y2 > q.h) return false;
   if (outros.some((o) => sobrepoe(r, ret(o)))) return false;
-  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && naFrentePorta(q, p, r)))) return false;
+  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && !p.semParede && naFrentePorta(q, p, r)))) return false;
   if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   if (exigirFrente) {

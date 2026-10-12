@@ -21,7 +21,8 @@ export function montarPrompt(q: ComodoCompleto, lista: Movel[], fixos: Movel[], 
     L.push('', 'PORTAS DO CÔMODO:');
     for (const p of q.portas) {
       const g = geoPorta(q, p), e = eixo(p.parede);
-      if (p.abre === 'dentro') { const c = uv2xy(q, p.parede, g.hu, 0); L.push(`- "${p.nome}": parede ${nomeParede(q, p.parede)}, vão de ${e}=${g.a} a ${e}=${g.b} (${g.r} cm). Abre para DENTRO: o quarto de círculo com centro em (${c[0]}, ${c[1]}) e raio ${g.r} cm precisa ficar livre.`); }
+      if (p.semParede) L.push(`- Parede ${nomeParede(q, p.parede)}, de ${e}=${g.a} a ${e}=${g.b}: SEM PAREDE (o espaço continua no cômodo vizinho). Móveis podem ficar perto, mas deixe uma passagem de 60 cm.`);
+      else if (p.abre === 'dentro') { const c = uv2xy(q, p.parede, g.hu, 0); L.push(`- "${p.nome}": parede ${nomeParede(q, p.parede)}, vão de ${e}=${g.a} a ${e}=${g.b} (${g.r} cm). Abre para DENTRO: o quarto de círculo com centro em (${c[0]}, ${c[1]}) e raio ${g.r} cm precisa ficar livre.`); }
       else L.push(`- "${p.nome}": parede ${nomeParede(q, p.parede)}, vão de ${e}=${g.a} a ${e}=${g.b} (${g.r} cm). ${p.abre === 'vao' ? 'Sem porta (passagem livre)' : 'Abre para fora'}; deixe 40 cm livres na frente do vão.`);
     }
   }

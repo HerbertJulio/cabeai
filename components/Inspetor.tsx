@@ -8,8 +8,11 @@ import { valsMovel, valsParede, validarMovel, validarParede, type Valores } from
 import { centrar, folgas, folhaDe, geoEl, lugarLivre, nivel, normRot, precisaCadeira, precisaFrente, prender, tam, temCadeiras, zonaAr, compParede } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
 import {
-  abrirDialogo, atualizar, duplicar, estreito, focarComodo, girar, levar, limparSel, pedirRemover, salvarComodo, salvarEl, salvarMovel, useApp
+  abrirDialogo, atualizar, duplicar, duplicarComodo, estreito, focarComodo, girar, levar, limparSel, pedirRemover, salvarComodo, salvarEl, salvarMovel, toast, useApp
 } from '@/lib/store';
+import { areaLivre, areaM2, fmtArea } from '@/lib/resumo';
+import { abrirMenuEmBotao } from './Topo';
+import { espacoAberto, vizinhosDeParede } from '@/lib/consultas';
 import type { Comodo, ComodoCompleto, ElParede, Movel } from '@/lib/tipos';
 import { clamp, fmtM, parseCm, parseMedida, pl } from '@/lib/util';
 import { CamposMovel, CamposParede, Texto, Escolha } from './campos';
@@ -176,7 +179,8 @@ function PropComodo({ c }: { c: Comodo }) {
     if (k === 'q-x' || k === 'q-y') { const n = parseCm(t, true); if (n == null || Number.isNaN(n)) { setErro(tx('Posição em cm, por exemplo 315.', 'Position in cm, for example 315.')); return; } salvarComodo(c.id, { [k === 'q-x' ? 'x' : 'y']: n }); return; }
     if (k === 'q-andar' && t !== c.andar && dados.andares[t]) salvarComodo(c.id, { andar: t });
   };
-  const n = moveisDo(dados, c.id).length;
+  const n = moveisDo(dados, c.id).length, livre = areaLivre(c, moveisDo(dados, c.id)), temViz = vizinhosDeParede(dados, c.id).length > 0;
+  const junto = espacoAberto(dados, c.id);
   return <>
     <div className="insp-cab"><div><h2 className="sec-t">{c.nome}</h2><div className="sub">{tx('Cômodo', 'Room')} · {dados.andares[c.andar]?.nome || ''}</div></div><Fechar /></div>
     <div className="campos">
@@ -189,20 +193,26 @@ function PropComodo({ c }: { c: Comodo }) {
     </div>
     {erro && <p className="erro" id="fp-erro">{erro}</p>}
     <div className="folgas">
-      <span className="fchip">{pl(n, tx('móvel', 'item'), tx('móveis', 'items'))}</span><span className="fchip">{pl(q.portas.filter((p) => !p.herdada).length, tx('porta', 'door'), tx('portas', 'doors'))}</span>
+      <span className="fchip">{tx('Área', 'Area')}: {fmtArea(areaM2(c))}</span><span className="fchip">{tx('Chão livre', 'Free floor')}: {fmtArea(livre.m2)} ({livre.pct}%)</span>
+      {junto.length > 1 && <span className="fchip">{tx('Espaço aberto com', 'Open space with')} {junto.filter((id) => id !== c.id).map((id) => dados.comodos[id].nome).join(', ')}: {fmtArea(junto.reduce((t, id) => t + areaM2(dados.comodos[id]), 0))}</span>}
+      <span className="fchip">{pl(n, tx('móvel', 'item'), tx('móveis', 'items'))}</span><span className="fchip">{pl(q.portas.filter((p) => !p.herdada && !p.semParede).length, tx('porta', 'door'), tx('portas', 'doors'))}</span>
       <span className="fchip">{pl(q.janelas.length, tx('janela', 'window'), tx('janelas', 'windows'))}</span><span className="fchip">{pl(q.ares.length, tx('ar-condicionado', 'air conditioner'), tx('ares-condicionados', 'air conditioners'))}</span>
     </div>
     <div className="grade-acoes">
       <button className="btn" type="button" data-p="q-ver" onClick={() => focarComodo(c.id, true)}>{tx('Ver só este cômodo', 'Show only this room')}</button>
+      <button className="btn" type="button" data-p="q-duplicar" onClick={() => { const nid = duplicarComodo(c.id), nv = nid ? useApp.getState().dados.comodos[nid] : null; if (nv) toast(tx(`${nv.nome} criado ao lado, com tudo o que tinha dentro.`, `${nv.nome} created next to it, with everything inside.`), '', 'desfazer'); }}>{tx('Duplicar cômodo', 'Duplicate room')}</button>
+      {temViz && <button className="btn" type="button" id="p-paredes" data-p="q-paredes" aria-haspopup="menu" onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'paredes', { comodo: c.id })}><Icone n="tesoura" />{tx('Paredes…', 'Walls…')}</button>}
       <button className="btn perigo" type="button" data-p="q-remover" onClick={() => abrirDialogo('remover-comodo', { id: c.id })}>{tx('Remover cômodo', 'Remove room')}</button>
     </div>
     <hr className="divisor" />
     <p className="grupo-t">{tx('Atalhos', 'Shortcuts')}</p>
     <ul className="atalhos">
       <li>{tx('Botão direito ou dedo segurado: menu', 'Right-click or press and hold: menu')}</li><li>{tx('Duplo clique: editar', 'Double-click: edit')}</li>
+      <li><kbd>Ctrl</kbd>+<kbd>Z</kbd>{tx(' desfazer · ', ' undo · ')}<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>{tx(' refazer', ' redo')}</li>
       <li><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>{tx(' mover 1 cm (', ' move 1 cm (')}<kbd>Shift</kbd> 10 cm)</li>
-      <li><kbd>R</kbd>{tx(' girar · ', ' rotate · ')}<kbd>Ctrl</kbd>+<kbd>D</kbd>{tx(' duplicar · ', ' duplicate · ')}<kbd>Delete</kbd>{tx(' remover', ' remove')}</li>
-      <li><kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>0</kbd>{tx(' enquadrar · ', ' fit to screen · ')}<kbd>Esc</kbd>{tx(' tirar a seleção', ' clear selection')}</li>
+      <li><kbd>R</kbd>{tx(' girar · ', ' rotate · ')}<kbd>Ctrl</kbd>+<kbd>D</kbd>{tx(' duplicar · ', ' duplicate · ')}<kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>V</kbd>{tx(' copiar e colar · ', ' copy and paste · ')}<kbd>Delete</kbd>{tx(' remover', ' remove')}</li>
+      <li><kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>0</kbd>{tx(' enquadrar · ', ' fit to screen · ')}<kbd>{tx('Espaço', 'Space')}</kbd>{tx(' segurado: mover a planta · ', ' held: move the plan · ')}<kbd>Esc</kbd>{tx(' tirar a seleção', ' clear selection')}</li>
+      <li><kbd>M</kbd>{tx(' trena · ', ' tape measure · ')}<kbd>?</kbd>{tx(' ajuda e atalhos', ' help and shortcuts')}</li>
       <li>{tx('Na vista Casa: arraste o cômodo pelo nome para montar a planta', 'In the Home view: drag a room by its name to build the floor plan')}</li>
     </ul>
   </>;

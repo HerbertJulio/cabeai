@@ -7,13 +7,15 @@ import { valsNovaParede, valsNovoMovel, validarComodo, validarMovel, validarPare
 import { iaNavegadorDisponivel } from '@/lib/iaNavegador';
 import { reduzirImagem } from '@/lib/imagem';
 import {
-  abrirCenario, modoDesenho, pararPlanta, plantaPeloDesenho, adicionarEl, adicionarMovel, atualizar, atualizarCenario, cenarioComNome, criarComodo, criarCorredor, enquadrar, fecharDialogo, gerarSugestoes, levarPara,
-  limparSel, nomeComTraco, nomeComodoNovo, nomeCorredorNovo, nomeUnicoCenario, pararIA, pedirIA, posicionarComodo, removerAlvo, removerAndar, removerCenario, removerComodo,
-  salvarAndar, salvarCenario, salvarComodo, salvarMovel, sobrescreverCenario, substituirCenario, toast, trocarDados, useApp, type Junto
+  abrirCenario, modoDesenho, pararPlanta, plantaPeloDesenho, adicionarEl, adicionarMovel, andarNoHistorico, apagarPonto, apagarTudo, atualizar, atualizarCenario, cenarioComNome, criarComodo, criarCorredor, criarPonto,
+  desfazer, enquadrar, fecharDialogo, gerarSugestoes, importarDados, levarPara, listaHistorico, nomeComTraco, nomeComodoNovo, nomeCorredorNovo, nomeUnicoCenario, pararIA, pedirIA, posicionarComodo, refazer,
+  removerAlvo, removerAndar, removerCenario, removerComodo, restaurarPonto, salvarAndar, salvarCenario, salvarComodo, salvarMovel, sobrescreverCenario, substituirCenario, toast, useApp, type Junto
 } from '@/lib/store';
 import type { Dados, Escopo, TipoMovel, TipoParede } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
-import { fmtM, parseDist, parseMedida, pl } from '@/lib/util';
+import { areaDaCasa, areaDoAndar, areaM2, fmtArea, textoResumo } from '@/lib/resumo';
+import { dataCurta, fmtM, parseDist, parseMedida, pl } from '@/lib/util';
+import { imagemDaPlanta } from '@/lib/exportar';
 import { vaoEntre, type Alinhar, type Lado4 } from '@/lib/casa';
 import { CamposMovel, CamposParede, Escolha, Marca, Texto, useValores } from './campos';
 import { Icone } from './icones';
@@ -443,7 +445,102 @@ function Importar({ dados: x }: { dados: Record<string, unknown> }) {
     <Cab t={tx('Importar arquivo', 'Import file')} />
     <p>{tx('O arquivo tem', 'The file has')} <b>{pl(c.comodos, tx('cômodo', 'room'), tx('cômodos', 'rooms'))}</b>{c.andares > 1 ? tx(` em ${c.andares} andares`, ` on ${c.andares} floors`) : ''}, {pl(c.itens, 'item', tx('itens', 'items'))} {tx('e', 'and')} {pl(c.cenarios, tx('cenário', 'scenario'), tx('cenários', 'scenarios'))}.</p>
     {n > 0 && <p className="erro">{tx(`Isso troca tudo o que está aqui agora (${pl(n, 'cômodo', 'cômodos')}) pelo conteúdo do arquivo. Se quiser guardar o atual, exporte antes.`, `This replaces everything here now (${pl(n, 'room', 'rooms')}) with what’s in the file. To keep what you have, export it first.`)}</p>}
-    <Sim rot={tx('Importar', 'Import')} d="importar-sim" onSim={() => { atualizar((s) => { s.dlg = null; }); trocarDados(x.novos as Dados); atualizar((s) => { s.vista = 'casa'; }); toast(tx('Arquivo importado.', 'File imported.')); }} />
+    <p className="nota">{tx('Se mudar de ideia, dá para desfazer (↶) e o que havia antes fica guardado no Histórico.', 'If you change your mind, you can undo (↶), and what was here before stays saved in the History.')}</p>
+    <Sim rot={tx('Importar', 'Import')} d="importar-sim" onSim={() => { atualizar((s) => { s.dlg = null; }); importarDados(x.novos as Dados); toast(tx('Arquivo importado.', 'File imported.'), '', 'desfazer'); }} />
+  </>;
+}
+
+/* ---------- histórico: desfazer, refazer e pontos de restauração ---------- */
+const hora = (t: number) => { try { return new Date(t).toLocaleTimeString(useApp.getState().idioma === 'en' ? 'en-US' : 'pt-BR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; } };
+function Historico() {
+  useApp((s) => s.hist.v);
+  const hist = useApp((s) => s.hist);
+  const pontos = useApp((s) => s.pontos);
+  const temCasa = useApp((s) => Object.keys(s.dados.comodos).length > 0);
+  const [nome, setNome] = useState('');
+  const { feitos, desfeitos } = listaHistorico();
+  const guardar = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (criarPonto(nome.trim())) { setNome(''); toast(tx('Ponto de restauração guardado.', 'Restore point saved.')); }
+  };
+  return <>
+    <Cab t={tx('Histórico', 'History')} />
+    <div className="grade-acoes">
+      <button className="btn" type="button" data-d="h-desfazer" disabled={!hist.desfazer} onClick={desfazer}><Icone n="desfazer" />{tx('Desfazer', 'Undo')}</button>
+      <button className="btn" type="button" data-d="h-refazer" disabled={!hist.refazer} onClick={refazer}><Icone n="refazer" />{tx('Refazer', 'Redo')}</button>
+    </div>
+    <p className="grupo-t">{tx('Alterações desta visita', 'Changes in this visit')}</p>
+    {!feitos.length && !desfeitos.length ? <p className="nota">{tx('Nenhuma alteração ainda. Cada coisa que você mudar aparece aqui, e dá para voltar até ela.', 'No changes yet. Everything you change shows up here, and you can go back to it.')}</p> : (
+      <ol className="hist-lista" data-hist="passos">
+        {desfeitos.slice().reverse().map((p, k, arr) => (
+          <li key={'f' + k} className="desfeito"><span className="hist-t">{p.rotulo}</span><span className="hist-h">{hora(p.t)}</span>
+            <button type="button" className="btn peq" data-d="h-refazer-ate" onClick={() => andarNoHistorico(-(arr.length - k))}>{tx('Refazer até aqui', 'Redo up to here')}</button></li>
+        ))}
+        <li className="agora"><span className="hist-t">{tx('Agora', 'Now')}</span></li>
+        {feitos.map((p, k) => (
+          <li key={'p' + k}><span className="hist-t">{p.rotulo}</span><span className="hist-h">{hora(p.t)}</span>
+            <button type="button" className="btn peq" data-d="h-voltar" onClick={() => andarNoHistorico(k + 1)}>{k === 0 ? tx('Desfazer', 'Undo') : tx('Desfazer até aqui', 'Undo up to here')}</button></li>
+        ))}
+      </ol>
+    )}
+    <p className="grupo-t">{tx('Pontos de restauração', 'Restore points')}</p>
+    <p className="nota">{tx('Guardam a casa inteira neste navegador (cômodos, paredes, móveis e cenários): sozinhos ao abrir, a cada 10 minutos de uso e antes de importar, apagar tudo ou montar pelo desenho, e quando você quiser. Voltar para um ponto também dá para desfazer.', 'They keep the whole home in this browser (rooms, walls, furniture and scenarios): automatically when you open it, every 10 minutes of use and before importing, deleting everything or building from a sketch, and whenever you want. Going back to a point can be undone too.')}</p>
+    <form className="hist-novo" data-form="ponto" noValidate onSubmit={guardar}>
+      <input type="text" data-k="ponto-nome" maxLength={60} value={nome} placeholder={tx('Nome (ex.: antes da reforma)', 'Name (e.g. before the renovation)')} aria-label={tx('Nome do ponto de restauração', 'Restore point name')} onChange={(e) => setNome(e.target.value)} />
+      <button className="btn prim" type="submit" data-d="ponto-criar" disabled={!temCasa}>{tx('Guardar agora', 'Save now')}</button>
+    </form>
+    {pontos.length ? (
+      <ul className="hist-lista" data-hist="pontos">
+        {pontos.map((p) => (
+          <li key={p.id} className={p.auto ? 'auto' : 'meu'}>
+            <span className="hist-t">{p.nome}<small>{dataCurta(p.t)} · {p.resumo}{p.auto ? tx(' · automático', ' · automatic') : ''}</small></span>
+            <span className="hist-b">
+              <button type="button" className="btn peq" data-d="ponto-voltar" onClick={() => { if (restaurarPonto(p.id)) atualizar((s) => { s.dlg = null; }); }}>{tx('Voltar para este', 'Go back to this')}</button>
+              <button type="button" className="ico-btn peq" data-d="ponto-apagar" aria-label={tx(`Apagar o ponto “${p.nome}”`, `Delete the point “${p.nome}”`)} onClick={() => apagarPonto(p.id)}><Icone n="x" /></button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    ) : <p className="nota">{tx('Nenhum ponto guardado ainda.', 'No points saved yet.')}</p>}
+    <div className="acoes"><button className="btn" type="button" data-d="fechar" onClick={fecharDialogo}>{tx('Fechar', 'Close')}</button></div>
+  </>;
+}
+
+/* ---------- resumo da casa e lista de móveis ---------- */
+function Resumo() {
+  const d = useApp((s) => s.dados);
+  const [copiado, setCopiado] = useState(false);
+  const as = andaresOrdem(d).filter((a) => comodosDoAndar(d, a.id).length);
+  const copiar = async () => {
+    try { await navigator.clipboard.writeText(textoResumo(d)); setCopiado(true); setTimeout(() => setCopiado(false), 2500); }
+    catch { toast(tx('O navegador não deixou copiar. Selecione o texto e copie à mão.', 'The browser didn’t allow copying. Select the text and copy it by hand.'), 'erro'); }
+  };
+  const nm = Object.keys(d.moveis).length;
+  return <>
+    <Cab t={tx('Resumo da casa', 'Home summary')} />
+    <p className="resumo-total"><b>{fmtArea(areaDaCasa(d))}</b> · {pl(Object.keys(d.comodos).length, tx('cômodo', 'room'), tx('cômodos', 'rooms'))} · {pl(nm, tx('móvel', 'item'), tx('móveis', 'items'))}</p>
+    {as.map((a) => (
+      <div key={a.id} className="resumo-andar">
+        {as.length > 1 && <p className="grupo-t">{a.nome} · {fmtArea(areaDoAndar(d, a.id))}</p>}
+        <table className="resumo-tab">
+          <thead><tr><th scope="col">{tx('Cômodo', 'Room')}</th><th scope="col">{tx('Medidas', 'Size')}</th><th scope="col">{tx('Área', 'Area')}</th></tr></thead>
+          <tbody>
+            {comodosDoAndar(d, a.id).map((c) => {
+              const ms = moveisDo(d, c.id);
+              return [
+                <tr key={c.id}><th scope="row">{c.nome}</th><td>{fmtM(c.w)} × {fmtM(c.h)} m</td><td>{fmtArea(areaM2(c))}</td></tr>,
+                ...ms.map((m) => <tr key={m.id} className="resumo-movel"><td>{m.nome}</td><td colSpan={2}>{fmtM(m.larg)} × {fmtM(m.prof)} m</td></tr>)
+              ];
+            })}
+          </tbody>
+        </table>
+      </div>
+    ))}
+    <div className="grade-acoes">
+      <button className="btn prim" type="button" data-d="resumo-copiar" onClick={copiar}><Icone n="copiar" />{copiado ? tx('Copiado!', 'Copied!') : tx('Copiar a lista', 'Copy the list')}</button>
+      <button className="btn" type="button" data-d="resumo-imagem" onClick={() => { fecharDialogo(); void imagemDaPlanta(); }}><Icone n="imagem" />{tx('Imagem da planta', 'Plan image')}</button>
+    </div>
+    <p className="nota">{tx('A lista vai como texto, para mandar por mensagem ou levar na loja.', 'The list goes as text, to send in a message or take to the store.')}</p>
   </>;
 }
 
@@ -473,16 +570,18 @@ export default function Dialogo() {
     else if (t === 'sugestoes') corpo = <Sugestoes dados={x} />;
     else if (t === 'cenario') corpo = <SalvarCenario dados={x} />;
     else if (t === 'importar') corpo = <Importar dados={x} />;
+    else if (t === 'historico') corpo = <Historico />;
+    else if (t === 'resumo') corpo = <Resumo />;
     else if (t === 'remover-comodo') {
       const c = dados.comodos[String(x.id)];
       if (c) {
         const n = moveisDo(dados, c.id).length + Object.values(dados.els).filter((e) => e.comodo === c.id).length;
-        corpo = <><Cab t={tx('Remover cômodo', 'Remove room')} /><p>{tx('Remover', 'Remove')} <b>{c.nome}</b>{n ? tx(` e ${pl(n, 'item', 'itens')} dele`, ` and its ${pl(n, 'item', 'items')}`) : ''}? {tx('Não dá para desfazer.', 'This can’t be undone.')}</p>
-          <Sim rot={tx('Sim, remover', 'Yes, remove')} cls="perigo cheio" d="remover-comodo-sim" onSim={() => { const nome = c.nome; removerComodo(c.id); atualizar((s) => { s.dlg = null; }); enquadrar(); toast(tx(`${nome} removido.`, `${nome} removed.`)); }} /></>;
+        corpo = <><Cab t={tx('Remover cômodo', 'Remove room')} /><p>{tx('Remover', 'Remove')} <b>{c.nome}</b>{n ? tx(` e ${pl(n, 'item', 'itens')} dele`, ` and its ${pl(n, 'item', 'items')}`) : ''}? {tx('Se mudar de ideia, use Desfazer (↶).', 'If you change your mind, use Undo (↶).')}</p>
+          <Sim rot={tx('Sim, remover', 'Yes, remove')} cls="perigo cheio" d="remover-comodo-sim" onSim={() => { const nome = c.nome; removerComodo(c.id); atualizar((s) => { s.dlg = null; }); enquadrar(); toast(tx(`${nome} removido.`, `${nome} removed.`), '', 'desfazer'); }} /></>;
       }
     } else if (t === 'remover-item') {
       const a = alvoSel(dados, useApp.getState().sel, useApp.getState().selEl);
-      if (a) corpo = <><Cab t={tx('Remover', 'Remove')} /><p>{tx('Remover', 'Remove')} <b>{a.obj.nome}</b> {tx('da planta?', 'from the floor plan?')}</p><Sim rot={tx('Sim, remover', 'Yes, remove')} cls="perigo cheio" d="remover-item-sim" onSim={() => { removerAlvo(); atualizar((s) => { s.dlg = null; }); }} /></>;
+      if (a) corpo = <><Cab t={tx('Remover', 'Remove')} /><p>{tx('Remover', 'Remove')} <b>{a.obj.nome}</b> {tx('da planta?', 'from the floor plan?')}</p><Sim rot={tx('Sim, remover', 'Yes, remove')} cls="perigo cheio" d="remover-item-sim" onSim={() => { const nome = a.obj.nome; removerAlvo(); atualizar((s) => { s.dlg = null; }); toast(tx(`${nome} removido.`, `${nome} removed.`), '', 'desfazer'); }} /></>;
     } else if (t === 'cen-nome') {
       const c = dados.cenarios[String(x.id)];
       if (c) corpo = <Renomear titulo={tx('Renomear cenário', 'Rename scenario')} atual={c.nome} onSalvar={(n) => atualizarCenario(c.id, { nome: n })} />;
@@ -507,8 +606,8 @@ export default function Dialogo() {
       const a = dados.andares[String(x.id)];
       if (a) {
         const cs = comodosDoAndar(dados, a.id);
-        corpo = <><Cab t={tx('Remover andar', 'Remove floor')} /><p>{tx('Remover', 'Remove')} <b>{a.nome}</b>{cs.length ? tx(` e ${pl(cs.length, 'cômodo', 'cômodos')} dele (com tudo o que está dentro)`, ` and its ${pl(cs.length, 'room', 'rooms')} (with everything inside)`) : ''}? {tx('Não dá para desfazer.', 'This can’t be undone.')}</p>
-          <Sim rot={tx('Sim, remover', 'Yes, remove')} cls="perigo cheio" d="remover-andar-sim" onSim={() => { const nome = a.nome; removerAndar(a.id); atualizar((s) => { s.dlg = null; }); enquadrar(); toast(tx(`${nome} removido.`, `${nome} removed.`)); }} /></>;
+        corpo = <><Cab t={tx('Remover andar', 'Remove floor')} /><p>{tx('Remover', 'Remove')} <b>{a.nome}</b>{cs.length ? tx(` e ${pl(cs.length, 'cômodo', 'cômodos')} dele (com tudo o que está dentro)`, ` and its ${pl(cs.length, 'room', 'rooms')} (with everything inside)`) : ''}? {tx('Se mudar de ideia, use Desfazer (↶).', 'If you change your mind, use Undo (↶).')}</p>
+          <Sim rot={tx('Sim, remover', 'Yes, remove')} cls="perigo cheio" d="remover-andar-sim" onSim={() => { const nome = a.nome; removerAndar(a.id); atualizar((s) => { s.dlg = null; }); enquadrar(); toast(tx(`${nome} removido.`, `${nome} removed.`), '', 'desfazer'); }} /></>;
       }
     } else if (t === 'andar-comodo') {
       const c = dados.comodos[String(x.id)];
@@ -516,8 +615,8 @@ export default function Dialogo() {
         <button key={a.id} className="btn" type="button" onClick={() => { salvarComodo(c.id, { andar: a.id }); atualizar((s) => { s.dlg = null; }); enquadrar(); toast(tx(`${c.nome} foi para ${a.nome}.`, `${c.nome} moved to ${a.nome}.`)); }}>{a.nome}</button>
       ))}</div></>;
     } else if (t === 'zerar') {
-      corpo = <><Cab t={tx('Apagar tudo', 'Delete everything')} /><p>{tx('Apagar todos os andares, cômodos, móveis e cenários deste navegador? Não dá para desfazer. Se quiser guardar uma cópia, use Exportar antes.', 'Delete all floors, rooms, furniture and scenarios from this browser? This can’t be undone. To keep a copy, use Export first.')}</p>
-        <Sim rot={tx('Sim, apagar tudo', 'Yes, delete everything')} cls="perigo cheio" d="zerar-sim" onSim={() => { atualizar((s) => { s.dlg = null; }); trocarDados({ andares: {}, comodos: {}, moveis: {}, els: {}, cenarios: {} }); limparSel(); toast(tx('Tudo apagado.', 'Everything deleted.')); }} /></>;
+      corpo = <><Cab t={tx('Apagar tudo', 'Delete everything')} /><p>{tx('Apagar todos os andares, cômodos, móveis e cenários deste navegador? Se mudar de ideia, use Desfazer (↶) ou volte pelo Histórico, que guarda um ponto de restauração antes. Para ter uma cópia fora daqui, use Exportar.', 'Delete all floors, rooms, furniture and scenarios from this browser? If you change your mind, use Undo (↶) or go back through the History, which keeps a restore point first. To keep a copy elsewhere, use Export.')}</p>
+        <Sim rot={tx('Sim, apagar tudo', 'Yes, delete everything')} cls="perigo cheio" d="zerar-sim" onSim={() => { atualizar((s) => { s.dlg = null; }); apagarTudo(); toast(tx('Tudo apagado.', 'Everything deleted.'), '', 'desfazer'); }} /></>;
     } else if (t === 'apoiar') {
       corpo = <Apoiar />;
     } else if (t === 'ajuda') {
@@ -525,7 +624,11 @@ export default function Dialogo() {
         <li><b>{tx('Cômodos:', 'Rooms:')}</b> {tx('“+ Novo cômodo” no painel da esquerda. Medidas de dentro, de parede a parede.', '“+ New room” in the left panel. Inside measurements, wall to wall.')}</li>
         <li><b>{tx('Desenhar:', 'Draw:')}</b> {tx('toque em “Desenhar”, escolha o que vai desenhar (sala, quarto, corredor…) e arraste na planta. O ímã junta as paredes, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam.', 'tap “Draw”, pick what to draw (living room, bedroom, hallway…) and drag on the plan. Snap joins the walls, and hallways and porches get a door or an opening to the rooms they touch.')}</li>
         <li><b>{tx('Foto do desenho:', 'Sketch photo:')}</b> {tx('tire uma foto do rascunho feito no papel e a IA monta os cômodos, os corredores e as portas. Depois é só conferir as medidas.', 'take a photo of a sketch on paper and the AI builds the rooms, hallways and doors. Then just check the measurements.')}</li>
-        <li><b>{tx('Casa:', 'Home:')}</b> {tx('na vista Casa os cômodos aparecem montados, cada andar lado a lado. Toque num cômodo para selecionar: arraste pelo piso ou pelo nome para mudar o lugar, use as alças azuis para esticar as paredes e o botão ↻ para girar. Perto de outro cômodo, o ímã encosta as paredes; as setas mostram o espaço até o vizinho.', 'the Home view shows the rooms put together, each floor side by side. Tap a room to select it: drag it by its floor or name to move it, use the blue handles to stretch its walls and the ↻ button to rotate it. Near another room, snap brings the walls together; the arrows show the space to the next room.')}</li>
+        <li><b>{tx('Casa:', 'Home:')}</b> {tx('na vista Casa os cômodos aparecem montados, cada andar lado a lado, com a área de cada um. Toque num cômodo para selecionar: arraste pelo piso ou pelo nome para mudar o lugar, use as alças azuis para esticar as paredes e o botão ↻ para girar. Perto de outro cômodo as paredes grudam (ficam acesas) e, se um deles é corredor ou varanda, a porta já entra sozinha.', 'the Home view shows the rooms put together, each floor side by side, with each room’s area. Tap a room to select it: drag it by its floor or name to move it, use the blue handles to stretch its walls and the ↻ button to rotate it. Near another room the walls snap together (they light up) and, if one of them is a hallway or porch, the door goes in by itself.')}</li>
+        <li><b>{tx('Tirar parede:', 'Remove a wall:')}</b> {tx('com o cômodo selecionado, toque na tesoura da parede que ele divide com o vizinho (ou em Paredes): os dois viram um espaço só, em L ou do jeito que ficarem. Os tijolos põem a parede de volta.', 'with the room selected, tap the scissors on the wall it shares with a neighbor (or Walls): both become one space, L-shaped or however they fit. The bricks put the wall back.')}</li>
+        <li><b>{tx('Desfazer e histórico:', 'Undo and history:')}</b> {tx('↶ e ↷ no topo (ou Ctrl+Z e Ctrl+Shift+Z). O relógio mostra tudo o que mudou e os pontos de restauração, que guardam a casa inteira para voltar depois.', '↶ and ↷ at the top (or Ctrl+Z and Ctrl+Shift+Z). The clock shows everything that changed and the restore points, which keep the whole home to go back to later.')}</li>
+        <li><b>{tx('Esconder móveis:', 'Hide furniture:')}</b> {tx('o botão do sofá, no canto da planta, esconde os móveis para mexer em portas, janelas, no ar e nas tomadas; o das camadas escolhe o que mais aparece (nomes, pontos, grade…).', 'the sofa button, in the corner of the plan, hides the furniture so you can work on doors, windows, the AC and outlets; the layers button picks what else shows (names, hookups, grid…).')}</li>
+        <li><b>{tx('Trena:', 'Tape measure:')}</b> {tx('o botão da trena (ou a tecla M) mede qualquer distância: arraste de um ponto ao outro; as pontas grudam nas paredes e nos móveis.', 'the tape button (or the M key) measures any distance: drag from one point to another; the ends snap to walls and furniture.')}</li>
         <li><b>{tx('Andares:', 'Floors:')}</b> {tx('“+ Novo andar” no painel; cada cômodo fica num andar.', '“+ New floor” in the panel; each room is on one floor.')}</li>
         <li><b>{tx('Adicionar:', 'Add:')}</b> {tx('botão “Adicionar”, o “+” de cada grupo, ou segure o dedo (botão direito) no ponto da planta.', 'the “Add” button, the “+” on each group, or press and hold (right-click) on a spot in the floor plan.')}</li>
         <li><b>{tx('Mover:', 'Move:')}</b> {tx('arraste. Vendo vários cômodos, dá para levar o móvel de um para o outro arrastando.', 'drag. When you see several rooms, you can drag furniture from one to another.')}</li>
@@ -537,8 +640,18 @@ export default function Dialogo() {
         <li><b>{tx('Setas coloridas:', 'Colored arrows:')}</b> {tx('o espaço que sobra em volta do móvel. Vermelho: não passa (menos de 60 cm). Amarelo: apertado. Verde: passa bem.', 'the free space left around the furniture. Red: no way through (under 60 cm). Yellow: tight. Green: plenty of room.')}</li>
         <li><b>{tx('Cenários:', 'Scenarios:')}</b> {tx('fotos da arrumação, de um cômodo ou da casa toda, para comparar e voltar a usar.', 'snapshots of the layout, of one room or the whole home, to compare and use again.')}</li>
         <li><b>{tx('Sugestões:', 'Suggestions:')}</b> {tx('3 arrumações diferentes. Trave os móveis que não quer mexer. Também dá para pedir à IA, de graça.', '3 different layouts. Lock the furniture you don’t want moved. You can also ask the AI, for free.')}</li>
+        <li><b>{tx('Copiar e duplicar:', 'Copy and duplicate:')}</b> {tx('copie um móvel ou item de parede e cole em outro cômodo (Ctrl+C e Ctrl+V, ou segurando o dedo no cômodo). Um cômodo inteiro também se duplica, com o que tem dentro.', 'copy a piece of furniture or a wall item and paste it into another room (Ctrl+C and Ctrl+V, or press and hold in the room). A whole room can be duplicated too, with what’s inside.')}</li>
+        <li><b>{tx('Resumo e imagem:', 'Summary and image:')}</b> {tx('no menu ⋯, o resumo mostra a área de cada cômodo e a lista de móveis para copiar; “Salvar a planta como imagem” baixa um PNG (no celular, abre o compartilhar).', 'in the ⋯ menu, the summary shows each room’s area and the furniture list to copy; “Save the plan as an image” downloads a PNG (on a phone, it opens sharing).')}</li>
         <li><b>{tx('Modo avançado:', 'Advanced mode:')}</b> {tx('painel de propriedades com posição em cm, ímã, medidas em todos e atalhos de teclado.', 'properties panel with position in cm, snap, measurements on everything and keyboard shortcuts.')}</li>
       </ul>
+        <p className="grupo-t">{tx('Atalhos de teclado', 'Keyboard shortcuts')}</p>
+        <ul className="atalhos">
+          <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> {tx('desfazer', 'undo')} · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> {tx('ou', 'or')} <kbd>Ctrl</kbd>+<kbd>Y</kbd> {tx('refazer', 'redo')}</li>
+          <li><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> {tx('copiar e colar', 'copy and paste')} · <kbd>Ctrl</kbd>+<kbd>D</kbd> {tx('duplicar', 'duplicate')} · <kbd>Delete</kbd> {tx('remover', 'remove')}</li>
+          <li><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> {tx('mover 1 cm', 'move 1 cm')} ({tx('com', 'with')} <kbd>Shift</kbd>, 10 cm) · <kbd>R</kbd> {tx('girar', 'rotate')}</li>
+          <li><kbd>+</kbd> <kbd>−</kbd> zoom · <kbd>0</kbd> {tx('enquadrar', 'fit')} · <kbd>{tx('Espaço', 'Space')}</kbd> {tx('segurado: mover a planta', 'held: move the plan')}</li>
+          <li><kbd>M</kbd> {tx('trena', 'tape measure')} · <kbd>Esc</kbd> {tx('sair ou tirar a seleção', 'exit or clear selection')} · <kbd>?</kbd> {tx('esta ajuda', 'this help')}</li>
+        </ul>
         <p className="nota">{tx('Seus dados ficam só neste navegador. Use Exportar para guardar uma cópia ou levar para outro aparelho. O Cabeaí é grátis e de código aberto.', 'Your data stays only in this browser. Use Export to keep a copy or move it to another device. Cabeaí is free and open source.')}</p>
         <div className="acoes"><button className="btn prim" type="button" data-d="fechar" onClick={fecharDialogo}>{tx('Entendi', 'Got it')}</button></div></>;
     }

@@ -2,17 +2,19 @@
 // A planta: desenho em escala + mouse, toque, pinça e teclado.
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { espacos, imaBorda, imaComodo, retDesenhado } from '@/lib/casa';
-import { COMODO_NOME, T } from '@/lib/catalogo';
+import { COMODO_NOME, T, horizontal } from '@/lib/catalogo';
 import type { Borda } from '@/lib/edicao';
-import { comodosDoAndar, avaliacao, cq, idsVisiveis, listaAtiva } from '@/lib/consultas';
+import { comodosDoAndar, avaliacao, cq, idsVisiveis, listaAtiva, vizinhosDeParede, type ParedeVizinha } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { dims, geoEl, ima, paredePerto, prender, ret, uDaParede } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
+import { registrarPlanta } from '@/lib/exportar';
+import { areaDoAndar, fmtArea } from '@/lib/resumo';
 import {
-  abrirMenu, atualizar, desenharComodo, editarItem, estadoAtual, esticar, estreito, fecharMenu, fimEsticar, focarComodo, girar, girarComodo, limparSel, moverComodo,
-  salvarEl, salvarMovel, selecionar, selecionarComodo, toast, useApp, zoomEm
+  abrirMenu, alternarParede, atualizar, avisarLigacoes, conectarComodo, desenharComodo, editarItem, estadoAtual, esticar, estreito, fecharMenu, fimEsticar, focarComodo, girar, girarComodo,
+  limparSel, moverComodo, salvarEl, salvarMovel, selecionar, selecionarComodo, toast, useApp, zoomEm
 } from '@/lib/store';
-import type { Vista } from '@/lib/tipos';
+import type { Comodo, Vista } from '@/lib/tipos';
 import { fmtM, n1 } from '@/lib/util';
 import { layoutDe, vbAtual, vbBase, type Layout } from '@/lib/vista';
 import { RotulosSala, Sala, Seta } from './desenho/Sala';
@@ -25,6 +27,15 @@ interface Risco { andar: string | null; ox: number; oy: number; x: number; y: nu
 const BORDAS: Borda[] = ['esq', 'dir', 'cima', 'baixo'];
 /** Planta vazia no modo de desenhar: uns 13 × 9 m para começar. */
 const VB_VAZIO: Layout['vb'] = [-50, -50, 1300, 900];
+/** Medida da trena, em coordenadas da planta (cm). */
+interface Trena { a: Pt; b: Pt }
+/** Onde fica, no desenho do cômodo, um ponto da linha do meio da parede (v = deslocamento para dentro). */
+function naParede(c: Comodo, p: ParedeVizinha['parede'], u: number, v = 0): Pt {
+  if (p === 'cima') return { x: u, y: -T / 2 + v };
+  if (p === 'baixo') return { x: u, y: c.h + T / 2 - v };
+  if (p === 'esquerda') return { x: -T / 2 + v, y: u };
+  return { x: c.w + T / 2 - v, y: u };
+}
 
 export default function Planta() {
   const dados = useApp((s) => s.dados);
@@ -39,10 +50,30 @@ export default function Planta() {
   const modo = useApp((s) => s.modo);
   const arrastando = useApp((s) => s.arrastando);
   const desenho = useApp((s) => s.desenho);
+  const medir = useApp((s) => s.medir);
+  const camadas = useApp((s) => s.camadas);
   const svgRef = useRef<SVGSVGElement>(null);
   const [tela, setTela] = useState({ w: 800, h: 600 });
   const [congelado, setCongelado] = useState<Congelado | null>(null);
   const [risco, setRisco] = useState<Risco | null>(null);
+  const [trena, setTrena] = useState<Trena | null>(null);
+  /** Cômodo sendo arrastado ou esticado: as paredes que ele divide com os vizinhos ficam acesas ("grudou"). */
+  const [juntaQ, setJuntaQ] = useState<string | null>(null);
+  const espaco = useRef(false);
+  useEffect(() => { if (!medir) setTrena(null); }, [medir]);
+  // espaço segurado: arrastar move a planta (como nos programas de desenho)
+  useEffect(() => {
+    // (no campo de texto, num botão ou num item da planta com o foco, o espaço continua sendo do item)
+    const campo = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null, tag = (el && el.tagName || '').toLowerCase();
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || tag === 'button' || !!(el && el.isContentEditable) || !!(el && el.closest && el.closest(`${ALVOS}, [data-qt]`));
+    };
+    const desce = (e: KeyboardEvent) => { if (e.code === 'Space' && !campo(e.target) && !estadoAtual().dlg) { if (!espaco.current) { espaco.current = true; svgRef.current?.classList.add('pan-espaco'); } e.preventDefault(); } };
+    const sobe = (e: KeyboardEvent) => { if (e.code === 'Space') { espaco.current = false; svgRef.current?.classList.remove('pan-espaco'); } };
+    const sai = () => { espaco.current = false; svgRef.current?.classList.remove('pan-espaco'); };
+    window.addEventListener('keydown', desce); window.addEventListener('keyup', sobe); window.addEventListener('blur', sai);
+    return () => { window.removeEventListener('keydown', desce); window.removeEventListener('keyup', sobe); window.removeEventListener('blur', sai); };
+  }, []);
 
   useEffect(() => {
     const el = svgRef.current?.parentElement;
@@ -72,8 +103,9 @@ export default function Planta() {
     drag: null as null | { id: string; dx: number; dy: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number },
     dragEl: null as null | { id: string; du: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number },
     dragQ: null as null | { id: string; dx: number; dy: number; ox: number; oy: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number; offAntes: Pt },
-    pan: null as null | { pid: number; x: number; y: number; cx0: number; cy0: number; esc: number; moveu: boolean; qid: string | null; tit: boolean },
-    risco: null as null | { pid: number; andar: string | null; ox: number; oy: number; p0: Pt },
+    pan: null as null | { pid: number; x: number; y: number; cx0: number; cy0: number; esc: number; moveu: boolean; qid: string | null; tit: boolean; so?: boolean },
+    risco: null as null | { pid: number; andar: string | null; ox: number; oy: number; p0: Pt; r?: { x: number; y: number; w: number; h: number } },
+    trena: null as null | { pid: number; a: Pt; cx: number; cy: number },
     estica: null as null | { pid: number; id: string; borda: Borda; ox: number; oy: number; moveu: boolean },
     pinca: null as null | { d0: number; z0: number; esc0: number; rc: Pt; m0: Pt; c0: Pt },
     lp: null as null | { pid: number; x: number; y: number; timer: number },
@@ -83,6 +115,8 @@ export default function Planta() {
     menuToque: 0
   }).current;
   const layRef = useRef(lay); layRef.current = lay;
+  // para salvar a planta como imagem
+  useEffect(() => { registrarPlanta(() => (svgRef.current ? { svg: svgRef.current, vb: layRef.current.vb } : null)); return () => registrarPlanta(null); }, []);
   const vbRef = useRef(vb); vbRef.current = vb;
   const baseRef = useRef(base); baseRef.current = base;
 
@@ -175,9 +209,11 @@ export default function Planta() {
 
   function iniciarPinca() {
     cancelarLongo();
-    g.drag = null; g.dragEl = null; g.dragQ = null; g.pan = null; g.risco = null;
+    const dq = g.dragQ;
+    if (dq && dq.ativo) { if (dq.moveu) avisarLigacoes(dq.id, conectarComodo(dq.id)); setCongelado(null); }
+    g.drag = null; g.dragEl = null; g.dragQ = null; g.pan = null; g.risco = null; g.trena = null;
     if (g.estica) { fimEsticar(g.estica.id); g.estica = null; setCongelado(null); }
-    setRisco(null);
+    setRisco(null); setJuntaQ(null);
     const [a, b] = Array.from(g.ptrs.values()), v = vbRef.current, R = svgRef.current!.getBoundingClientRect();
     g.pinca = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: estadoAtual().cam.z, esc0: escalaTela(), rc: { x: R.left + R.width / 2, y: R.top + R.height / 2 }, m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, c0: { x: v[0] + v[2] / 2, y: v[1] + v[3] / 2 } };
   }
@@ -189,8 +225,39 @@ export default function Planta() {
     atualizar((s) => { s.cam = { z, cx: W.x - (m.x - P.rc.x) / sc, cy: W.y - (m.y - P.rc.y) / sc }; });
   }
 
+  /** Começa a arrastar a planta (com "so", só arrasta: soltar sem mexer não seleciona nada). */
+  function iniciarPan(e: RPointerEvent<SVGSVGElement>, tit: Element | null, so = false) {
+    const p = ptSvg(e.clientX, e.clientY), v = vbRef.current;
+    g.pan = { pid: e.pointerId, x: e.clientX, y: e.clientY, cx0: v[0] + v[2] / 2, cy0: v[1] + v[3] / 2, esc: escalaTela(), moveu: false, qid: so ? null : tit ? tit.getAttribute('data-qt') : salaNoPonto(p, true), tit: !!tit, so };
+    try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+  }
+  /** Começa a arrastar um cômodo (pelo nome ou pelo piso). */
+  function arrastarComodo(id: string, e: RPointerEvent<SVGSVGElement>): boolean {
+    const c = estadoAtual().dados.comodos[id]; if (!c) return false;
+    e.preventDefault();
+    const p = ptSvg(e.clientX, e.clientY), o = offDe(id);
+    g.dragQ = { id, dx: p.x - o.x, dy: p.y - o.y, ox: o.x - c.x, oy: o.y - c.y, pid: e.pointerId, moveu: false, ativo: false, cx: e.clientX, cy: e.clientY, offAntes: o };
+    try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+    return true;
+  }
+  /** Trena: a ponta gruda nas paredes e nos móveis por perto e, quase reta, fica reta. */
+  function imantarTrena(p: Pt, a?: Pt): Pt {
+    const s = estadoAtual(), L = layRef.current, lim = 10 / escalaTela(), xs: number[] = [], ys: number[] = [];
+    for (const id of L.ids) {
+      const c = s.dados.comodos[id], o = L.off[id]; if (!c || !o) continue;
+      xs.push(o.x, o.x + c.w, o.x - T, o.x + c.w + T); ys.push(o.y, o.y + c.h, o.y - T, o.y + c.h + T);
+      for (const m of listaAtiva(s.dados, s.verCen, id)) { const r = ret(m); xs.push(o.x + r.x1, o.x + r.x2); ys.push(o.y + r.y1, o.y + r.y2); }
+    }
+    const gruda = (v: number, cs: number[]) => { let b = v, md = lim; for (const c of cs) { const d = Math.abs(c - v); if (d < md) { md = d; b = c; } } return b; };
+    let x = gruda(p.x, xs), y = gruda(p.y, ys);
+    if (a) { if (Math.abs(y - a.y) < lim * 0.8) y = a.y; if (Math.abs(x - a.x) < lim * 0.8) x = a.x; }
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
   function onPointerDown(e: RPointerEvent<SVGSVGElement>) {
-    if (e.button != null && e.button > 0) return;
+    // botão do meio do mouse, ou espaço segurado: só arrasta a planta
+    const soPan = e.button === 1 || (espaco.current && e.pointerType === 'mouse');
+    if (e.button != null && e.button > 0 && !soPan) return;
     g.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (g.ptrs.size === 2) { iniciarPinca(); return; }
     if (g.ptrs.size > 2) return;
@@ -198,15 +265,18 @@ export default function Planta() {
     const ae = document.activeElement as HTMLElement | null;
     if (ae && ae.closest && ae.closest('#p-prop') && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT')) ae.blur();
     const s = estadoAtual(), target = e.target as Element, perto = (sel: string) => (target.closest ? target.closest(sel) : null);
-    // botões desenhados na planta: girar o cômodo ou o móvel, e as alças para esticar as paredes
+    if (soPan) { e.preventDefault(); iniciarPan(e, null, true); return; }
+    // botões desenhados na planta: girar o cômodo ou o móvel, tirar ou pôr parede, e as alças para esticar as paredes
     const gq = perto('[data-girar-q]');
     if (gq) {
       e.preventDefault();
       const id = gq.getAttribute('data-girar-q')!, a0 = andarDe(id);
-      girarComodo(id); manterVista(id, a0.x, a0.y);
+      avisarLigacoes(id, girarComodo(id)); manterVista(id, a0.x, a0.y);
       return;
     }
     if (perto('[data-girar-m]')) { e.preventDefault(); girar(); return; }
+    const pv = perto('[data-parede-viz]');
+    if (pv && s.selComodo) { e.preventDefault(); alternarParede(s.selComodo, pv.getAttribute('data-parede-viz')!); return; }
     const alca = perto('[data-alca]');
     if (alca && s.selComodo && s.dados.comodos[s.selComodo] && s.vista === 'casa') {
       e.preventDefault();
@@ -217,10 +287,22 @@ export default function Planta() {
       try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
       return;
     }
-    // modo de desenhar: arrastar cria o retângulo do cômodo novo
-    if (s.desenho.ativo && !s.verCen) {
+    // trena: arrastar mede de um ponto ao outro
+    if (s.medir) {
       e.preventDefault();
-      const p = ptSvg(e.clientX, e.clientY), A = andarNoPonto(p), outros = A.andar ? comodosDoAndar(s.dados, A.andar) : [], lim = 14 / escalaTela();
+      const a = imantarTrena(ptSvg(e.clientX, e.clientY));
+      g.trena = { pid: e.pointerId, a, cx: e.clientX, cy: e.clientY };
+      setTrena({ a, b: a });
+      try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+      return;
+    }
+    const tit = perto('[data-qt]');
+    // modo de desenhar: o cômodo (pelo nome ou pelo piso) se arrasta; fora dele, o arraste desenha um cômodo novo
+    if (s.desenho.ativo && !s.verCen) {
+      const p = ptSvg(e.clientX, e.clientY), qid = tit ? tit.getAttribute('data-qt') : salaNoPonto(p, true);
+      if (qid && arrastarComodo(qid, e)) return;
+      e.preventDefault();
+      const A = andarNoPonto(p), outros = A.andar ? comodosDoAndar(s.dados, A.andar) : [], lim = 18 / escalaTela();
       const p0 = { x: imaBorda(p.x - A.ox, 'x', outros, lim), y: imaBorda(p.y - A.oy, 'y', outros, lim) };
       g.risco = { pid: e.pointerId, andar: A.andar, ox: A.ox, oy: A.oy, p0 };
       setRisco({ andar: A.andar, ox: A.ox, oy: A.oy, x: p0.x, y: p0.y, w: 0, h: 0 });
@@ -228,32 +310,12 @@ export default function Planta() {
       return;
     }
     if (e.pointerType !== 'mouse') iniciarLongo(e);
-    const tit = target.closest ? target.closest('[data-qt]') : null;
-    if (tit && s.vista === 'casa' && !s.verCen) {
-      const id = tit.getAttribute('data-qt')!, c = s.dados.comodos[id]; if (!c) return;
-      e.preventDefault();
-      const p = ptSvg(e.clientX, e.clientY), o = offDe(id);
-      g.dragQ = { id, dx: p.x - o.x, dy: p.y - o.y, ox: o.x - c.x, oy: o.y - c.y, pid: e.pointerId, moveu: false, ativo: false, cx: e.clientX, cy: e.clientY, offAntes: o };
-      try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
-      return;
-    }
+    if (tit && s.vista === 'casa' && !s.verCen && arrastarComodo(tit.getAttribute('data-qt')!, e)) return;
     const alvo = !s.verCen && target.closest ? target.closest(ALVOS) : null;
     // na planta da casa, o cômodo selecionado também se arrasta pelo piso
     const qSel = s.selComodo, salaG = !alvo && s.vista === 'casa' && !s.verCen && qSel ? perto('g.sala[data-q]') : null;
-    if (qSel && salaG && salaG.getAttribute('data-q') === qSel && s.dados.comodos[qSel]) {
-      const id = qSel, c = s.dados.comodos[id];
-      e.preventDefault();
-      const p = ptSvg(e.clientX, e.clientY), o = offDe(id);
-      g.dragQ = { id, dx: p.x - o.x, dy: p.y - o.y, ox: o.x - c.x, oy: o.y - c.y, pid: e.pointerId, moveu: false, ativo: false, cx: e.clientX, cy: e.clientY, offAntes: o };
-      try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
-      return;
-    }
-    if (!alvo) {
-      const p = ptSvg(e.clientX, e.clientY), v = vbRef.current;
-      g.pan = { pid: e.pointerId, x: e.clientX, y: e.clientY, cx0: v[0] + v[2] / 2, cy0: v[1] + v[3] / 2, esc: escalaTela(), moveu: false, qid: tit ? tit.getAttribute('data-qt') : salaNoPonto(p, true), tit: !!tit };
-      try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
-      return;
-    }
+    if (qSel && salaG && salaG.getAttribute('data-q') === qSel && arrastarComodo(qSel, e)) return;
+    if (!alvo) { iniciarPan(e, tit); return; }
     e.preventDefault();
     const eid = alvo.getAttribute('data-eid'), mid = alvo.getAttribute('data-id');
     if (eid ? !s.dados.els[eid] : !mid || !s.dados.moveis[mid]) return;
@@ -275,10 +337,13 @@ export default function Planta() {
     if (g.ptrs.has(e.pointerId)) g.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (g.pinca) { moverPinca(); return; }
     if (g.lp && e.pointerId === g.lp.pid && Math.hypot(e.clientX - g.lp.x, e.clientY - g.lp.y) > 8) cancelarLongo();
+    const tr = g.trena;
+    if (tr && e.pointerId === tr.pid) { setTrena({ a: tr.a, b: imantarTrena(ptSvg(e.clientX, e.clientY), tr.a) }); return; }
     const rc = g.risco;
     if (rc && e.pointerId === rc.pid) {
       const s0 = estadoAtual(), p = ptSvg(e.clientX, e.clientY), outros = rc.andar ? comodosDoAndar(s0.dados, rc.andar) : [];
-      const r = retDesenhado(rc.p0, { x: p.x - rc.ox, y: p.y - rc.oy }, outros, 14 / escalaTela());
+      const r = retDesenhado(rc.p0, { x: p.x - rc.ox, y: p.y - rc.oy }, outros, 18 / escalaTela());
+      rc.r = r; // o último retângulo fica aqui também: o dedo pode soltar antes da tela redesenhar
       setRisco({ andar: rc.andar, ox: rc.ox, oy: rc.oy, ...r });
       return;
     }
@@ -287,7 +352,8 @@ export default function Planta() {
       const s0 = estadoAtual(), c = s0.dados.comodos[es.id]; if (!c) return;
       const p = ptSvg(e.clientX, e.clientY), horiz = es.borda === 'esq' || es.borda === 'dir';
       const outros = comodosDoAndar(s0.dados, c.andar).filter((o) => o.id !== c.id);
-      const v = imaBorda(horiz ? p.x - es.ox : p.y - es.oy, horiz ? 'x' : 'y', outros, 14 / escalaTela(), es.borda === 'esq' || es.borda === 'cima' ? 'ini' : 'fim');
+      const v = imaBorda(horiz ? p.x - es.ox : p.y - es.oy, horiz ? 'x' : 'y', outros, 18 / escalaTela(), es.borda === 'esq' || es.borda === 'cima' ? 'ini' : 'fim');
+      if (!es.moveu) setJuntaQ(es.id);
       es.moveu = true;
       esticar(es.id, es.borda, v);
       return;
@@ -305,15 +371,18 @@ export default function Planta() {
     if (dq && e.pointerId === dq.pid) {
       if (!dq.ativo) {
         if (Math.hypot(e.clientX - dq.cx, e.clientY - dq.cy) < 5) return;
-        dq.ativo = true;
         const c = s.dados.comodos[dq.id];
+        if (!c) { g.dragQ = null; return; }
+        dq.ativo = true;
         setCongelado({ andar: c.andar, ox: dq.ox, oy: dq.oy, off: { ...layRef.current.off }, vb: layRef.current.vb, andares: layRef.current.andares });
+        setJuntaQ(dq.id);
         atualizar((x) => { x.arrastando = true; x.selComodo = dq.id; x.comodo = dq.id; x.folha = false; });
       }
       const c = s.dados.comodos[dq.id]; if (!c) return;
       const p = ptSvg(e.clientX, e.clientY);
       let nx = p.x - dq.dx - dq.ox, ny = p.y - dq.dy - dq.oy;
-      if (s.imaOn) { const o = imaComodo(c, nx, ny, comodosDoAndar(s.dados, c.andar).filter((x) => x.id !== c.id), Math.max(8, 10 / escalaTela())); nx = o.x; ny = o.y; }
+      // o ímã puxa de uns 22 px da tela: perto de outro cômodo, as paredes "grudam"
+      if (s.imaOn) { const o = imaComodo(c, nx, ny, comodosDoAndar(s.dados, c.andar).filter((x) => x.id !== c.id), Math.max(12, 22 / escalaTela())); nx = o.x; ny = o.y; }
       nx = Math.round(nx); ny = Math.round(ny);
       if (nx !== c.x || ny !== c.y) { dq.moveu = true; moverComodo(c.id, nx, ny); }
       return;
@@ -377,6 +446,8 @@ export default function Planta() {
     if (pan.qid !== s.comodo) focarComodo(pan.qid, false);
   }
   function toqueComodo(id: string) {
+    // no modo de desenhar, tocar no cômodo só o seleciona (aparecem as alças); fora dele, dois toques abrem o cômodo
+    if (estadoAtual().desenho.ativo) { selecionarComodo(id, false); return; }
     const agora = Date.now(), duplo = g.toqueTit && g.toqueTit.qid === id && agora - g.toqueTit.t < 420;
     g.toqueTit = duplo ? null : { qid: id, t: agora };
     if (duplo) { focarComodo(id, true); return; }
@@ -388,31 +459,41 @@ export default function Planta() {
     if (g.pinca) { if (g.ptrs.size < 2) g.pinca = null; return; }
     if (g.lp && e.pointerId === g.lp.pid) cancelarLongo();
     const solta = (pid: number) => { try { svgRef.current?.releasePointerCapture(pid); } catch { /* ok */ } };
+    const tr = g.trena;
+    if (tr && e.pointerId === tr.pid) {
+      g.trena = null; solta(tr.pid);
+      // um toque sem arrastar apaga a medida
+      if (cancelou || Math.hypot(e.clientX - tr.cx, e.clientY - tr.cy) < 4) setTrena(null);
+      return;
+    }
     const rc = g.risco;
     if (rc && e.pointerId === rc.pid) {
       g.risco = null; solta(rc.pid);
-      const r = risco; setRisco(null);
+      const r = rc.r || null; setRisco(null);
       if (cancelou || !r || r.w < 30 || r.h < 30) return;
       const tipo = estadoAtual().desenho.tipo;
       const novo = desenharComodo({ andar: rc.andar, x: r.x, y: r.y, w: r.w, h: r.h, tipo });
       manterVista(novo.id, rc.ox, rc.oy);
-      toast(tx(`${novo.nome} desenhado (${fmtM(Math.max(60, r.w))} × ${fmtM(Math.max(60, r.h))} m). Desenhe o próximo ou toque em Pronto.`, `${novo.nome} drawn (${fmtM(Math.max(60, r.w))} × ${fmtM(Math.max(60, r.h))} m). Draw the next one or tap Done.`));
+      const med = `${fmtM(Math.max(60, r.w))} × ${fmtM(Math.max(60, r.h))} m`, lig = novo.ligados.length ? tx(` Ligado a ${novo.ligados.join(', ')}.`, ` Connected to ${novo.ligados.join(', ')}.`) : '';
+      toast(tx(`${novo.nome} desenhado (${med}).${lig} Desenhe o próximo ou toque em Pronto.`, `${novo.nome} drawn (${med}).${lig} Draw the next one or tap Done.`));
       return;
     }
     const es = g.estica;
     if (es && e.pointerId === es.pid) {
       g.estica = null; solta(es.pid);
-      fimEsticar(es.id);
-      setCongelado(null);
+      avisarLigacoes(es.id, fimEsticar(es.id));
+      setCongelado(null); setJuntaQ(null);
       if (es.moveu) manterVista(es.id, es.ox, es.oy);
       return;
     }
     const pan = g.pan;
-    if (pan && e.pointerId === pan.pid) { g.pan = null; solta(pan.pid); if (!pan.moveu && !cancelou) toqueVazio(pan); return; }
+    if (pan && e.pointerId === pan.pid) { g.pan = null; solta(pan.pid); if (!pan.moveu && !cancelou && !pan.so) toqueVazio(pan); return; }
     const dq = g.dragQ;
     if (dq && e.pointerId === dq.pid) {
-      g.dragQ = null; solta(dq.pid);
+      g.dragQ = null; solta(dq.pid); setJuntaQ(null);
       if (dq.moveu) {
+        // encostou em outro cômodo? A porta (ou passagem) entra sozinha
+        avisarLigacoes(dq.id, conectarComodo(dq.id));
         // a planta volta a se ajustar; a câmera acompanha para o cômodo não "pular"
         const antes = offDe(dq.id);
         setCongelado(null);
@@ -421,8 +502,10 @@ export default function Planta() {
           const sc = estadoAtual();
           if (depois && sc.cam.cx != null && sc.cam.cy != null) atualizar((x) => { x.cam = { z: x.cam.z, cx: (x.cam.cx as number) + depois.x - antes.x, cy: (x.cam.cy as number) + depois.y - antes.y }; });
         });
-      } else if (!cancelou) toqueComodo(dq.id);
-      else setCongelado(null);
+      } else {
+        if (dq.ativo || cancelou) setCongelado(null);
+        if (!cancelou && !dq.ativo) toqueComodo(dq.id);
+      }
       return;
     }
     const de = g.dragEl;
@@ -489,7 +572,7 @@ export default function Planta() {
   })();
   const iconeGirar = (r: number) => <><circle r={f3(r)} /><g transform={`scale(${f3(r / 16)}) translate(-12 -12)`}><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></g></>;
   const alcas = (() => {
-    if (vista !== 'casa' || !selComodo || verCen || desenho.ativo) return null;
+    if (vista !== 'casa' || !selComodo || verCen || medir) return null;
     const c = dados.comodos[selComodo], o = lay.off[selComodo];
     if (!c || !o) return null;
     const th = Math.max(T, 14 * upx), lh = Math.min(c.h * 0.6, 48 * upx), lw = Math.min(c.w * 0.6, 48 * upx);
@@ -507,19 +590,91 @@ export default function Planta() {
       </g>
     );
   })();
+  // botões nas paredes que o cômodo selecionado divide com os vizinhos: tesoura tira a parede, tijolos põem de volta
+  const paredeBtns = (() => {
+    if (vista !== 'casa' || !selComodo || verCen || arrastando || medir) return null;
+    const c = dados.comodos[selComodo], o = lay.off[selComodo];
+    if (!c || !o) return null;
+    const vs = vizinhosDeParede(dados, selComodo), qc = cq(dados, selComodo);
+    if (!vs.length || !qc) return null;
+    const r = 12 * upx;
+    return (
+      <g className="paredes-btns" transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
+        {vs.map((v) => {
+          const hz = horizontal(v.parede), L = hz ? c.w : c.h, al = Math.min((hz ? c.w : c.h) * 0.6, 48 * upx) / 2;
+          // o botão fica no trecho dividido, longe da alça de esticar (no meio da parede) e das portas;
+          // se não sobrar lugar na parede, ele entra um pouco no cômodo
+          const ocupado: [number, number][] = [[L / 2 - al - r - 4 * upx, L / 2 + al + r + 4 * upx]];
+          for (const p of qc.portas) if (p.parede === v.parede && !p.semParede) { const g = geoEl(qc, p); ocupado.push([g.a - r, g.b + r]); }
+          const livre = (u: number) => u >= v.u1 + r * 0.6 && u <= v.u2 - r * 0.6 && !ocupado.some(([a, b]) => u > a && u < b);
+          const meio = (v.u1 + v.u2) / 2;
+          let u = meio, dv = 0;
+          if (!livre(meio)) {
+            let achou = false;
+            for (let d = 5; d <= (v.u2 - v.u1) / 2 && !achou; d += 5) { if (livre(meio + d)) { u = meio + d; achou = true; } else if (livre(meio - d)) { u = meio - d; achou = true; } }
+            if (!achou) dv = T / 2 + r + 8 * upx;
+          }
+          const pt = naParede(c, v.parede, u, dv);
+          const rot = v.tirada ? tx(`Pôr de volta a parede entre ${c.nome} e ${v.viz.nome}`, `Put back the wall between ${c.nome} and ${v.viz.nome}`) : tx(`Tirar a parede entre ${c.nome} e ${v.viz.nome}`, `Remove the wall between ${c.nome} and ${v.viz.nome}`);
+          return (
+            <g key={v.viz.id} className={`parede-btn${v.tirada ? ' tirada' : ''}`} data-parede-viz={v.viz.id} role="button" aria-label={rot} transform={`translate(${n1(pt.x)} ${n1(pt.y)})`}>
+              <title>{rot}</title>
+              <circle r={f3(r)} />
+              <g transform={`scale(${f3(r / 15)}) translate(-12 -12)`}>{v.tirada ? <path d="M3 7h18v10H3zM3 12h18M9 7v5M15 12v5" /> : <><circle cx="6" cy="6" r="3" /><circle cx="6" cy="18" r="3" /><path d="M8.1 8.1 20 20M8.1 15.9 20 4" /></>}</g>
+            </g>
+          );
+        })}
+      </g>
+    );
+  })();
+  // enquanto arrasta ou estica: as paredes que o cômodo já divide com os vizinhos acendem
+  const juntas = (() => {
+    if (!juntaQ || vista !== 'casa') return null;
+    const c = dados.comodos[juntaQ], o = lay.off[juntaQ];
+    if (!c || !o) return null;
+    return (
+      <g className="juntas" aria-hidden="true" transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
+        {vizinhosDeParede(dados, juntaQ).map((v) => { const a = naParede(c, v.parede, v.u1), b = naParede(c, v.parede, v.u2); return <line key={v.viz.id} className="junta" x1={n1(a.x)} y1={n1(a.y)} x2={n1(b.x)} y2={n1(b.y)} strokeWidth={T} />; })}
+      </g>
+    );
+  })();
+  const trenaG = (() => {
+    if (!trena) return null;
+    const { a, b } = trena, dx = b.x - a.x, dy = b.y - a.y, dist = Math.hypot(dx, dy);
+    if (dist < 1) return <circle className="trena-p" cx={n1(a.x)} cy={n1(a.y)} r={f3(4 * upx)} />;
+    const nx = -dy / dist, ny = dx / dist, tk = 7 * upx, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const txt = `${fmtM(dist)} m`, fs = 13 * upx, pw = txt.length * 7.2 * upx + 16 * upx, ph = 22 * upx;
+    const diag = Math.abs(dx) >= 1 && Math.abs(dy) >= 1;
+    return (
+      <g className="trena-g" aria-hidden="true">
+        <line className="trena-l" x1={n1(a.x)} y1={n1(a.y)} x2={n1(b.x)} y2={n1(b.y)} />
+        <line className="trena-l" x1={n1(a.x - nx * tk)} y1={n1(a.y - ny * tk)} x2={n1(a.x + nx * tk)} y2={n1(a.y + ny * tk)} />
+        <line className="trena-l" x1={n1(b.x - nx * tk)} y1={n1(b.y - ny * tk)} x2={n1(b.x + nx * tk)} y2={n1(b.y + ny * tk)} />
+        <g transform={`translate(${n1(mx)} ${n1(my)})`}>
+          <rect className="trena-pill" x={f3(-pw / 2)} y={f3(-ph / 2)} width={f3(pw)} height={f3(ph)} rx={f3(ph / 2)} />
+          <text className="trena-t" fontSize={f3(fs)} textAnchor="middle" dy=".36em">{txt}</text>
+          {diag && <text className="trena-sub" y={f3(ph * 0.95)} fontSize={f3(fs * 0.82)} textAnchor="middle" dy=".36em">↔ {fmtM(Math.abs(dx))} · ↕ {fmtM(Math.abs(dy))}</text>}
+        </g>
+      </g>
+    );
+  })();
   const girarMovel = (() => {
-    if (!sel || verCen || arrastando || desenho.ativo) return null;
+    if (!sel || verCen || arrastando || desenho.ativo || medir) return null;
     const m = dados.moveis[sel], o = m ? lay.off[m.comodo] : null;
     if (!m || !o) return null;
     const rr = ret(m), r = 13 * upx;
     return <g className="alca-girar" data-girar-m={m.id} role="button" aria-label={tx(`Girar ${m.nome} 90 graus`, `Rotate ${m.nome} 90 degrees`)} transform={`translate(${n1(o.x + rr.x2 + r * 0.7)} ${n1(o.y + rr.y1 - r * 0.7)})`}>{iconeGirar(r)}</g>;
   })();
 
+  // camadas escondidas (móveis, portas e janelas, ar, pontos, nomes, grade) viram classes da planta
+  const semCamadas = (Object.keys(camadas) as (keyof typeof camadas)[]).filter((k) => !camadas[k]).map((k) => ' sem-' + k).join('');
+  // nomes de portas, janelas e pontos: um pouco maiores quando a planta está longe, para dar para ler
+  const kRot = Math.min(1.6, Math.max(1, (7.5 * upx) / 8.5));
   const b0 = ids.length ? dados.comodos[ids[0]] : null;
   const rotulo = !b0 ? tx('Planta vazia', 'Empty floor plan') : vista === 'casa' ? tx('Planta da casa', 'Home floor plan') : ids.length > 1 ? tx('Todos os cômodos lado a lado', 'All rooms side by side') : tx(`Planta de ${b0.nome}, ${fmtM(b0.w)} por ${fmtM(b0.h)} metros`, `Floor plan of ${b0.nome}, ${fmtM(b0.w)} by ${fmtM(b0.h)} meters`);
   return (
     <svg id="planta" ref={svgRef} xmlns="http://www.w3.org/2000/svg" role="group" aria-label={rotulo} viewBox={vb.map(n1).join(' ')}
-      className={`${arrastando ? 'arrastando' : ''} vista-${vista}${desenho.ativo ? ' desenhando' : ''}`}
+      className={`${arrastando ? 'arrastando' : ''} vista-${vista}${desenho.ativo ? ' desenhando' : ''}${medir ? ' medindo' : ''}${semCamadas}`}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(e) => fim(e, false)} onPointerCancel={(e) => fim(e, true)}
       onLostPointerCapture={(e) => { if (g.ptrs.has(e.pointerId) && !g.drag && !g.dragEl && !g.dragQ && !g.pan) g.ptrs.delete(e.pointerId); }}
       onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
@@ -530,14 +685,14 @@ export default function Planta() {
       {desenho.ativo && <rect className="grade-desenho" x={n1(vb[0])} y={n1(vb[1])} width={n1(vb[2])} height={n1(vb[3])} fill="url(#grade-desenho)" />}
       {lay.andares.map((a) => (
         <g key={a.id} className="andar" aria-hidden="true">
-          <text className="andar-t" x={a.x} y={a.ty}>{a.nome}</text>
+          <text className="andar-t" x={a.x} y={a.ty}>{a.nome}<tspan className="andar-area" dx={10}>{fmtArea(areaDoAndar(dados, a.id))}</tspan></text>
         </g>
       ))}
       {lay.ids.map((id) => {
         const q = cq(dados, id), av = avaliacao(dados, verCen, id); if (!q || !av) return null;
         const o = lay.off[id] || { x: 0, y: 0 };
         return (
-          <g key={id} className="sala" data-q={id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
+          <g key={id} className={`sala${selComodo === id ? ' sel-q' : ''}`} data-q={id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
             <Sala q={q} lista={listaAtiva(dados, verCen, id)} av={av} sel={sel} selEl={selEl} foco={id === comodo && ids.length > 1} vista={vista as Vista}
               ty={lay.ex[id]?.ty ?? null} setasTodos={modo === 'avancado' && setasTodos} selComodo={selComodo === id} />
           </g>
@@ -547,9 +702,11 @@ export default function Planta() {
       {lay.ids.map((id) => {
         const q = cq(dados, id); if (!q) return null;
         const o = lay.off[id] || { x: 0, y: 0 };
-        return <g key={'r' + id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}><RotulosSala q={q} vista={vista as Vista} /></g>;
+        return <g key={'r' + id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}><RotulosSala q={q} vista={vista as Vista} k={kRot} /></g>;
       })}
+      {juntas}
       {alcas}
+      {paredeBtns}
       {girarMovel}
       {risco && risco.w > 0 && risco.h > 0 && (
         <g className="risco-g" aria-hidden="true">
@@ -563,6 +720,7 @@ export default function Planta() {
           {espacosSel.es.map((e) => <Seta key={e.lado} f={{ gap: e.gap, eixo: e.eixo, de: e.de, ate: e.ate, em: e.em }} rotulo={`${fmtM(e.gap)} m`} />)}
         </g>
       )}
+      {trenaG}
     </svg>
   );
 }

@@ -7,8 +7,9 @@ import { andaresOrdem, avaliacao, comodosDoAndar, comodosDoCenario, idsVisiveis,
 import { moveisDo } from '@/lib/dados';
 import { tx } from '@/lib/i18n';
 import {
-  abrirDialogo, abrirMenu, atualizar, atualizarCenario, criarExemplo, enquadrar, iniciarAdd, modoDesenho, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm
+  abrirDialogo, abrirMenu, alternarCamada, atualizar, atualizarCenario, criarExemplo, enquadrar, iniciarAdd, modoDesenho, modoMedir, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm
 } from '@/lib/store';
+import { abrirMenuEmBotao } from './Topo';
 import type { Problema } from '@/lib/tipos';
 import { pl } from '@/lib/util';
 import { Icone, Logo } from './icones';
@@ -111,7 +112,7 @@ export function BarraDesenho() {
       <div className="tipos tipos-desenho" role="group" aria-label={tx('O que desenhar', 'What to draw')}>
         {TIPOS_COMODO.map((t) => <button key={t} type="button" className="tipo" data-tipo-comodo={t} aria-pressed={d.tipo === t} onClick={() => modoDesenho(true, t)}>{COMODO_NOME[t]}</button>)}
       </div>
-      <p className="nota">{tx('Perto da parede de outro cômodo, o ímã junta as duas. Corredor e varanda já ganham porta ou passagem para quem eles tocam. Com dois dedos você move e aproxima a planta.', 'Near another room’s wall, snap joins the two walls. Hallways and porches get a door or an opening to the rooms they touch. Use two fingers to move and zoom the plan.')}</p>
+      <p className="nota">{tx('Arraste num espaço vazio para desenhar; arraste um cômodo (pelo piso ou pelo nome) para mudar de lugar. Perto de outro cômodo as paredes grudam, e corredor e varanda já ganham porta para quem tocam. A tesoura na parede junta dois cômodos num espaço só. Com dois dedos (ou o espaço do teclado) você move a planta.', 'Drag on an empty spot to draw; drag a room (by its floor or name) to move it. Near another room the walls snap together, and hallways and porches get a door to the rooms they touch. The scissors on a wall join two rooms into one space. Use two fingers (or hold the space bar) to move the plan.')}</p>
     </div>
   );
 }
@@ -122,9 +123,26 @@ export function Controles() {
   const setas = useApp((s) => s.setasTodos);
   const imaOn = useApp((s) => s.imaOn);
   const z = useApp((s) => s.cam.z);
+  const camadas = useApp((s) => s.camadas);
+  const medir = useApp((s) => s.medir);
   if (!n) return <div className="flut flut-bd" id="controles" />;
+  const escondidas = Object.values(camadas).filter((v) => !v).length;
+  const moveis = () => {
+    alternarCamada('moveis');
+    toast(useApp.getState().camadas.moveis ? tx('Móveis de volta na planta.', 'Furniture is back on the plan.') : tx('Móveis escondidos: agora dá para mexer nas portas, janelas, no ar e nas tomadas sem esbarrar neles. Toque de novo para mostrar.', 'Furniture hidden: now you can work on doors, windows, the AC and outlets without bumping into it. Tap again to show it.'));
+  };
+  const trena = () => {
+    const ativo = !useApp.getState().medir;
+    modoMedir(ativo);
+    if (ativo) toast(tx('Trena: arraste na planta de um ponto ao outro. A ponta gruda nas paredes e nos móveis; toque em ✕ ou Esc para sair.', 'Tape measure: drag on the plan from one point to another. The ends snap to walls and furniture; tap ✕ or Esc to exit.'));
+  };
   return (
     <div className="flut flut-bd" id="controles">
+      <div className="ctrl-grupo">
+        <button type="button" data-t="moveis" aria-pressed={!camadas.moveis} aria-label={camadas.moveis ? tx('Esconder os móveis', 'Hide the furniture') : tx('Mostrar os móveis', 'Show the furniture')} title={camadas.moveis ? tx('Esconder os móveis', 'Hide the furniture') : tx('Mostrar os móveis', 'Show the furniture')} onClick={moveis}><Icone n="sofa" />{!camadas.moveis && <i className="risco-ico" aria-hidden="true" />}</button>
+        <button type="button" id="b-camadas" data-t="camadas" aria-haspopup="menu" aria-label={tx('O que aparece na planta', 'What shows on the plan')} title={tx('O que aparece na planta', 'What shows on the plan')} onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'camadas')}><Icone n="camadas" />{escondidas > 0 && <span className="ponto-aviso" aria-hidden="true" />}</button>
+        <button type="button" data-t="trena" aria-pressed={medir} aria-label={medir ? tx('Sair da trena', 'Exit the tape measure') : tx('Trena: medir na planta', 'Tape measure: measure on the plan')} title={tx('Trena: medir na planta', 'Tape measure: measure on the plan')} onClick={trena}>{medir ? <Icone n="x" /> : <Icone n="trena" />}</button>
+      </div>
       {modo === 'avancado' && (
         <div className="ctrl-grupo">
           <button type="button" data-t="setas" aria-pressed={setas} aria-label={tx('Medidas em todos os móveis', 'Measurements on all furniture')} title={tx('Medidas em todos os móveis', 'Measurements on all furniture')} onClick={() => atualizar((s) => { s.setasTodos = !s.setasTodos; })}><Icone n="regua" /></button>

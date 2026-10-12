@@ -1,19 +1,28 @@
 'use client';
 // Menu de opções: botão direito, dedo segurado e os botões "⋯".
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NOME_PAREDE, ORDEM_PAREDE, ORDEM_TIPOS, TIPOS, TIPOS_PAREDE, ehParede } from '@/lib/catalogo';
-import { andaresOrdem, comodosDoAndar, comodosOrdem } from '@/lib/consultas';
+import { GRUPOS_DO_COMODO, NOME_PAREDE, ORDEM_PAREDE, ORDEM_TIPOS, TIPOS, TIPOS_PAREDE, ehParede, tipoDoComodo } from '@/lib/catalogo';
+import { andaresOrdem, comodosDoAndar, comodosOrdem, vizinhosDeParede } from '@/lib/consultas';
 import { paraArquivo } from '@/lib/dados';
+import { imagemDaPlanta } from '@/lib/exportar';
 import {
-  abrirDialogo, alternar, duplicar, editarItem, fecharMenu, focarComodo, girar, iniciarAdd, levar, mudarIdioma, mudarModo, mudarVista, pedirRemover,
-  girarComodo, sairCenario, selecionarComodo, toast, travar, useApp, usarCenario, type InfoMenu
+  abrirDialogo, alternar, alternarCamada, alternarParede, atualizar, avisarLigacoes, colar, copiar, duplicar, duplicarComodo, editarItem, fecharMenu, focarComodo, girar, iniciarAdd, levar,
+  mostrarTudo, mudarIdioma, mudarModo, mudarTema, mudarVista, pedirRemover, girarComodo, sairCenario, selecionarComodo, temCopia, toast, travar, useApp, usarCenario, type Camada, type InfoMenu
 } from '@/lib/store';
 import { tx } from '@/lib/i18n';
 import { clamp } from '@/lib/util';
 import { REPOSITORIO } from './Dialogo';
 
-interface Item { a: string; t: string; perigo?: boolean; marcado?: boolean }
+/** marcado: item de escolha única (idioma, tema); check: liga e desliga (camadas); fica: o menu continua aberto. */
+interface Item { a: string; t: string; perigo?: boolean; marcado?: boolean; check?: boolean; fica?: boolean }
 type Bloco = { titulo?: string; grade?: boolean; itens: Item[] };
+
+const CAMADAS_MENU = (): [Camada, string][] => [
+  ['moveis', tx('Móveis', 'Furniture')], ['portas', tx('Portas e janelas', 'Doors and windows')], ['ar', tx('Ar-condicionado', 'Air conditioners')],
+  ['pontos', tx('Tomadas, interruptores e outros pontos', 'Outlets, switches and hookups')], ['nomes', tx('Nomes de portas, janelas e pontos', 'Names of doors, windows and hookups')], ['grade', tx('Grade de 50 cm', '50 cm grid')]
+];
+
+
 
 function exportar() {
   const corpo = paraArquivo(useApp.getState().dados);
@@ -31,35 +40,51 @@ function blocos(m: InfoMenu): Bloco[] {
   if (m.tipo === 'item') {
     if (m.id && d.moveis[m.id]) {
       const mv = d.moveis[m.id];
-      return [{ titulo: mv.nome, itens: [{ a: 'editar', t: tx('Editar…', 'Edit…') }, { a: 'girar', t: tx('Girar 90°', 'Rotate 90°') }, { a: 'duplicar', t: tx('Duplicar', 'Duplicate') }, ...(varios ? [{ a: 'levar', t: tx('Levar para outro cômodo…', 'Move to another room…') }] : []), { a: 'travar', t: mv.fixo ? tx('Destravar', 'Unlock') : tx('Travar no lugar', 'Lock in place') }] },
+      return [{ titulo: mv.nome, itens: [{ a: 'editar', t: tx('Editar…', 'Edit…') }, { a: 'girar', t: tx('Girar 90°', 'Rotate 90°') }, { a: 'duplicar', t: tx('Duplicar', 'Duplicate') }, { a: 'copiar', t: tx('Copiar (para colar em outro lugar)', 'Copy (to paste somewhere else)') }, ...(varios ? [{ a: 'levar', t: tx('Levar para outro cômodo…', 'Move to another room…') }] : []), { a: 'travar', t: mv.fixo ? tx('Destravar', 'Unlock') : tx('Travar no lugar', 'Lock in place') }] },
         { itens: [{ a: 'remover', t: tx('Remover…', 'Remove…'), perigo: true }] }];
     }
     if (m.eid && d.els[m.eid]) {
       const e = d.els[m.eid], its: Item[] = [{ a: 'editar', t: tx('Editar…', 'Edit…') }];
       if (e.tipo === 'porta' && e.abre !== 'vao') its.push({ a: 'dob', t: tx('Trocar o lado da dobradiça', 'Switch the hinge side') }, { a: 'abre', t: e.abre === 'dentro' ? tx('Abrir para fora', 'Open outward') : tx('Abrir para dentro', 'Open inward') });
       if (e.tipo === 'janela') its.push({ a: 'jan', t: e.abertura === 'abrir' ? tx('Mudar para de correr', 'Change to sliding') : tx('Mudar para de abrir', 'Change to hinged') });
-      its.push({ a: 'duplicar', t: tx('Duplicar', 'Duplicate') });
+      its.push({ a: 'duplicar', t: tx('Duplicar', 'Duplicate') }, { a: 'copiar', t: tx('Copiar (para colar em outro lugar)', 'Copy (to paste somewhere else)') });
       return [{ titulo: e.nome, itens: its }, { itens: [{ a: 'remover', t: tx('Remover…', 'Remove…'), perigo: true }] }];
     }
     return [];
   }
   if (m.tipo === 'ponto' && m.comodo && d.comodos[m.comodo]) {
-    const q = d.comodos[m.comodo];
+    const q = d.comodos[m.comodo], grupos = GRUPOS_DO_COMODO[tipoDoComodo(q)];
+    // os móveis que combinam com o cômodo (no banheiro, os do banheiro); o resto fica em "Outro móvel…"
+    const tipos = grupos.length ? ORDEM_TIPOS.filter((k) => grupos.includes(TIPOS[k].grupo)) : ORDEM_TIPOS;
     return [
-      { titulo: tx(`Adicionar aqui · ${q.nome}`, `Add here · ${q.nome}`), grade: true, itens: ORDEM_TIPOS.map((k) => ({ a: 'add:' + k, t: TIPOS[k].chip })) },
+      ...(temCopia() ? [{ itens: [{ a: 'colar', t: tx('Colar aqui', 'Paste here') }] }] : []),
+      { titulo: tx(`Adicionar aqui · ${q.nome}`, `Add here · ${q.nome}`), grade: true, itens: [...tipos.map((k) => ({ a: 'add:' + k, t: TIPOS[k].chip })), ...(grupos.length ? [{ a: 'add:movel', t: tx('Outro móvel…', 'Other furniture…') }] : [])] },
       { titulo: tx(`Na parede ${NOME_PAREDE[m.parede || 'cima']}`, `On the ${NOME_PAREDE[m.parede || 'cima']} wall`), grade: true, itens: ORDEM_PAREDE.map((k) => ({ a: 'add:' + k, t: TIPOS_PAREDE[k].rot })) },
       { itens: [{ a: 'q-editar', t: tx('Editar este cômodo…', 'Edit this room…') }, ...(s.vista !== 'um' ? [{ a: 'q-ver', t: tx('Ver só este cômodo', 'View only this room') }] : [])] }
     ];
   }
   if (m.tipo === 'comodo' && m.comodo && d.comodos[m.comodo]) {
-    const q = d.comodos[m.comodo], as = andaresOrdem(d);
+    const q = d.comodos[m.comodo], as = andaresOrdem(d), paredes = blocoParedes(q.id);
     return [{ titulo: q.nome, itens: [{ a: 'q-editar', t: tx('Editar nome e medidas…', 'Edit name and measurements…') }, { a: 'q-ver', t: tx('Ver só este cômodo', 'View only this room') }, { a: 'q-add', t: tx('Adicionar um item…', 'Add an item…') },
       ...(s.vista === 'casa' ? [{ a: 'q-sel', t: tx('Mover na planta da casa', 'Move on the home plan') }] : []),
       ...(comodosOrdem(d).length > 1 ? [{ a: 'q-lado', t: tx('Colocar ao lado de outro cômodo…', 'Place next to another room…') }] : []),
       { a: 'q-girar', t: tx('Girar 90°', 'Rotate 90°') },
+      { a: 'q-duplicar', t: tx('Duplicar o cômodo (com o que tem dentro)', 'Duplicate the room (with what’s inside)') },
       { a: 'q-corredor', t: tx('Ligar por um corredor…', 'Connect with a hallway…') },
       ...(as.length > 1 ? [{ a: 'q-andar', t: tx('Mudar de andar…', 'Move to another floor…') }] : [])] },
+    ...(paredes ? [paredes] : []),
     { itens: [{ a: 'q-remover', t: tx('Remover cômodo…', 'Remove room…'), perigo: true }] }];
+  }
+  if (m.tipo === 'paredes' && m.comodo && d.comodos[m.comodo]) {
+    const b = blocoParedes(m.comodo);
+    return b ? [b] : [{ titulo: d.comodos[m.comodo].nome, itens: [{ a: 'nada', t: tx('Este cômodo não divide parede com outro.', 'This room doesn’t share a wall with another one.') }] }];
+  }
+  if (m.tipo === 'camadas') {
+    return [
+      { titulo: tx('Mostrar na planta', 'Show on the plan'), itens: CAMADAS_MENU().map(([k, t]) => ({ a: 'cam:' + k, t, check: s.camadas[k], fica: true })) },
+      { itens: [{ a: 'setas', t: tx('Medidas em todos os móveis', 'Measurements on all furniture'), check: s.setasTodos, fica: true }, { a: 'ima', t: tx('Ímã (gruda nas paredes)', 'Snap (sticks to walls)'), check: s.imaOn, fica: true }] },
+      ...(Object.values(s.camadas).some((v) => !v) ? [{ itens: [{ a: 'cam-tudo', t: tx('Mostrar tudo', 'Show everything') }] }] : [])
+    ];
   }
   if (m.tipo === 'andar' && m.andar && d.andares[m.andar]) {
     const a = d.andares[m.andar], n = comodosDoAndar(d, a.id).length;
@@ -81,7 +106,13 @@ function blocos(m: InfoMenu): Bloco[] {
         { a: 'modo-simples', t: tx('Modo simples', 'Simple mode'), marcado: s.modo === 'simples' }, { a: 'modo-avancado', t: tx('Modo avançado', 'Advanced mode'), marcado: s.modo === 'avancado' }
       ] });
     }
+    const temCasa = Object.keys(d.comodos).length > 0;
+    out.push({ titulo: tx('Casa', 'Home'), itens: [
+      { a: 'historico', t: tx('Histórico e pontos de restauração', 'History and restore points') },
+      ...(temCasa ? [{ a: 'resumo', t: tx('Resumo e lista de móveis', 'Summary and furniture list') }, { a: 'imagem', t: tx('Salvar a planta como imagem', 'Save the plan as an image') }] : [])
+    ] });
     out.push({ titulo: tx('Arquivo', 'File'), itens: [{ a: 'exportar', t: tx('Exportar (salvar arquivo)', 'Export (save a file)') }, { a: 'importar', t: tx('Importar arquivo…', 'Import a file…') }] });
+    out.push({ titulo: tx('Tema', 'Theme'), grade: true, itens: [{ a: 'tema-auto', t: tx('Automático', 'Automatic'), marcado: s.tema === 'auto' }, { a: 'tema-claro', t: tx('Claro', 'Light'), marcado: s.tema === 'claro' }, { a: 'tema-escuro', t: tx('Escuro', 'Dark'), marcado: s.tema === 'escuro' }] });
     out.push({ titulo: tx('Idioma', 'Language'), grade: true, itens: [{ a: 'idioma-pt', t: 'Português', marcado: s.idioma === 'pt' }, { a: 'idioma-en', t: 'English', marcado: s.idioma === 'en' }] });
     out.push({ itens: [{ a: 'apoiar', t: tx('♥ Apoiar o Cabeaí', '♥ Support Cabeaí') }, { a: 'ajuda', t: tx('Como usar e atalhos', 'How to use and shortcuts') }, { a: 'codigo', t: tx('Código aberto no GitHub', 'Open source on GitHub') }, { a: 'zerar', t: tx('Apagar tudo…', 'Delete everything…'), perigo: true }] });
     return out;
@@ -89,9 +120,25 @@ function blocos(m: InfoMenu): Bloco[] {
   return [];
 }
 
+/** As paredes que o cômodo divide com os vizinhos: tirar (vira um espaço só) ou pôr de volta. */
+function blocoParedes(id: string): Bloco | null {
+  const d = useApp.getState().dados, vs = vizinhosDeParede(d, id);
+  if (!vs.length) return null;
+  return {
+    titulo: tx('Paredes com os vizinhos', 'Walls shared with neighbors'),
+    itens: vs.map((v) => ({ a: 'parede:' + v.viz.id, t: v.tirada ? tx(`Pôr de volta a parede com ${v.viz.nome}`, `Put back the wall with ${v.viz.nome}`) : tx(`Tirar a parede com ${v.viz.nome} (vira um espaço só)`, `Remove the wall with ${v.viz.nome} (one space)`) }))
+  };
+}
+
 function executar(a: string, m: InfoMenu) {
   const s = useApp.getState(), d = s.dados;
+  // ligar e desligar camadas deixa o menu aberto (dá para mexer em várias de uma vez)
+  if (a.startsWith('cam:')) { alternarCamada(a.slice(4) as Camada); return; }
+  if (a === 'setas') { atualizar((x) => { x.setasTodos = !x.setasTodos; }); return; }
+  if (a === 'ima') { atualizar((x) => { x.imaOn = !x.imaOn; }); return; }
   fecharMenu();
+  if (a.startsWith('parede:')) { const q = m.comodo || s.selComodo || s.comodo; if (q) alternarParede(q, a.slice(7)); return; }
+  if (a === 'add:movel') { const q = (m.comodo && d.comodos[m.comodo]) || (s.comodo && d.comodos[s.comodo]); if (q) iniciarAdd('movel', m.px != null && m.py != null ? { comodo: q.id, x: Math.round(clamp(m.px, 0, q.w)), y: Math.round(clamp(m.py, 0, q.h)) } : { comodo: q.id }); return; }
   if (a.startsWith('add:')) {
     const tipo = a.slice(4), q = (m.comodo && d.comodos[m.comodo]) || (s.comodo && d.comodos[s.comodo]); if (!q) return;
     iniciarAdd(tipo, ehParede(tipo) ? { comodo: q.id, parede: m.parede, u: m.u } : m.px != null && m.py != null ? { comodo: q.id, x: Math.round(clamp(m.px, 0, q.w)), y: Math.round(clamp(m.py, 0, q.h)) } : { comodo: q.id });
@@ -113,7 +160,17 @@ function executar(a: string, m: InfoMenu) {
     case 'q-andar': abrirDialogo('andar-comodo', { id: qid }); break;
     case 'q-lado': abrirDialogo('comodo', { id: qid, onde: 'direita' }); break;
     case 'q-corredor': abrirDialogo('corredor', { a: qid }); break;
-    case 'q-girar': girarComodo(qid); break;
+    case 'q-girar': avisarLigacoes(qid, girarComodo(qid)); break;
+    case 'q-duplicar': { const nid = duplicarComodo(qid); const n = nid ? useApp.getState().dados.comodos[nid] : null; if (n) toast(tx(`${n.nome} criado ao lado, com tudo o que tinha dentro.`, `${n.nome} created next to it, with everything inside.`), '', 'desfazer'); break; }
+    case 'copiar': copiar(); break;
+    case 'colar': colar(m.comodo ? { comodo: m.comodo, x: m.px != null ? Math.round(m.px) : undefined, y: m.py != null ? Math.round(m.py) : undefined } : null); break;
+    case 'cam-tudo': mostrarTudo(); break;
+    case 'historico': abrirDialogo('historico'); break;
+    case 'resumo': abrirDialogo('resumo'); break;
+    case 'imagem': void imagemDaPlanta(); break;
+    case 'tema-auto': mudarTema('auto'); break;
+    case 'tema-claro': mudarTema('claro'); break;
+    case 'tema-escuro': mudarTema('escuro'); break;
     case 'q-remover': abrirDialogo('remover-comodo', { id: qid }); break;
     case 'a-comodo': abrirDialogo('comodo', { andar: m.andar }); break;
     case 'a-nome': abrirDialogo('andar-nome', { id: m.andar }); break;
@@ -142,6 +199,8 @@ function executar(a: string, m: InfoMenu) {
 
 export default function Menu() {
   const menu = useApp((s) => s.menu);
+  // o menu de camadas fica aberto enquanto liga e desliga: redesenha quando elas mudam
+  useApp((s) => s.camadas); useApp((s) => s.setasTodos); useApp((s) => s.imaOn);
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ x: 0, y: 0 });
   const abriu = useRef(0);
@@ -184,9 +243,9 @@ export default function Menu() {
           {b.titulo && <div className="menu-t">{b.titulo}</div>}
           <div className={b.grade ? 'menu-grade' : 'menu-lista'}>
             {b.itens.map((it) => (
-              <button key={it.a} type="button" role={it.marcado != null ? 'menuitemradio' : 'menuitem'} aria-checked={it.marcado != null ? it.marcado : undefined} data-m={it.a}
-                className={it.perigo ? 'perigo' : undefined}
-                onClick={() => { if (Date.now() - abriu.current < 350) return; executar(it.a, menu); }}>{it.t}</button>
+              <button key={it.a} type="button" role={it.check != null ? 'menuitemcheckbox' : it.marcado != null ? 'menuitemradio' : 'menuitem'} aria-checked={it.check != null ? it.check : it.marcado != null ? it.marcado : undefined} data-m={it.a}
+                className={[it.perigo ? 'perigo' : '', it.check != null ? 'caixa' : ''].filter(Boolean).join(' ') || undefined} disabled={it.a === 'nada'}
+                onClick={() => { if (!it.fica && Date.now() - abriu.current < 350) return; executar(it.a, menu); }}>{it.t}</button>
             ))}
           </div>
         </div>

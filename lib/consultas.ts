@@ -1,9 +1,10 @@
 // Consultas sobre os dados (sem mudar nada). Resultados caros ficam guardados enquanto os dados não mudam.
-import { ordenarAndares, ordenarComodos } from './casa';
+import { ordenarAndares, ordenarComodos, paredeDividida } from './casa';
 import { completoNaCasa, moveisDo } from './dados';
+import { semParedeEntre } from './edicao';
 import { avaliar, normRot } from './geometria';
 import { idioma, tx } from './i18n';
-import type { Andar, Avaliacao, Cenario, Comodo, ComodoCompleto, Dados, ElParede, Movel, Vista } from './tipos';
+import type { Andar, Avaliacao, Cenario, Comodo, ComodoCompleto, Dados, ElParede, Movel, Parede, Vista } from './tipos';
 
 export const andaresOrdem = (d: Dados): Andar[] => ordenarAndares(Object.values(d.andares));
 
@@ -84,3 +85,27 @@ export function alvoSel(d: Dados, sel: string | null, selEl: string | null): Alv
 }
 
 export const nomeComodo = (d: Dados, id: string | null | undefined): string => (id && d.comodos[id] ? d.comodos[id].nome : tx('cômodo', 'room'));
+
+/** Vizinhos que dividem parede com o cômodo (o trecho, na parede dele) e se a parede entre os dois foi tirada. */
+export interface ParedeVizinha { viz: Comodo; parede: Parede; u1: number; u2: number; tirada: boolean }
+export function vizinhosDeParede(d: Dados, id: string): ParedeVizinha[] {
+  const c = d.comodos[id]; if (!c) return [];
+  const els = Object.values(d.els), out: ParedeVizinha[] = [];
+  for (const o of comodosDoAndar(d, c.andar)) {
+    if (o.id === c.id) continue;
+    const pd = paredeDividida(c, o);
+    if (pd && pd.u2 - pd.u1 >= 10) out.push({ viz: o, ...pd, tirada: !!semParedeEntre(c.id, o.id, els) });
+  }
+  return out;
+}
+
+/** Os cômodos que formam um espaço só com este (paredes tiradas entre eles, em cadeia), ele incluído. */
+export function espacoAberto(d: Dados, id: string): string[] {
+  const ids = new Set([id]), fila = [id];
+  const abertas = Object.values(d.els).filter((e) => e.semParede && e.liga && d.comodos[e.comodo] && d.comodos[e.liga]);
+  while (fila.length) {
+    const a = fila.pop()!;
+    for (const e of abertas) { const b = e.comodo === a ? e.liga! : e.liga === a ? e.comodo : null; if (b && !ids.has(b)) { ids.add(b); fila.push(b); } }
+  }
+  return [...ids];
+}

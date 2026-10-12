@@ -100,17 +100,21 @@ export function sobreposicoes(cs: Comodo[]): [Comodo, Comodo][] {
   return out;
 }
 
-/** Ímã dos cômodos: encosta paredes (dividindo a parede) e alinha cantos quando chega perto. */
-export function imaComodo(c: Pos, x: number, y: number, outros: Pos[], lim: number): { x: number; y: number } {
-  const cx: number[] = [0], cy: number[] = [0];
+/** Ímã dos cômodos: encosta paredes (dividindo a parede) e alinha cantos quando chega perto. Encostar no vizinho que
+ *  está de frente (os dois se encaram) puxa de mais longe ("gruda"); só alinhar com um cômodo distante puxa de perto. */
+export function imaComodo(c: Pos, x: number, y: number, outros: Pos[], lim: number, limAlinhar = lim * 0.75): { x: number; y: number } {
+  const cx: [number, number][] = [[0, limAlinhar]], cy: [number, number][] = [[0, limAlinhar]];
   for (const o of outros) {
-    cx.push(o.x + o.w + T, o.x - T - c.w, o.x, o.x + o.w - c.w);
-    cy.push(o.y + o.h + T, o.y - T - c.h, o.y, o.y + o.h - c.h);
+    const deFrenteY = Math.min(y + c.h, o.y + o.h) - Math.max(y, o.y) > -lim, deFrenteX = Math.min(x + c.w, o.x + o.w) - Math.max(x, o.x) > -lim;
+    cx.push([o.x + o.w + T, deFrenteY ? lim : limAlinhar], [o.x - T - c.w, deFrenteY ? lim : limAlinhar], [o.x, limAlinhar], [o.x + o.w - c.w, limAlinhar]);
+    cy.push([o.y + o.h + T, deFrenteX ? lim : limAlinhar], [o.y - T - c.h, deFrenteX ? lim : limAlinhar], [o.y, limAlinhar], [o.y + o.h - c.h, limAlinhar]);
   }
-  let bx = x, by = y, mx = lim + 1, my = lim + 1;
-  for (const v of cx) { const d = Math.abs(v - x); if (d < mx) { mx = d; bx = v; } }
-  for (const v of cy) { const d = Math.abs(v - y); if (d < my) { my = d; by = v; } }
-  return { x: Math.round(mx <= lim ? bx : x), y: Math.round(my <= lim ? by : y) };
+  const melhor = (v0: number, cands: [number, number][]) => {
+    let b = v0, md = Infinity;
+    for (const [v, l] of cands) { const d = Math.abs(v - v0); if (d <= l && d < md) { md = d; b = v; } }
+    return b;
+  };
+  return { x: Math.round(melhor(x, cx)), y: Math.round(melhor(y, cy)) };
 }
 
 /* ---------- desenhar e esticar cômodos na planta ---------- */
@@ -229,10 +233,12 @@ export function portasVizinhas(c: ComodoEls, outros: ComodoEls[], els: ElParede[
       const base = vert ? o.y - c.y : o.x - c.x, C = vert ? c.h : c.w;
       const u1 = Math.max(0, base + a), u2 = Math.min(C, base + a + w);
       if (u2 - u1 < 10) continue;
-      if (minhas.some((m) => m.parede === minha && m.inicio < u2 - 0.5 && m.inicio + m.largura > u1 + 0.5)) continue;
+      // (a parede tirada vale sempre: se houver porta ou janela neste lado do trecho, o aviso de "mesmo lugar" aparece)
+      if (!e.semParede && minhas.some((m) => m.parede === minha && m.inicio < u2 - 0.5 && m.inicio + m.largura > u1 + 0.5)) continue;
       out.push({
         id: e.id, tipo: 'porta', nome: `${e.nome} (${o.nome})`, comodo: c.id, parede: minha, inicio: Math.round(u1), largura: Math.round(u2 - u1),
-        criado: e.criado, dobradica: e.dobradica, abre: e.abre === 'vao' ? 'vao' : e.abre === 'dentro' ? 'fora' : 'dentro', herdada: true, origem: e.id, origemComodo: o.id
+        criado: e.criado, dobradica: e.dobradica, abre: e.abre === 'vao' ? 'vao' : e.abre === 'dentro' ? 'fora' : 'dentro', herdada: true, origem: e.id, origemComodo: o.id,
+        ...(e.semParede ? { semParede: true } : {}), ...(e.auto ? { auto: true } : {}), liga: o.id
       });
     }
   }
