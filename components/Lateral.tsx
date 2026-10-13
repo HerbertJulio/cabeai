@@ -24,12 +24,12 @@ export default function Lateral() {
 
   const fecharGaveta = () => atualizar((s) => { s.latAberta = false; });
   const grupos = q ? ([
-    [tx('Portas', 'Doors'), 'porta', 'porta', q.portas.filter((p) => !p.herdada && !p.semParede), tx('Nenhuma porta.', 'No doors.'), tx('porta', 'door')],
+    // a porta é da parede: as que o cômodo divide com o vizinho aparecem nos dois
+    [tx('Portas', 'Doors'), 'porta', 'porta', q.portas.filter((p) => !p.semParede), tx('Nenhuma porta.', 'No doors.'), tx('porta', 'door')],
     [tx('Janelas', 'Windows'), 'janela', 'jan', q.janelas, tx('Nenhuma janela.', 'No windows.'), tx('janela', 'window')],
     [tx('Ar-condicionado', 'Air conditioners'), 'ar', 'ar', q.ares, tx('Nenhum.', 'None.'), tx('ar-condicionado', 'air conditioner')],
     [tx('Tomadas e outros pontos', 'Outlets and hookups'), 'interruptor', 'interruptor', q.interruptores, tx('Nenhum.', 'None.'), tx('tomada, interruptor, ponto de TV, água ou gás', 'outlet, switch, TV, water or gas hookup')]
   ] as const) : [];
-  const herdadas = q ? q.portas.filter((p) => p.herdada && !p.semParede) : [];
   // paredes tiradas (deste lado ou do vizinho): o cômodo continua no vizinho
   const abertas = q ? q.portas.filter((p) => p.semParede).map((p) => (p.herdada ? p.origemComodo : p.liga)).filter((id): id is string => !!id && !!dados.comodos[id]) : [];
 
@@ -94,13 +94,12 @@ export default function Lateral() {
               {arr.length ? (
                 <ul className="lista">
                   {arr.map((e) => { const g = geoEl(q, e); return (
-                    <li key={e.id}><button type="button" className="item" data-esel={e.id} aria-current={selEl === e.id} onClick={() => { fecharGaveta(); selecionar({ eid: e.id }, { abrir: true }); }}>
+                    <li key={e.id + (e.herdada ? 'h' : '')}><button type="button" className="item" data-esel={e.id} aria-current={selEl === e.id} onClick={() => { fecharGaveta(); selecionar({ eid: e.id }, { abrir: true, via: e.herdada ? q.id : undefined }); }}>
                       <span className={`dot ${av.elsRuins.has(e.id) ? 'bad' : e.tipo === 'interruptor' ? 'interruptor pt-' + pontoDe(e) : dot}`} aria-hidden="true" /><span className="nm">{e.nome}</span><span className="med">{e.tipo === 'interruptor' ? '' : fmtM(g.b - g.a) + ' m · '}{PAREDE_CURTA[e.parede]}</span>
                     </button></li>
                   ); })}
                 </ul>
               ) : <p className="nota">{vazio}</p>}
-              {tipo === 'porta' && herdadas.length > 0 && <p className="nota">{tx('Na parede dividida:', 'On the shared wall:')} {herdadas.map((p) => p.nome).join(', ')}.</p>}
               {tipo === 'porta' && abertas.map((id) => (
                 <p key={id} className="nota sem-parede-nota">{tx(`Sem parede com ${dados.comodos[id].nome}: é um espaço só.`, `No wall with ${dados.comodos[id].nome}: it’s one space.`)} <button type="button" className="link" data-acao="por-parede" onClick={() => porParede(q.id, id)}>{tx('Pôr a parede de volta', 'Put the wall back')}</button></p>
               ))}

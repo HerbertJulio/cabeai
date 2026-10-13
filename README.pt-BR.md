@@ -6,11 +6,12 @@
 
 *Read in English: [README.md](README.md)*
 
-- **Desenhe a planta** arrastando o dedo ou o mouse: escolha sala, quarto, banheiro, cozinha, corredor, varanda… Arraste o cômodo pelo piso ou pelo nome para mudar de lugar; perto de outro cômodo as paredes grudam, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam (e ela sai se eles se separarem).
+- **Desenhe a planta** arrastando o dedo ou o mouse: escolha sala, quarto, banheiro, cozinha, corredor, varanda… Arraste o cômodo pelo piso ou pelo nome para mudar de lugar; perto de outro cômodo as paredes grudam, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam (e ela sai se eles se separarem). Em “Na parede”, um toque numa parede põe ali uma porta, porta de correr, passagem ou janela.
 - **Tire a parede** entre dois cômodos e eles viram um espaço só (um cômodo em L, por exemplo); dá para pôr a parede de volta quando quiser.
 - **Foto do desenho em papel**: tire uma foto do rascunho e a IA monta os cômodos, os corredores, as portas e as janelas.
 - Casa com **andares** e **cômodos**: veja um cômodo, os cômodos **lado a lado** ou a **planta da casa montada** (andares lado a lado; cômodos que se arrastam, esticam pelas paredes e giram, com ímã que encosta as paredes e setas com a distância entre eles).
-- **Portas (ou vão livre, sem porta), janelas, ar-condicionado e pontos** em cada parede: interruptor, tomada, arandela, TV, internet, água, esgoto e gás. Uma porta na parede dividida entre dois cômodos vale para os dois.
+- **Portas, janelas, ar-condicionado e pontos** em cada parede: interruptor, tomada, arandela, TV, internet, água, esgoto e gás. A porta pode ser de abrir, dupla, de correr ou só a passagem (vão livre).
+- **A porta é da parede**, não de um cômodo só: dá para tocar nela pelos dois lados, e o painel diz para que cômodo ela abre, pelo nome. Com ela selecionada, dois botões na planta viram a porta, um para o lado em que ela abre e outro para o lado da dobradiça. As portas automáticas ficam perto do canto, abrindo encostadas na parede, como se faz na obra.
 - Coloque um cômodo **à direita, à esquerda, acima ou abaixo** de outro, crie **corredores** ligando dois cômodos com o comprimento que quiser e **escadas retas ou caracol**.
 - **Móveis com medidas reais**: cama (com **baú** na cabeceira, nos pés ou nos dois, mais largo que a cama, centralizado, à esquerda, à direita ou com ajuste), guarda-roupa, berço, cômoda, criado-mudo, **mesa com cadeiras** (na frente, dos dois lados ou em volta, com o espaço para puxar), cadeira, sofá, poltrona, rack, estante, geladeira, fogão, pia, lavadora, tanque, armário, vaso sanitário, pia do banheiro, box, banheira e outros.
 - **Espaço livre na frente** de cada móvel calculado pelas portas e gavetas, e editável para móveis planejados.
@@ -63,7 +64,7 @@ lib/            a lógica sem tela: geometria, avisos, casa, sugestões, IA, dad
 tests/          testes (Vitest)
 ```
 
-O `lib/store.ts` guarda o estado e é o único lugar que muda a casa; o resto de `lib/` só calcula: `geometria.ts` (medidas e avisos), `casa.ts` (planta da casa e ímã), `edicao.ts` (girar, esticar, portas automáticas e paredes tiradas), `consultas.ts`, `historico.ts` (desfazer, refazer e pontos de restauração), `resumo.ts` (áreas e resumo), `exportar.ts` (imagem da planta), `motor.ts` (sugestões), `ia.ts` e `planta.ts` (IA).
+O `lib/store.ts` guarda o estado e é o único lugar que muda a casa; o resto de `lib/` só calcula: `geometria.ts` (medidas e avisos), `casa.ts` (planta da casa, ímã e a mesma porta vista dos dois lados da parede), `edicao.ts` (girar, esticar, portas automáticas perto do canto, porta ou janela posta com um toque na parede e paredes tiradas), `consultas.ts`, `historico.ts` (desfazer, refazer e pontos de restauração), `resumo.ts` (áreas e resumo), `exportar.ts` (imagem da planta), `motor.ts` (sugestões), `ia.ts` e `planta.ts` (IA).
 
 ## Publicar
 

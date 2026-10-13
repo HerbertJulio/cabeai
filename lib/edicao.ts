@@ -4,7 +4,7 @@ import { paredeDividida } from './casa';
 import { tipoDoComodo } from './catalogo';
 import { geoEl, normRot, prender, ret } from './geometria';
 import { tx } from './i18n';
-import type { Comodo, ElParede, ItemCenario, Movel, Parede, TipoComodo } from './tipos';
+import type { Comodo, ComodoCompleto, ElParede, ItemCenario, Movel, Parede, TipoComodo } from './tipos';
 
 const DEPOIS_DE_GIRAR: Record<Parede, Parede> = { cima: 'direita', direita: 'baixo', baixo: 'esquerda', esquerda: 'cima' };
 
@@ -79,7 +79,31 @@ export function portaEntre(a: Comodo, b: Comodo, els: ElParede[]): Omit<ElParede
   return portaNaParede(dono, outro, abre, els, corredor ? 70 : 100);
 }
 
-/** Porta (ou vão) no meio do trecho de parede que "dono" divide com "outro", se couber e se ainda não houver porta ali. */
+type Trecho = { parede: Parede; u1: number; u2: number };
+type Pos = Pick<Comodo, 'x' | 'y' | 'w' | 'h'>;
+
+/** Onde fica uma porta de "largura" no trecho de parede que "dono" divide com "outro" (medido na parede do dono):
+ *  como se faz na obra, perto de um canto (a 10 cm dele) e com a dobradiça do lado do canto, para a folha abrir
+ *  encostando na parede e deixar o resto da parede livre para os móveis. O canto bom é o do cômodo para onde a folha
+ *  abre; entre dois cantos bons, fica o que não é o fundo do vizinho (num corredor, a porta vai mais para o meio dele).
+ *  Passagem sem porta fica no meio do trecho. */
+export function lugarDaPorta(dono: Pos, outro: Pos, pd: Trecho, largura: number, abre: ElParede['abre']): { inicio: number; dobradica: 'a' | 'b' } {
+  const folga = pd.u2 - pd.u1 - largura;
+  if (abre === 'vao' || folga < 4) return { inicio: Math.round(pd.u1 + Math.max(0, folga) / 2), dobradica: 'a' };
+  const m = Math.min(10, folga / 2);
+  const pdOutro = paredeDividida(outro, dono);
+  // as duas paredes correm no mesmo sentido: o começo do trecho de um é o começo do trecho do outro
+  const canto = (c: Pos, t: Trecho | null, lado: 'ini' | 'fim') => {
+    if (!t) return false;
+    const L = t.parede === 'cima' || t.parede === 'baixo' ? c.w : c.h;
+    return lado === 'ini' ? t.u1 <= 1 : t.u2 >= L - 1;
+  };
+  const abrePara = abre === 'fora' ? [outro, pdOutro] as const : [dono, pd] as const, doOutro = abre === 'fora' ? [dono, pd] as const : [outro, pdOutro] as const;
+  const nota = (lado: 'ini' | 'fim') => (canto(abrePara[0], abrePara[1], lado) ? 2 : 0) + (canto(doOutro[0], doOutro[1], lado) ? 0 : 1);
+  return nota('fim') > nota('ini') ? { inicio: Math.round(pd.u2 - m - largura), dobradica: 'b' } : { inicio: Math.round(pd.u1 + m), dobradica: 'a' };
+}
+
+/** Porta (ou vão) no trecho de parede que "dono" divide com "outro", se couber e se ainda não houver porta ali. */
 function portaNaParede(dono: Comodo, outro: Comodo, abre: ElParede['abre'], els: ElParede[], minimo = 70, auto = true): Omit<ElParede, 'id' | 'criado'> | null {
   const pd = paredeDividida(dono, outro); if (!pd) return null;
   const vao = pd.u2 - pd.u1;
@@ -93,14 +117,16 @@ function portaNaParede(dono: Comodo, outro: Comodo, abre: ElParede['abre'], els:
   const cruza = (e: ElParede, comodo: string, parede: Parede, u1: number, u2: number) => e.comodo === comodo && e.tipo === 'porta' && e.parede === parede && e.inicio < u2 && e.inicio + e.largura > u1;
   if (els.some((e) => cruza(e, dono.id, pd.parede, pd.u1, pd.u2) || (pdOutro && cruza(e, outro.id, pdOutro.parede, pdOutro.u1, pdOutro.u2)))) return null;
   const nome = abre === 'vao' ? tx('Passagem', 'Opening') : entrada ? tx('Entrada', 'Entrance') : tx('Porta', 'Door');
-  return { tipo: 'porta', nome, comodo: dono.id, parede: pd.parede, inicio: Math.round(pd.u1 + (vao - largura) / 2), largura, dobradica: 'a', abre, ...(auto ? { auto: true, liga: outro.id } : {}) };
+  const lugar = lugarDaPorta(dono, outro, pd, largura, abre);
+  return { tipo: 'porta', nome, comodo: dono.id, parede: pd.parede, inicio: lugar.inicio, largura, dobradica: lugar.dobradica, abre, ...(auto ? { auto: true, liga: outro.id } : {}) };
 }
 
 /** Depois que cômodos mudaram de lugar ou de tamanho: as portas automáticas e as paredes tiradas que perderam o
  *  vizinho saem; as que continuam encostadas se ajeitam no trecho de parede que sobrou (a parede tirada ocupa o
- *  trecho inteiro; a porta fica onde está se ainda couber, senão vai para o meio e, se precisar, encolhe). */
-export function revisarLigacoes(comodos: Record<string, Comodo>, els: ElParede[]): { remover: string[]; mudar: { id: string; inicio: number; largura: number }[] } {
-  const remover: string[] = [], mudar: { id: string; inicio: number; largura: number }[] = [];
+ *  trecho inteiro; a porta fica onde está se ainda couber, senão vai para perto de um canto do trecho e, se precisar,
+ *  encolhe). */
+export function revisarLigacoes(comodos: Record<string, Comodo>, els: ElParede[]): { remover: string[]; mudar: { id: string; inicio: number; largura: number; dobradica?: 'a' | 'b' }[] } {
+  const remover: string[] = [], mudar: { id: string; inicio: number; largura: number; dobradica?: 'a' | 'b' }[] = [];
   for (const e of els) {
     if (e.tipo !== 'porta' || e.herdada || (!e.auto && !e.semParede) || !e.liga) continue;
     const a = comodos[e.comodo], b = comodos[e.liga];
@@ -115,7 +141,10 @@ export function revisarLigacoes(comodos: Record<string, Comodo>, els: ElParede[]
     if (e.inicio >= pd.u1 - 0.5 && e.inicio + e.largura <= pd.u2 + 0.5) continue;
     const largura = Math.round(Math.min(e.largura, vao - 10));
     if (largura < (e.abre === 'vao' ? 40 : 60)) { remover.push(e.id); continue; }
-    mudar.push({ id: e.id, inicio: Math.round(pd.u1 + (vao - largura) / 2), largura });
+    const lugar = lugarDaPorta(a, b, pd, largura, e.abre);
+    // (a de correr corre para o lado contrário do canto, onde sobra parede)
+    const dob = e.estilo === 'correr' ? (lugar.dobradica === 'a' ? 'b' : 'a') : lugar.dobradica;
+    mudar.push({ id: e.id, inicio: lugar.inicio, largura, ...(e.abre === 'vao' ? {} : { dobradica: dob }) });
   }
   return { remover, mudar };
 }
@@ -147,14 +176,56 @@ export const semParedeEntre = (a: string, b: string, els: ElParede[]): ElParede 
 const peso = (t: TipoComodo) => (t === 'corredor' || t === 'varanda' ? 0 : ABERTOS.includes(t) ? 1 : 2);
 
 /** Porta (ou passagem sem porta, com "porta" false) pedida entre dois cômodos que dividem a parede. Ela é da casa,
- *  não automática: fica onde está quando a pessoa acerta as medidas. */
-export function portaLigacao(a: Comodo, b: Comodo, porta: boolean, els: ElParede[]): Omit<ElParede, 'id' | 'criado'> | null {
+ *  não automática: fica onde está quando a pessoa acerta as medidas (com "auto", acompanha os cômodos como as
+ *  automáticas). */
+export function portaLigacao(a: Comodo, b: Comodo, porta: boolean, els: ElParede[], auto = false): Omit<ElParede, 'id' | 'criado'> | null {
   if (a.andar !== b.andar) return null;
-  if (!porta) return portaNaParede(a, b, 'vao', els, 70, false);
+  if (!porta) return portaNaParede(a, b, 'vao', els, 70, auto);
   const pa = peso(tipoDoComodo(a)), pb = peso(tipoDoComodo(b));
   const aDono = pa > pb || (pa === pb && a.w * a.h <= b.w * b.h);
-  return portaNaParede(aDono ? a : b, aDono ? b : a, 'dentro', els, 70, false);
+  return portaNaParede(aDono ? a : b, aDono ? b : a, 'dentro', els, 70, auto);
 }
+
+/** Começo de um vão novo de "largura" na parede, o mais perto possível de "centro" (onde a pessoa tocou), sem cair em
+ *  cima de outra porta ou janela daquela parede (as do vizinho na parede dividida também contam). Perto de um canto,
+ *  a porta encosta a 10 cm dele. Sem lugar livre, null. */
+export function lugarNaParede(q: Pick<ComodoCompleto, 'w' | 'h' | 'portas' | 'janelas'>, parede: Parede, centro: number, largura: number, porta: boolean): number | null {
+  const L = parede === 'cima' || parede === 'baixo' ? q.w : q.h, max = L - largura;
+  if (max < 0) return null;
+  const vaos = q.portas.concat(q.janelas).filter((e) => e.parede === parede).map((e) => { const g = geoEl(q, e); return [g.a, g.b] as const; });
+  const livre = (a: number) => !vaos.some(([x, y]) => a < y - 0.5 && a + largura > x + 0.5);
+  let a0 = Math.min(Math.max(0, centro - largura / 2), max);
+  if (porta && max >= 10) { if (a0 < 25) a0 = 10; else if (max - a0 < 25) a0 = max - 10; }
+  for (let d = 0; d <= L; d += 5) {
+    for (const a of d ? [a0 - d, a0 + d] : [a0]) if (a >= 0 && a <= max && livre(a)) return Math.round(a);
+  }
+  // as pontas da parede (o passo de 5 em 5 pode ter pulado por cima delas)
+  for (const a of [0, max]) if (livre(a)) return Math.round(a);
+  return null;
+}
+
+/** Parede livre de cada lado de um vão (até o canto ou até a próxima porta ou janela daquela parede). */
+function livreDosLados(q: Pick<ComodoCompleto, 'w' | 'h' | 'portas' | 'janelas'>, e: Pick<ElParede, 'id' | 'parede' | 'inicio' | 'largura'>): { a: number; b: number } {
+  const g = geoEl(q, e);
+  let a = g.a, b = g.L - g.b;
+  for (const o of q.portas.concat(q.janelas)) {
+    if (o.id === e.id || o.parede !== e.parede) continue;
+    const go = geoEl(q, o);
+    if (go.b <= g.a + 0.5) a = Math.min(a, g.a - go.b);
+    else if (go.a >= g.b - 0.5) b = Math.min(b, go.a - g.b);
+  }
+  return { a, b };
+}
+/** Para que lado a porta de correr abre: para onde sobra mais parede livre (a folha corre por cima dela). */
+export const ladoDeCorrer = (q: Pick<ComodoCompleto, 'w' | 'h' | 'portas' | 'janelas'>, e: Pick<ElParede, 'id' | 'parede' | 'inicio' | 'largura'>): 'a' | 'b' => {
+  const l = livreDosLados(q, e);
+  return l.b > l.a ? 'b' : 'a';
+};
+/** A dobradiça da porta de abrir: do lado com menos parede livre (o canto mais perto), para a folha abrir encostada. */
+export const ladoDaDobradica = (q: Pick<ComodoCompleto, 'w' | 'h' | 'portas' | 'janelas'>, e: Pick<ElParede, 'id' | 'parede' | 'inicio' | 'largura'>): 'a' | 'b' => {
+  const l = livreDosLados(q, e);
+  return l.b < l.a ? 'b' : 'a';
+};
 
 /** Quanto da parede do cômodo é dividido com vizinhos (de 0 a 1). */
 export function parteDividida(c: Comodo, parede: Parede, outros: Comodo[]): number {

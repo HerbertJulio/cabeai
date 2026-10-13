@@ -64,6 +64,7 @@ export function normalizarEl(tipo: TipoParede, id: string, v: Record<string, unk
   };
   if (tipo === 'porta') {
     e.dobradica = v.dobradica === 'b' ? 'b' : 'a'; e.abre = semParede ? 'vao' : v.abre === 'fora' || v.abre === 'vao' ? v.abre : 'dentro';
+    if (e.abre !== 'vao' && (v.estilo === 'dupla' || v.estilo === 'correr')) e.estilo = v.estilo;
     if (typeof v.liga === 'string' && ID_OK.test(v.liga)) e.liga = v.liga;
     if (semParede) e.semParede = true; else if (v.auto && e.liga) e.auto = true;
   }

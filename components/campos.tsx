@@ -1,7 +1,7 @@
 'use client';
 // Campos dos formulários (os mesmos para adicionar, editar e no painel do modo avançado).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AB_NOME, ESCADA_NOME, ESCADA_PADRAO, GRUPOS_PONTO, LADO_CAD_NOME, MAX_CADEIRAS, PAREDES, PAREDE_NOME, PONTO_BASE, PONTO_NOME, TIPOS, TIPOS_PAREDE, horizontal, pontoDe, rotDist } from '@/lib/catalogo';
+import { AB_NOME, COMODO_NOME, ESCADA_NOME, ESCADA_PADRAO, GRUPOS_PONTO, JEITOS_PORTA, JEITO_LONGO, LADO_CAD_NOME, MAX_CADEIRAS, PAREDES, PAREDE_NOME, PONTO_BASE, PONTO_NOME, TIPOS, TIPOS_COMODO, TIPOS_PAREDE, horizontal, pontoDe, rotDist, tipoDoComodo } from '@/lib/catalogo';
 import { frenteAutomatica } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
 import { fmtM, parseInteiro, parseMedida } from '@/lib/util';
@@ -101,9 +101,11 @@ export function CamposMovel({ px, tipo, v, set, commit, avancado, add, comodos }
   );
 }
 
-/** Campos de um item de parede. */
-export function CamposParede({ px, tipo, v, set, commit, avancado, add, phNome }: { px: string; tipo: TipoParede; v: Valores; set: Set; commit?: Commit; avancado?: boolean; add?: boolean; phNome?: string }) {
+/** Campos de um item de parede. Na porta, "lados" dá os nomes dos dois lados da parede ("Quarto 1", "Corredor"); no
+ *  modo avançado, o jeito da porta e para que lado ela abre ficam nos botões do painel (ControlesPorta). */
+export function CamposParede({ px, tipo, v, set, commit, avancado, add, phNome, lados }: { px: string; tipo: TipoParede; v: Valores; set: Set; commit?: Commit; avancado?: boolean; add?: boolean; phNome?: string; lados?: { dentro: string; fora: string } }) {
   const tp = TIPOS_PAREDE[tipo], par = (v.parede as Parede) || tp.parede, hz = horizontal(par), p = { px, v, set, commit };
+  const jeito = String(v.jeito || 'abrir');
   return (
     <div className="campos">
       {tipo === 'interruptor' && <Escolha {...p} k="ponto" rot={tx('O que é', 'What it is')} full grupos={GRUPOS_PONTO.map((g) => ({ rot: g.rot, opts: g.pontos.map((k): [string, string] => [k, PONTO_NOME[k]]) }))} />}
@@ -111,9 +113,12 @@ export function CamposParede({ px, tipo, v, set, commit, avancado, add, phNome }
       <Escolha {...p} k="parede" rot={tx('Parede', 'Wall')} full={tipo !== 'interruptor'} opts={PAREDES.map((x) => [x, PAREDE_NOME[x]])} />
       {tipo !== 'interruptor' && <Texto {...p} k="largura" rot={tp.rotLarg} num ph={add ? tp.ex : ''} />}
       {avancado ? <Texto {...p} k="inicioCm" rot={rotDist(par) + ' (cm)'} num /> : <Texto {...p} k="dist" rot={rotDist(par)} num ph={tx('em branco = no meio', 'blank = centered')} />}
-      {tipo === 'porta' && <>
-        <Escolha {...p} k="abre" rot={tx('Abre para', 'Opens')} opts={[['dentro', tx('Dentro do cômodo', 'Into the room')], ['fora', tx('Fora', 'Out of the room')], ['vao', tx('Sem porta (vão livre)', 'No door (open doorway)')]]} />
-        <Escolha {...p} k="dobradica" rot={tx('Dobradiça', 'Hinge')} oculto={v.abre === 'vao'} opts={[['a', hz ? tx('Esquerda', 'Left') : tx('Em cima', 'Top')], ['b', hz ? tx('Direita', 'Right') : tx('Embaixo', 'Bottom')]]} />
+      {tipo === 'porta' && !avancado && <>
+        <Escolha {...p} k="jeito" rot={tx('Tipo de porta', 'Door type')} full opts={JEITOS_PORTA.map((j) => [j, JEITO_LONGO[j]])} />
+        <Escolha {...p} k="abre" rot={tx('Abre para', 'Opens into')} oculto={jeito === 'vao' || jeito === 'correr'}
+          opts={[['dentro', lados ? lados.dentro : tx('Dentro do cômodo', 'Into the room')], ['fora', lados ? lados.fora : tx('O outro lado da parede', 'The other side of the wall')]]} />
+        <Escolha {...p} k="dobradica" rot={jeito === 'correr' ? tx('Abre correndo para', 'Slides open to') : tx('Dobradiça', 'Hinge')} oculto={jeito === 'vao' || jeito === 'dupla'}
+          opts={[['a', hz ? tx('Esquerda', 'Left') : tx('Em cima', 'Top')], ['b', hz ? tx('Direita', 'Right') : tx('Embaixo', 'Bottom')]]} />
       </>}
       {tipo === 'janela' && <>
         <Escolha {...p} k="abertura" rot={tx('Tipo', 'Type')} opts={[['correr', tx('De correr', 'Sliding')], ['abrir', tx('De abrir (para dentro)', 'Casement (opens inward)')]]} />
@@ -122,6 +127,12 @@ export function CamposParede({ px, tipo, v, set, commit, avancado, add, phNome }
       {tipo === 'ar' && <Texto {...p} k="folga" rot={tx('Área livre de cada lado (sem móvel alto)', 'Clear area on each side (no tall furniture)')} num ph={add ? fmtM(30) : ''} full />}
     </div>
   );
+}
+
+/** "O que é" o cômodo: pelo nome (automático, mostrando o que o nome diz) ou um tipo escolhido. */
+export function opcoesTipoComodo(nome: string): [string, string][] {
+  const pelo = tipoDoComodo({ nome });
+  return [['', tx(`Pelo nome (${COMODO_NOME[pelo].toLowerCase()})`, `By its name (${COMODO_NOME[pelo].toLowerCase()})`)], ...TIPOS_COMODO.map((t): [string, string] => [t, COMODO_NOME[t]])];
 }
 
 /** Estado de um formulário, reiniciado quando a "chave" muda (outro item). */

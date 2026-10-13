@@ -1,8 +1,8 @@
 // Consultas sobre os dados (sem mudar nada). Resultados caros ficam guardados enquanto os dados não mudam.
-import { ordenarAndares, ordenarComodos, paredeDividida } from './casa';
+import { ordenarAndares, ordenarComodos, paredeDividida, portaVistaDe } from './casa';
 import { completoNaCasa, moveisDo } from './dados';
 import { semParedeEntre } from './edicao';
-import { avaliar, normRot } from './geometria';
+import { avaliar, geoEl, normRot } from './geometria';
 import { idioma, tx } from './i18n';
 import type { Andar, Avaliacao, Cenario, Comodo, ComodoCompleto, Dados, ElParede, Movel, Parede, Vista } from './tipos';
 
@@ -97,6 +97,49 @@ export function vizinhosDeParede(d: Dados, id: string): ParedeVizinha[] {
     if (pd && pd.u2 - pd.u1 >= 10) out.push({ viz: o, ...pd, tirada: !!semParedeEntre(c.id, o.id, els) });
   }
   return out;
+}
+
+/** O cômodo do outro lado de um item de parede: o vizinho que divide aquela parede no trecho dele (o de maior
+ *  trecho, se a porta pegar dois). Sem vizinho ali, null (a parede é de fora). */
+export function vizinhoDaPorta(d: Dados, e: Pick<ElParede, 'comodo' | 'parede' | 'inicio' | 'largura'>): Comodo | null {
+  const c = d.comodos[e.comodo]; if (!c) return null;
+  const g = geoEl(c, e);
+  let melhor: Comodo | null = null, mais = 9.5;
+  for (const o of comodosDoAndar(d, c.andar)) {
+    if (o.id === c.id) continue;
+    const pd = paredeDividida(c, o);
+    if (!pd || pd.parede !== e.parede) continue;
+    const junto = Math.min(g.b, pd.u2) - Math.max(g.a, pd.u1);
+    if (junto > mais) { mais = junto; melhor = o; }
+  }
+  return melhor;
+}
+
+/** Os dois lados de uma porta, pelo nome: o cômodo dela ("dentro") e o do outro lado ("fora": o vizinho ou a rua). */
+export function ladosDaPorta(d: Dados, e: Pick<ElParede, 'comodo' | 'parede' | 'inicio' | 'largura'>): { dentro: string; fora: string; viz: Comodo | null } {
+  const viz = vizinhoDaPorta(d, e);
+  return { dentro: d.comodos[e.comodo]?.nome || tx('cômodo', 'room'), fora: viz ? viz.nome : tx('Lado de fora', 'Outside'), viz };
+}
+
+/** Para onde a porta abre, pelo nome do cômodo ("Quarto 1", "Corredor", "Lado de fora"). */
+export function abrePara(d: Dados, e: ElParede): string {
+  const l = ladosDaPorta(d, e);
+  return e.abre === 'fora' ? l.fora : l.dentro;
+}
+
+/** O item de parede como ele aparece no cômodo "via": uma porta da parede dividida, vista pelo lado do vizinho,
+ *  vem medida na parede dele (é a mesma porta; "dono" diz se ela é guardada nesse cômodo mesmo). Nos outros casos,
+ *  o próprio item, no cômodo dele. */
+export function elVisto(d: Dados, eid: string, via: string | null | undefined): { e: ElParede; q: Comodo; dono: boolean } | null {
+  const e = d.els[eid], q = e ? d.comodos[e.comodo] : null;
+  if (!e || !q) return null;
+  if (!via || via === e.comodo || e.tipo !== 'porta' || e.semParede || !d.comodos[via]) return { e, q, dono: true };
+  const v = portaVistaDe(q, d.comodos[via], e);
+  if (!v) return { e, q, dono: true };
+  const liga = e.liga === via ? q.id : e.liga;
+  const visto: ElParede = { ...e, comodo: via, ...v };
+  if (liga) visto.liga = liga; else delete visto.liga;
+  return { e: visto, q: d.comodos[via], dono: false };
 }
 
 /** Os cômodos que formam um espaço só com este (paredes tiradas entre eles, em cadeia), ele incluído. */

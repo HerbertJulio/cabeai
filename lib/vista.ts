@@ -1,7 +1,7 @@
 // Onde cada cômodo aparece na tela: um só, lado a lado (grade) ou montados na planta da casa (andares lado a lado).
 import { T } from './catalogo';
 import { andaresOrdem, comodosDoAndar, cq } from './consultas';
-import { geoPorta } from './geometria';
+import { folhasPorta, temGiro } from './geometria';
 import type { ComodoCompleto, Dados, Vista } from './tipos';
 
 export interface Extensao { x: number; y: number; w: number; h: number; ty: number | null }
@@ -18,8 +18,8 @@ export interface Layout {
 /** Espaço que o desenho do cômodo ocupa em volta dele (paredes, medidas, portas que abrem para fora, título). */
 export function extensao(q: ComodoCompleto, titulo: boolean, cotas = true): Extensao {
   let top = cotas ? -(T + 42) : -(T + 4), left = cotas ? -(T + 42) : -(T + 4), right = q.w + T + (cotas ? 22 : 4), bottom = q.h + T + (cotas ? 16 : 4);
-  for (const p of q.portas) if (p.abre === 'fora' && !p.herdada) {
-    const r = geoPorta(q, p).r;
+  for (const p of q.portas) if (p.abre === 'fora' && temGiro(p)) {
+    const r = Math.max(...folhasPorta(q, p).map((f) => f.r));
     if (p.parede === 'cima') top = Math.min(top, -r - 8);
     if (p.parede === 'baixo') bottom = Math.max(bottom, q.h + r + 8);
     if (p.parede === 'esquerda') left = Math.min(left, -r - 8);
@@ -97,10 +97,11 @@ function layoutCasa(d: Dados, tela: { w: number; h: number }): Layout {
 
 /* ---------- câmera ---------- */
 export interface Base { cx: number; cy: number; w: number; h: number }
-/** Enquadramento: o desenho todo cabe na tela, longe dos botões que ficam por cima. */
-export function vbBase(lay: Layout, W: number, H: number, estreito: boolean): Base {
+/** Enquadramento: o desenho todo cabe na tela, longe dos botões que ficam por cima ("baixo": o que a barra de baixo
+ *  ocupa, como a do modo de desenhar, além dos botões de sempre). */
+export function vbBase(lay: Layout, W: number, H: number, estreito: boolean, baixo = 0): Base {
   const [bx, by, bw, bh] = lay.vb;
-  const ins = { t: 54, b: 74, l: 10, r: estreito ? 10 : 64 };
+  const ins = { t: 54, b: Math.max(74, Math.min(baixo, H * 0.4)), l: 10, r: estreito ? 10 : 64 };
   const uw = Math.max(80, W - ins.l - ins.r), uh = Math.max(80, H - ins.t - ins.b), s = Math.min(uw / bw, uh / bh) || 1;
   return { cx: bx + bw / 2 - (ins.l + uw / 2 - W / 2) / s, cy: by + bh / 2 - (ins.t + uh / 2 - H / 2) / s, w: W / s, h: H / s };
 }

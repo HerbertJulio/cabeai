@@ -147,8 +147,14 @@ button,input,select{font:inherit;color:inherit}
 .desenho-t svg{width:18px;height:18px;flex:none;color:var(--accent)}
 .tipos.tipos-desenho{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
 .tipos-desenho .tipo{flex:none}
-.app.desenhando ~ .toast{bottom:calc(170px + env(safe-area-inset-bottom,0px))}
-@media (max-width:899px){.app.desenhando ~ .toast{bottom:calc(140px + env(safe-area-inset-bottom,0px))}}
+.desenho-grupo{display:flex;align-items:center;gap:8px;min-width:0}
+.desenho-rot{flex:none;font:700 12px var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);width:74px}
+.desenho-grupo .tipos-desenho{flex:1;min-width:0}
+.tipo.peca{border-style:dashed}
+.tipo.peca[aria-pressed="true"]{border-style:solid;background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+@media (max-width:520px){.desenho-rot{width:auto;writing-mode:vertical-rl;transform:rotate(180deg);font-size:10.5px}}
+/* desenhando, a barra do desenho fica embaixo: o aviso rápido vai para cima */
+.app.desenhando ~ .toast{bottom:auto;top:calc(var(--topo-h) + var(--faixa-h) + 12px)}
 .flut-desenho .nota{margin:0}
 @media (max-width:899px){.app.desenhando .flut-bd{display:none}.flut-desenho .nota{display:none}}
 @media (max-width:520px){.flut-be .fab:not(.prim) span{display:none}.flut-be .fab:not(.prim){padding:0;width:46px;justify-content:center}}
@@ -203,6 +209,13 @@ button,input,select{font:inherit;color:inherit}
 .seg button{min-height:38px;padding:6px 12px;border:0;background:var(--paper);font:600 14px var(--f-body);cursor:pointer}
 .seg button+button{border-left:1px solid var(--line)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+/* porta: o jeito dela, para que cômodo abre (pelo nome) e o lado da dobradiça */
+.porta-ctrl{display:flex;flex-direction:column;gap:10px}
+.porta-lado{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.porta-rot{font:600 13px var(--f-body);color:var(--ink-2)}
+.porta-lado .seg{max-width:100%}
+.porta-lado .seg button{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.porta-ctrl > .btn{align-self:flex-start}
 .sec-t{margin:0;font:700 20px/1.1 var(--f-display);letter-spacing:.03em}
 .nota{margin:0;color:var(--ink-2);font-size:14px}
 .erro{margin:0;color:var(--bad);font-size:14px;font-weight:600}
@@ -272,7 +285,7 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
 .menu-grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px}
 .menu-bloco,.menu-lista{display:flex;flex-direction:column;gap:2px}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:40;max-width:min(520px,calc(100vw - 24px));background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:var(--shadow)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:40;width:max-content;max-width:min(520px,calc(100vw - 24px));background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:var(--shadow)}
 .toast.erro{background:var(--bad);color:var(--on-status)}
 /* com o painel de baixo aberto, o aviso rápido sobe para não cobrir os botões */
 .folha ~ .toast{bottom:auto;top:calc(var(--topo-h) + var(--faixa-h) + 12px)}
@@ -311,9 +324,20 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .porta-el.sel .folha-porta,.porta-el:focus-visible .folha-porta{stroke:var(--accent);stroke-width:3.4}
 .porta-el.sel .arco{stroke:var(--accent)}
 .porta-nome{font:600 9px var(--f-display);fill:var(--ink-3);letter-spacing:.04em}
-.porta-el.herdada{cursor:default;pointer-events:none}
-.porta-el.herdada .folha-porta{stroke:var(--ink-3);stroke-dasharray:5 4}
 .porta-nome.herdada{opacity:.8}
+/* porta que abre para o vizinho, na planta da casa: o desenho vai por cima de tudo e a área de toque fica no cômodo */
+.porta-el.por-cima{pointer-events:none}
+.porta-el.casca:focus-visible .hit{stroke:var(--accent);stroke-width:2.5;vector-effect:non-scaling-stroke}
+/* porta de correr: a folha dentro da parede (fechada no vão) e, tracejado por cima da parede, onde ela fica aberta */
+.correr-folha{fill:var(--paper);stroke:var(--ink);stroke-width:1.6;vector-effect:non-scaling-stroke}
+.porta-el.sel .correr-folha,.porta-el.correr:focus-visible .correr-folha{stroke:var(--accent);stroke-width:2.6}
+.correr-aberta{fill:none;stroke:var(--paper);stroke-width:1.3;stroke-dasharray:3 3;vector-effect:non-scaling-stroke;pointer-events:none}
+.correr-aberta.sel{stroke:var(--accent-soft);stroke-width:2}
+/* botões de virar a porta (para que lado abre e o lado da dobradiça), ao lado da porta selecionada */
+.porta-btn{cursor:pointer}
+.porta-btn circle{fill:var(--paper);stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
+.porta-btn path{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.porta-btn:hover > circle{fill:var(--accent-soft)}
 #planta.desenhando{cursor:crosshair}
 .grade-desenho{pointer-events:none}
 .gd-m{fill:none;stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
@@ -355,7 +379,10 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 /* modo de desenhar: os cômodos se arrastam pelo piso; os itens dentro deles não atrapalham */
 #planta.desenhando .piso,#planta.vista-casa g.sala.sel-q .piso{cursor:grab}
 #planta.arrastando .piso{cursor:grabbing}
-#planta.desenhando .mv,#planta.desenhando .mv-abre,#planta.desenhando .porta-el,#planta.desenhando .jan,#planta.desenhando .arel,#planta.desenhando .interr-el{pointer-events:none}
+#planta.desenhando .mv,#planta.desenhando .mv-abre,#planta.desenhando .arel,#planta.desenhando .interr-el,#planta.desenhando:not(.ferr-parede) .porta-el,#planta.desenhando:not(.ferr-parede) .jan{pointer-events:none}
+/* ferramenta de porta ou janela: tocar na parede põe a peça; a planta não vira lápis */
+#planta.desenhando.ferr-parede{cursor:copy}
+#planta.desenhando.ferr-parede .porta-el,#planta.desenhando.ferr-parede .jan{cursor:pointer}
 /* camadas escondidas: ficam só um vulto (e não pegam o toque), para mexer no que está por baixo */
 #planta.sem-moveis .mv:not(.sel),#planta.sem-moveis .mv-abre{opacity:.12;pointer-events:none}
 #planta.sem-moveis .mv:not(.sel) .mv-txt,#planta.sem-moveis .seta{display:none}

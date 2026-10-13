@@ -1,20 +1,28 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import { NOME_PAREDE } from '@/lib/catalogo';
-import { alvoSel, cenariosVisiveis, comodosDoCenario, espacoAberto, idsVisiveis, nomeComodo, problemasDe, vizinhosDeParede } from '@/lib/consultas';
-import { geoEl } from '@/lib/geometria';
+import { alvoSel, cenariosVisiveis, comodosDoCenario, espacoAberto, idsVisiveis, ladosDaPorta, nomeComodo, problemasDe, vizinhosDeParede } from '@/lib/consultas';
+import { geoEl, jeitoDaPorta } from '@/lib/geometria';
 import { areaM2, fmtArea } from '@/lib/resumo';
 import { abrirCenario, abrirDialogo, avisarLigacoes, editarItem, girar, girarComodo, limparSel, sairCenario, useApp } from '@/lib/store';
-import type { Comodo, ElParede } from '@/lib/tipos';
+import type { Dados, ElParede } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
 import { fmtM, pl } from '@/lib/util';
 import { Icone } from './icones';
 import { abrirMenuEmBotao } from './Topo';
 
-export function descEl(q: Comodo, e: ElParede): string {
+/** "0,80 m · Quarto 1 ↔ Corredor · abre para Quarto 1": a porta é da parede entre os dois cômodos. */
+export function descEl(d: Dados, e: ElParede): string {
+  const q = d.comodos[e.comodo]; if (!q) return '';
   const g = geoEl(q, e), w = fmtM(g.b - g.a), par = tx('parede ' + NOME_PAREDE[e.parede], NOME_PAREDE[e.parede] + ' wall');
-  if (e.tipo === 'porta' && e.semParede) return `${w} m · ${par} · ${tx('sem parede', 'no wall')}`;
-  if (e.tipo === 'porta') return `${w} m · ${par} · ${e.abre === 'vao' ? tx('vão livre', 'open doorway') : tx(`abre para ${e.abre}`, `opens ${e.abre === 'dentro' ? 'inward' : 'outward'}`)}`;
+  if (e.tipo === 'porta') {
+    const l = ladosDaPorta(d, e), onde = l.viz ? `${q.nome} ↔ ${l.viz.nome}` : tx(`${par} de ${q.nome}`, `${q.nome}’s ${par}`);
+    if (e.semParede) return `${w} m · ${onde} · ${tx('sem parede', 'no wall')}`;
+    const j = jeitoDaPorta(e);
+    const para = e.abre === 'fora' ? (l.viz ? tx(`abre para ${l.viz.nome}`, `opens into ${l.viz.nome}`) : tx('abre para fora', 'opens outward')) : tx(`abre para ${q.nome}`, `opens into ${q.nome}`);
+    const como = j === 'vao' ? tx('passagem sem porta', 'opening, no door') : j === 'correr' ? tx('de correr', 'sliding') : j === 'dupla' ? tx(`dupla, ${para}`, `double, ${para}`) : para;
+    return `${w} m · ${onde} · ${como}`;
+  }
   if (e.tipo === 'janela') return `${w} m · ${par} · ${e.abertura === 'abrir' ? tx('de abrir', 'hinged') : tx('de correr', 'sliding')}`;
   if (e.tipo === 'ar') return tx(`aparelho de ${w} m · ${par}`, `${w} m unit · ${par}`);
   return par;
@@ -41,8 +49,8 @@ export default function Faixa() {
   if (!Object.keys(dados.comodos).length) return <div className="faixa" id="faixa"><p className="nota">{tx('Crie um cômodo para começar.', 'Create a room to get started.')}</p></div>;
   const alvo = verCen ? null : alvoSel(dados, sel, selEl);
   if (alvo) {
-    const o = alvo.obj, q = dados.comodos[o.comodo];
-    const med = alvo.tipo === 'movel' ? `${fmtM(alvo.obj.larg)} × ${fmtM(alvo.obj.prof)} m` : descEl(q, alvo.obj);
+    const o = alvo.obj;
+    const med = alvo.tipo === 'movel' ? `${fmtM(alvo.obj.larg)} × ${fmtM(alvo.obj.prof)} m` : descEl(dados, alvo.obj);
     return (
       <div className="faixa" id="faixa">
         <div className="barra-txt"><span className="barra-nome">{o.nome}</span> <span className="barra-med">{med}</span></div>

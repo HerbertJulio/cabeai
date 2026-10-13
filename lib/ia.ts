@@ -2,7 +2,7 @@
 // Usado no servidor (IA grátis da Vercel ou Gemini) e no navegador (IA do Chrome).
 import { PONTO_USA, TIPOS, ehInterruptor, horizontal, pontoDe } from './catalogo';
 import { tx, type Idioma } from './i18n';
-import { avaliar, folgas, folhaDe, geoEl, geoPorta, normRot, nPortasDe, prender, precisaCadeira, precisaFrente, ret, tam, temCadeiras, uv2xy, zonaAr } from './geometria';
+import { avaliar, folgas, folhaDe, folhasPorta, geoEl, geoPorta, giraParaDentro, jeitoDaPorta, normRot, nPortasDe, prender, precisaCadeira, precisaFrente, ret, tam, temCadeiras, uv2xy, zonaAr } from './geometria';
 import type { ComodoCompleto, ItemCenario, Movel, Parede, Ponto } from './tipos';
 
 const nomeParede = (q: ComodoCompleto, p: Parede) => ({ cima: 'de cima (y=0)', baixo: `de baixo (y=${q.h})`, esquerda: 'da esquerda (x=0)', direita: `da direita (x=${q.w})` })[p];
@@ -21,9 +21,13 @@ export function montarPrompt(q: ComodoCompleto, lista: Movel[], fixos: Movel[], 
     L.push('', 'PORTAS DO CÔMODO:');
     for (const p of q.portas) {
       const g = geoPorta(q, p), e = eixo(p.parede);
+      const vao = `- "${p.nome}": parede ${nomeParede(q, p.parede)}, vão de ${e}=${g.a} a ${e}=${g.b} (${g.r} cm).`;
       if (p.semParede) L.push(`- Parede ${nomeParede(q, p.parede)}, de ${e}=${g.a} a ${e}=${g.b}: SEM PAREDE (o espaço continua no cômodo vizinho). Móveis podem ficar perto, mas deixe uma passagem de 60 cm.`);
-      else if (p.abre === 'dentro') { const c = uv2xy(q, p.parede, g.hu, 0); L.push(`- "${p.nome}": parede ${nomeParede(q, p.parede)}, vão de ${e}=${g.a} a ${e}=${g.b} (${g.r} cm). Abre para DENTRO: o quarto de círculo com centro em (${c[0]}, ${c[1]}) e raio ${g.r} cm precisa ficar livre.`); }
-      else L.push(`- "${p.nome}": parede ${nomeParede(q, p.parede)}, vão de ${e}=${g.a} a ${e}=${g.b} (${g.r} cm). ${p.abre === 'vao' ? 'Sem porta (passagem livre)' : 'Abre para fora'}; deixe 40 cm livres na frente do vão.`);
+      else if (giraParaDentro(p)) {
+        const fs = folhasPorta(q, p).map((f) => { const c = uv2xy(q, p.parede, f.hu, 0); return `centro em (${c[0]}, ${c[1]}) e raio ${f.r} cm`; });
+        L.push(`${vao} ${fs.length > 1 ? `Porta dupla que abre para DENTRO: os dois quartos de círculo (${fs.join('; ')}) precisam ficar livres.` : `Abre para DENTRO: o quarto de círculo com ${fs[0]} precisa ficar livre.`}`);
+      }
+      else L.push(`${vao} ${jeitoDaPorta(p) === 'vao' ? 'Sem porta (passagem livre)' : jeitoDaPorta(p) === 'correr' ? 'Porta de correr' : 'Abre para fora'}; deixe 40 cm livres na frente do vão.`);
     }
   }
   if (q.interruptores.length) {

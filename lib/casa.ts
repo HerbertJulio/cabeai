@@ -237,10 +237,28 @@ export function portasVizinhas(c: ComodoEls, outros: ComodoEls[], els: ElParede[
       if (!e.semParede && minhas.some((m) => m.parede === minha && m.inicio < u2 - 0.5 && m.inicio + m.largura > u1 + 0.5)) continue;
       out.push({
         id: e.id, tipo: 'porta', nome: `${e.nome} (${o.nome})`, comodo: c.id, parede: minha, inicio: Math.round(u1), largura: Math.round(u2 - u1),
-        criado: e.criado, dobradica: e.dobradica, abre: e.abre === 'vao' ? 'vao' : e.abre === 'dentro' ? 'fora' : 'dentro', herdada: true, origem: e.id, origemComodo: o.id,
-        ...(e.semParede ? { semParede: true } : {}), ...(e.auto ? { auto: true } : {}), liga: o.id
+        criado: e.criado, dobradica: e.dobradica, abre: abreDoOutroLado(e.abre), herdada: true, origem: e.id, origemComodo: o.id,
+        ...(e.estilo ? { estilo: e.estilo } : {}), ...(e.semParede ? { semParede: true } : {}), ...(e.auto ? { auto: true } : {}), liga: o.id
       });
     }
   }
   return out;
+}
+
+/** Para onde a porta abre, visto do outro lado da parede. */
+export const abreDoOutroLado = (abre: ElParede['abre']): ElParede['abre'] => (abre === 'vao' ? 'vao' : abre === 'fora' ? 'dentro' : 'fora');
+export const PAREDE_OPOSTA: Record<Parede, Parede> = { cima: 'baixo', baixo: 'cima', esquerda: 'direita', direita: 'esquerda' };
+
+/** A mesma porta medida pelo lado do vizinho: a parede dele, a distância do canto dele e para onde ela abre vista de lá.
+ *  Só quando a porta está inteira no trecho de parede que os dois dividem (senão parte dela ficaria fora da parede dele).
+ *  As duas paredes correm no mesmo sentido, então a dobradiça não muda. */
+export function portaVistaDe(dono: Pos & { andar: string }, viz: Pos & { andar: string }, e: Pick<ElParede, 'parede' | 'inicio' | 'largura' | 'abre'>): { parede: Parede; inicio: number; largura: number; abre: ElParede['abre'] } | null {
+  if (dono.andar !== viz.andar) return null;
+  const pd = paredeDividida(dono, viz);
+  if (!pd || pd.parede !== e.parede) return null;
+  const vert = e.parede === 'direita' || e.parede === 'esquerda', L = vert ? dono.h : dono.w;
+  const w = Math.min(e.largura, L), a = Math.min(Math.max(0, e.inicio), L - w);
+  if (a < pd.u1 - 0.5 || a + w > pd.u2 + 0.5) return null;
+  const base = vert ? dono.y - viz.y : dono.x - viz.x;
+  return { parede: PAREDE_OPOSTA[e.parede], inicio: Math.round(base + a), largura: Math.round(w), abre: abreDoOutroLado(e.abre) };
 }

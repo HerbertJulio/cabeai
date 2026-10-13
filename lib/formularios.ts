@@ -1,8 +1,8 @@
 // Formulários: valores para mostrar nos campos e a validação do que foi digitado.
 import { LIM_BAU, LIM_CADEIRA, LIM_COMODO, LIM_MOVEL, MAX_CADEIRAS, PAREDES, TIPOS, TIPOS_PAREDE, pontoDe } from './catalogo';
 import { tx } from './i18n';
-import { compParede, geoEl, normRot } from './geometria';
-import type { AlinhaBau, Comodo, ElParede, LadoCadeiras, Movel, Parede, TipoMovel, TipoParede } from './tipos';
+import { compParede, geoEl, jeitoDaPorta, normRot } from './geometria';
+import type { AlinhaBau, Comodo, ElParede, JeitoPorta, LadoCadeiras, Movel, Parede, TipoMovel, TipoParede } from './tipos';
 import { clamp, fmtM, parseDist, parseInteiro, parseMedida, tem } from './util';
 
 export type Valores = Record<string, string | boolean>;
@@ -96,17 +96,18 @@ export function valsParede(q: Comodo, e: ElParede): Valores {
   const g = geoEl(q, e);
   return {
     nome: e.nome, parede: e.parede, largura: fmtM(g.b - g.a), dist: fmtM(g.a), inicioCm: String(Math.round(g.a)),
-    dobradica: e.dobradica || 'a', abre: e.abre || 'dentro', abertura: e.abertura || 'correr', folhas: String(e.folhas || 2), folga: fmtM(e.folga || 0),
+    dobradica: e.dobradica || 'a', abre: e.abre === 'fora' ? 'fora' : 'dentro', jeito: jeitoDaPorta(e), abertura: e.abertura || 'correr', folhas: String(e.folhas || 2), folga: fmtM(e.folga || 0),
     ponto: pontoDe(e)
   };
 }
+const ehJeito = (v: unknown): v is JeitoPorta => v === 'abrir' || v === 'dupla' || v === 'correr' || v === 'vao';
 
 export function valsNovaParede(tipo: TipoParede, q: Comodo | null, ctx: { parede?: Parede; u?: number } | null, r: Valores = {}): Valores {
   const tp = TIPOS_PAREDE[tipo], parede = (r.parede as Parede) || (ctx && ctx.parede) || tp.parede;
   let dist = (r.dist as string) ?? '';
   if (r.dist == null && ctx && ctx.parede && ctx.u != null && q) { const L = compParede(q, ctx.parede); dist = fmtM(clamp(Math.round(ctx.u - tp.larg / 2), 0, Math.max(0, L - tp.larg))); }
   return {
-    nome: r.nome || '', parede, largura: r.largura || '', dist, dobradica: r.dobradica || 'a', abre: r.abre || 'dentro',
+    nome: r.nome || '', parede, largura: r.largura || '', dist, dobradica: r.dobradica || 'a', abre: r.abre === 'fora' ? 'fora' : 'dentro', jeito: ehJeito(r.jeito) ? r.jeito : 'abrir',
     abertura: r.abertura || 'correr', folhas: r.folhas || '2', folga: r.folga || '', ponto: r.ponto || 'interruptor'
   };
 }
@@ -124,7 +125,13 @@ export function validarParede(v: Valores, tipo: TipoParede, q: Comodo, atual: El
   Object.assign(c, { parede, largura: larg, inicio: Math.round(clamp(d == null ? (L - larg) / 2 : d, 0, L - larg)) });
   const nome = s(v.nome).slice(0, 30);
   if (nome) c.nome = nome;
-  if (tipo === 'porta') { c.dobradica = v.dobradica === 'b' ? 'b' : 'a'; c.abre = v.abre === 'fora' || v.abre === 'vao' ? v.abre : 'dentro'; }
+  if (tipo === 'porta') {
+    // de abrir, dupla, de correr ou passagem; "abre" diz para que lado a folha gira (sem giro, só guarda o lado)
+    const j: JeitoPorta = v.abre === 'vao' ? 'vao' : ehJeito(v.jeito) ? v.jeito : atual ? jeitoDaPorta(atual) : 'abrir';
+    c.dobradica = v.dobradica === 'b' ? 'b' : 'a';
+    if (j === 'vao') { c.abre = 'vao'; c.estilo = undefined; }
+    else { c.abre = v.abre === 'fora' ? 'fora' : 'dentro'; c.estilo = j === 'abrir' ? undefined : j; }
+  }
   if (tipo === 'janela') { c.abertura = v.abertura === 'abrir' ? 'abrir' : 'correr'; c.folhas = v.folhas === '1' ? 1 : 2; }
   if (tipo === 'interruptor') c.ponto = pontoDe(v);
   if (tipo === 'ar') {

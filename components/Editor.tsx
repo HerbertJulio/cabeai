@@ -8,7 +8,7 @@ import { CHAVE_PONTOS } from '@/lib/historico';
 import { geoEl, prender } from '@/lib/geometria';
 import { ehIdioma, idiomaDoNavegador, tx } from '@/lib/i18n';
 import {
-  CAMADAS_TODAS, abrirDialogo, desfazerDoAviso, aplicarIdioma, aplicarTema, atualizar, avisarLigacoes, carregarPontos, colar, conectarComodo, copiar, desfazer, duplicar, duplicarComodo, enquadrar, estadoAtual, estreito,
+  CAMADAS_TODAS, abrirDialogo, desfazerDoAviso, aplicarIdioma, aplicarTema, atualizar, avisarLigacoes, carregarPontos, colar, conectarComodo, copiar, desfazer, duplicar, duplicarComodo, enquadrar, estadoAtual, estreito, ferramentaDesenho,
   liberarEspaco,
   fecharMenu, garantirComodo, girar, girarComodo, limparSel, modoDesenho, modoMedir, moverComodo, pedirRemover, pontoAutomatico, pontoPeriodico, refazer, salvarEl, salvarMovel, selecionar,
   temCopia, toast, useApp, zoomEm, type Camadas, type Estado, type Tema
@@ -138,7 +138,8 @@ export default function Editor() {
         if (s.menu) { e.preventDefault(); fecharMenu(); return; }
         if (s.dlg) return;
         if (s.medir) { modoMedir(false); return; }
-        if (s.desenho.ativo) { modoDesenho(false); return; }
+        // desenhando: tira a seleção, depois larga a ferramenta de porta ou janela, depois sai do modo
+        if (s.desenho.ativo) { if (s.selEl) limparSel(); else if (s.desenho.item) ferramentaDesenho(null); else modoDesenho(false); return; }
         if (s.latAberta) { atualizar((x) => { x.latAberta = false; }); return; }
         if (s.folha) atualizar((x) => { x.folha = false; x.folhaModo = 'acoes'; });
         else if (s.sel || s.selEl || s.selComodo) limparSel();
@@ -172,7 +173,7 @@ export default function Editor() {
       const gFoco = alvoEl && alvoEl.closest ? alvoEl.closest('.mv, .jan, .arel, .porta-el, .interr-el') : null;
       if (gFoco && /^(Arrow|Delete$|Backspace$|r$|R$|d$|D$)/.test(e.key)) {
         const a = gFoco.hasAttribute('data-eid') ? { eid: gFoco.getAttribute('data-eid')! } : { id: gFoco.getAttribute('data-id')! };
-        if (a.id ? s.sel !== a.id : s.selEl !== a.eid) selecionar(a, { painel: false });
+        if (a.id ? s.sel !== a.id : s.selEl !== a.eid) selecionar(a, { painel: false, via: gFoco.getAttribute('data-via') || undefined });
       }
       const s2 = estadoAtual(), item = alvoSel(s2.dados, s2.sel, s2.selEl), qSel = !item && s2.selComodo && s2.dados.comodos[s2.selComodo] ? s2.selComodo : null;
       if ((e.key === 'Delete' || e.key === 'Backspace') && item) { e.preventDefault(); pedirRemover(); return; }

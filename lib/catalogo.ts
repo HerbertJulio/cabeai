@@ -1,6 +1,6 @@
 // Catálogo: tipos de móvel, itens de parede e nomes das paredes.
 import { bilingue, registro, tx } from './i18n';
-import type { Abertura, FormaEscada, LadoCadeiras, Parede, Ponto, TipoComodo, TipoMovel, TipoParede } from './tipos';
+import type { Abertura, FormaEscada, JeitoPorta, LadoCadeiras, Parede, Ponto, TipoComodo, TipoMovel, TipoParede } from './tipos';
 import { fmtM, tem } from './util';
 
 export interface InfoTipo {
@@ -117,6 +117,22 @@ export const TIPOS_PAREDE: Record<TipoParede, InfoParede> = {
   interruptor: itemParede({ rot: 'Tomada e outros pontos', novo: 'Novo ponto na parede', rotLarg: 'Largura' }, { rot: 'Outlet or hookup', novo: 'New outlet or hookup', rotLarg: 'Width' }, { larg: 10, min: 5, max: 40, parede: 'cima' })
 };
 export const ORDEM_PAREDE = Object.keys(TIPOS_PAREDE) as TipoParede[];
+
+/* ---------- jeitos de porta ---------- */
+export const JEITOS_PORTA: JeitoPorta[] = ['abrir', 'dupla', 'correr', 'vao'];
+export const JEITO_NOME = registro<JeitoPorta>(
+  { abrir: 'De abrir', dupla: 'Dupla', correr: 'De correr', vao: 'Passagem' },
+  { abrir: 'Hinged', dupla: 'Double', correr: 'Sliding', vao: 'Opening' }
+);
+export const JEITO_LONGO = registro<JeitoPorta>(
+  { abrir: 'Porta de abrir (uma folha)', dupla: 'Porta dupla (duas folhas)', correr: 'Porta de correr', vao: 'Passagem (vão livre, sem porta)' },
+  { abrir: 'Hinged door (one leaf)', dupla: 'Double door (two leaves)', correr: 'Sliding door', vao: 'Opening (no door)' }
+);
+/** "virou porta dupla" / "is now a double door". */
+export const JEITO_VIROU = registro<JeitoPorta>(
+  { abrir: 'porta de abrir', dupla: 'porta dupla', correr: 'porta de correr', vao: 'passagem sem porta' },
+  { abrir: 'a hinged door', dupla: 'a double door', correr: 'a sliding door', vao: 'an opening with no door' }
+);
 
 /* ---------- pontos na parede: elétrica, TV e internet, água e gás ---------- */
 export const PONTOS: Ponto[] = ['interruptor', 'tomada', 'ambos', 'luz', 'tv', 'rede', 'agua', 'esgoto', 'gas'];

@@ -1,12 +1,12 @@
 'use client';
 // Painel de baixo do modo simples: as opções do item (ou do cômodo) e a edição.
 import { useCallback, useState } from 'react';
-import { alvoSel, andaresOrdem, comodosOrdem, cq } from '@/lib/consultas';
+import { alvoSel, andaresOrdem, comodosOrdem, cq, elVisto, ladosDaPorta } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { valsMovel, valsParede, validarMovel, validarParede } from '@/lib/formularios';
 import { centrar } from '@/lib/geometria';
 import {
-  abrirDialogo, abrirMenu, alternar, atualizar, avisarLigacoes, duplicar, duplicarComodo, editarItem, focarComodo, girar, girarComodo, iniciarAdd, levar, pedirRemover, salvarEl, salvarMovel, toast, travar, useApp
+  abrirDialogo, abrirMenu, alternar, atualizar, avisarLigacoes, duplicar, duplicarComodo, editarItem, focarComodo, girar, girarComodo, iniciarAdd, levar, pedirRemover, salvarElVisto, salvarMovel, toast, travar, useApp
 } from '@/lib/store';
 import { vizinhosDeParede } from '@/lib/consultas';
 import { areaLivre, areaM2, fmtArea } from '@/lib/resumo';
@@ -16,7 +16,7 @@ import { fmtM } from '@/lib/util';
 import { CamposMovel, CamposParede, useValores } from './campos';
 import { descEl } from './Faixa';
 import { Icone } from './icones';
-import { ChipsEl, ChipsFolga } from './Inspetor';
+import { ChipsEl, ChipsFolga, ControlesPorta } from './Inspetor';
 
 const fechar = () => atualizar((s) => { s.folha = false; s.folhaModo = 'acoes'; });
 const voltar = () => atualizar((s) => { s.folhaModo = 'acoes'; });
@@ -55,20 +55,24 @@ function EditarMovel({ m }: { m: Movel }) {
 
 function EditarEl({ e }: { e: ElParede }) {
   const dados = useApp((s) => s.dados);
-  const ini = useCallback(() => valsParede(dados.comodos[e.comodo], e), [dados, e]);
+  const comodo = useApp((s) => s.comodo);
+  // a porta da parede dividida, vista pelo vizinho em foco, vem medida na parede dele
+  const ini = useCallback(() => { const v = elVisto(dados, e.id, comodo); return valsParede(v ? v.q : dados.comodos[e.comodo], v ? v.e : e); }, [dados, e, comodo]);
   const [v, set] = useValores(ini, e.id);
   const [erro, setErro] = useState('');
+  const vis = elVisto(dados, e.id, comodo), lados = e.tipo === 'porta' && vis ? ladosDaPorta(dados, vis.e) : undefined;
   const enviar = (ev: React.FormEvent) => {
     ev.preventDefault();
-    const s = useApp.getState(), atual = s.dados.els[e.id]; if (!atual) return;
-    const r = validarParede(v, atual.tipo, s.dados.comodos[atual.comodo], atual);
+    const s = useApp.getState(), vv = elVisto(s.dados, e.id, s.comodo); if (!vv) return;
+    const r = validarParede(v, vv.e.tipo, vv.q, vv.e);
     if (r.erro) { setErro(r.erro); return; }
-    salvarEl(e.id, r.campos!);
+    // (sem mudança nenhuma, não vira passo do histórico)
+    if (!Object.entries(r.campos!).every(([k, x]) => (vv.e as unknown as Record<string, unknown>)[k] === x)) salvarElVisto(e.id, vv.dono ? null : vv.q.id, r.campos!);
     voltar();
   };
   return (
     <form data-form="editar" noValidate onSubmit={enviar}>
-      <CamposParede px="fs" tipo={e.tipo} v={v} set={set} />
+      <CamposParede px="fs" tipo={e.tipo} v={v} set={set} lados={lados} />
       <p className="nota">{tx('Em metros (0,80) ou centímetros (80).', 'In meters (0.80) or centimeters (80).')}</p>
       {erro && <p className="erro">{erro}</p>}
       <div className="grade-acoes"><button className="btn prim" type="submit">{tx('Salvar', 'Save')}</button><button className="btn" type="button" data-f="voltar" onClick={voltar}>{tx('Voltar', 'Back')}</button></div>
@@ -86,7 +90,10 @@ export default function Folha() {
   const selComodo = useApp((s) => s.selComodo);
   const verCen = useApp((s) => s.verCen);
   const arrastando = useApp((s) => s.arrastando);
-  if (!folha || verCen || arrastando || modo !== 'simples') return null;
+  const comodo = useApp((s) => s.comodo);
+  const desenhando = useApp((s) => s.desenho.ativo);
+  // (no modo de desenhar, só quando a pessoa pede para editar: as opções ficam nos botões da planta e no menu ⋯)
+  if (!folha || verCen || arrastando || modo !== 'simples' || (desenhando && folhaModo !== 'editar')) return null;
   const alvo = alvoSel(dados, sel, selEl);
   const varios = comodosOrdem(dados).length > 1;
   let corpo: React.ReactNode = null;
@@ -108,22 +115,21 @@ export default function Folha() {
       </>}
     </>;
   } else if (alvo?.tipo === 'parede') {
-    const e = alvo.obj, q = dados.comodos[e.comodo];
+    const e = alvo.obj, vis = elVisto(dados, e.id, comodo), q = vis ? vis.q : dados.comodos[e.comodo];
     corpo = <>
-      <Topo t={e.nome} sub={descEl(q, e)} />
+      <Topo t={e.nome} sub={descEl(dados, e)} />
       {folhaModo === 'editar' ? <EditarEl key={e.id} e={e} /> : <>
-        <ChipsEl q={q} el={e} />
+        <ChipsEl q={q} el={vis ? vis.e : e} />
+        {e.tipo === 'porta' && !e.semParede && <ControlesPorta e={e} />}
         <div className="grade-acoes">
           <button className="btn prim" type="button" data-f="editar" onClick={editarItem}>{tx('Editar', 'Edit')}</button>
-          {e.tipo === 'porta' && e.abre !== 'vao' && <>
-            <button className="btn" type="button" data-f="dob" onClick={() => alternar('dob')}>{tx('Trocar lado da dobradiça', 'Switch hinge side')}</button>
-            <button className="btn" type="button" data-f="abre" onClick={() => alternar('abre')}>{e.abre === 'dentro' ? tx('Abrir para fora', 'Open outward') : tx('Abrir para dentro', 'Open inward')}</button>
-          </>}
           {e.tipo === 'janela' && <button className="btn" type="button" data-f="jan" onClick={() => alternar('jan')}>{e.abertura === 'abrir' ? tx('Mudar para de correr', 'Change to sliding') : tx('Mudar para de abrir', 'Change to hinged')}</button>}
           <button className="btn" type="button" data-f="duplicar" onClick={duplicar}>{tx('Duplicar', 'Duplicate')}</button>
           <button className="btn perigo" type="button" data-f="remover" onClick={pedirRemover}>{tx('Remover', 'Remove')}</button>
         </div>
-        <p className="nota">{tx('Para mudar de lugar, arraste pela parede. Dois toques abrem a edição.', 'To move it, drag it along the wall. Double-tap to edit it.')}</p>
+        <p className="nota">{e.tipo === 'porta' && !e.semParede
+          ? tx('A porta é da parede: dá para tocar nela pelos dois cômodos. Arraste pela parede para mudar de lugar; os botões ao lado dela na planta viram a porta.', 'The door belongs to the wall: you can tap it from either room. Drag it along the wall to move it; the buttons next to it on the plan flip it.')
+          : tx('Para mudar de lugar, arraste pela parede. Dois toques abrem a edição.', 'To move it, drag it along the wall. Double-tap to edit it.')}</p>
       </>}
     </>;
   } else if (selComodo && dados.comodos[selComodo]) {

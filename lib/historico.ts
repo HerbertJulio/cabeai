@@ -1,5 +1,6 @@
 // Histórico: desfazer e refazer nesta sessão (cada passo com um nome do que mudou) e os pontos de restauração,
 // que guardam a casa inteira no navegador para voltar depois (automáticos e os que a pessoa cria).
+import { PAREDE_OPOSTA } from './casa';
 import { normalizarDados } from './dados';
 import { tx } from './i18n';
 import type { Dados, ElParede, Movel } from './tipos';
@@ -33,7 +34,15 @@ export function descreverMudanca(a: Dados, b: Dados): string {
   const frase = (x: Movel | ElParede | undefined, y: Movel | ElParede, movel: boolean): string | null => {
     if (!x) return tx(`Adicionou ${y.nome}`, `Added ${y.nome}`);
     if (x === y || JSON.stringify(x) === JSON.stringify(y)) return null;
-    if (x.comodo !== y.comodo) return tx(`Levou ${y.nome} para ${b.comodos[y.comodo]?.nome || ''}`, `Moved ${y.nome} to ${b.comodos[y.comodo]?.nome || ''}`);
+    if (x.comodo !== y.comodo) {
+      // a porta da parede dividida que passou a ser medida pelo outro lado continua na mesma parede
+      const e0 = x as ElParede, e1 = y as ElParede, c0 = a.comodos[e0.comodo], c1 = b.comodos[e1.comodo];
+      if (!movel && e0.tipo === 'porta' && e1.tipo === 'porta' && c0 && c1 && PAREDE_OPOSTA[e0.parede] === e1.parede) {
+        const naPlanta = (c: typeof c0, e: ElParede) => (e.parede === 'cima' || e.parede === 'baixo' ? c.x : c.y) + e.inicio;
+        return Math.abs(naPlanta(c0, e0) - naPlanta(c1, e1)) > 0.5 || e0.largura !== e1.largura ? tx(`Moveu ${nomeEl(e1)}`, `Moved ${nomeEl(e1)}`) : tx(`Mudou ${nomeEl(e1)}`, `Changed ${nomeEl(e1)}`);
+      }
+      return tx(`Levou ${y.nome} para ${b.comodos[y.comodo]?.nome || ''}`, `Moved ${y.nome} to ${b.comodos[y.comodo]?.nome || ''}`);
+    }
     if (x.nome !== y.nome) return tx(`Renomeou ${x.nome} para ${y.nome}`, `Renamed ${x.nome} to ${y.nome}`);
     if (movel) {
       const m0 = x as Movel, m1 = y as Movel;

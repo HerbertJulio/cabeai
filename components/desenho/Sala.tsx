@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import { AR_PROF, NOME_PAREDE, PAREDES, PONTO_NOME, T, ehInterruptor, horizontal, pontoDe, tipoDoComodo } from '@/lib/catalogo';
 import { tx } from '@/lib/i18n';
-import { compParede, folgas, folhaDe, geoEl, geoPorta, nivel, uv2xy, zonaAr, type Folga } from '@/lib/geometria';
+import { compParede, folgas, folhaDe, folhasPorta, geoEl, geoPorta, giraParaDentro, jeitoDaPorta, nivel, temGiro, uv2xy, zonaAr, type Folga } from '@/lib/geometria';
 import { areaM2, fmtArea } from '@/lib/resumo';
 import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Ret, Vista } from '@/lib/tipos';
 import { fmtM, n1, pl } from '@/lib/util';
@@ -53,32 +53,61 @@ function SemParede({ q, p }: { q: Q; p: ElParede }) {
   );
 }
 
-function Porta({ q, p, sel, bloq, vista }: { q: Q; p: ElParede; sel: boolean; bloq: boolean; vista: Vista }) {
-  if (p.herdada && vista === 'casa') return null; // o vizinho já desenha essa porta; aqui fica só o vão
+/** "tudo": a porta para tocar e ver; "casca": só a área de toque (o desenho vai por cima de tudo, em PortasPorCima);
+ *  "desenho": só o desenho, sem pegar o toque. */
+type ParteDaPorta = 'tudo' | 'casca' | 'desenho';
+function Porta({ q, p, sel, bloq, vista, parte = 'tudo' }: { q: Q; p: ElParede; sel: boolean; bloq: boolean; vista: Vista; parte?: ParteDaPorta }) {
+  if (p.herdada && vista === 'casa') return null; // na planta da casa, o vizinho já desenha essa porta; aqui fica só o vão
   if (p.semParede) return <SemParede q={q} p={p} />;
-  const g = geoPorta(q, p), cls = `porta-el${sel ? ' sel' : ''}${bloq ? ' bloq' : ''}${p.herdada ? ' herdada' : ''}${p.abre === 'vao' ? ' vao' : ''}`;
-  const comoAbre = p.abre === 'vao' ? tx('vão livre, sem porta', 'open doorway, no door') : tx(`abre para ${p.abre}`, `opens ${p.abre === 'dentro' ? 'inward' : 'outward'}`);
-  const aria = p.herdada ? undefined : tx(`${p.nome}, porta de ${fmtM(g.r)} metros na parede ${NOME_PAREDE[p.parede]}, ${comoAbre}. Enter abre as opções; setas movem pela parede.`, `${p.nome}, ${fmtM(g.r)}-meter door on the ${NOME_PAREDE[p.parede]} wall, ${comoAbre}. Enter opens the options; arrow keys move it along the wall.`);
-  const comum = { className: cls, 'data-eid': p.herdada ? undefined : p.id, tabIndex: p.herdada ? undefined : 0, role: p.herdada ? undefined : 'button', 'aria-label': aria };
-  if (p.abre === 'vao') {
+  const g = geoPorta(q, p), jeito = jeitoDaPorta(p);
+  const cls = `porta-el${sel ? ' sel' : ''}${bloq ? ' bloq' : ''}${p.herdada ? ' herdada' : ''}${jeito === 'vao' ? ' vao' : ''}${jeito === 'correr' ? ' correr' : ''}${parte === 'casca' ? ' casca' : parte === 'desenho' ? ' por-cima' : ''}`;
+  const comoAbre = jeito === 'vao' ? tx('vão livre, sem porta', 'open doorway, no door') : jeito === 'correr' ? tx('porta de correr', 'sliding door')
+    : `${jeito === 'dupla' ? tx('dupla, ', 'double, ') : ''}${p.abre === 'dentro' ? tx(`abre para dentro de ${q.nome}`, `opens into ${q.nome}`) : tx(`abre para fora de ${q.nome}`, `opens out of ${q.nome}`)}`;
+  const aria = tx(`${p.nome}, porta de ${fmtM(g.r)} metros na parede ${NOME_PAREDE[p.parede]}, ${comoAbre}. Enter abre as opções; setas movem pela parede.`, `${p.nome}, ${fmtM(g.r)}-meter door on the ${NOME_PAREDE[p.parede]} wall, ${comoAbre}. Enter opens the options; arrow keys move it along the wall.`);
+  // a porta é da parede: a cópia que o vizinho desenha também se toca (e diz por qual cômodo foi tocada)
+  const comum = parte === 'desenho' ? { className: cls, 'aria-hidden': true as const }
+    : { className: cls, 'data-eid': p.id, 'data-via': p.herdada ? q.id : undefined, tabIndex: 0, role: 'button', 'aria-label': aria };
+  const hit = (v2: number) => (parte === 'desenho' ? null : <rect className="hit" {...rectEm(q, p.parede, g.a, -T, g.b, v2)} />);
+  if (parte === 'casca') return <g {...comum}>{hit(jeito === 'vao' || jeito === 'correr' ? 24 : Math.min(30, g.r))}</g>;
+  if (jeito === 'vao') {
     // vão livre: só a abertura na parede, com o batente tracejado
     return (
       <g {...comum}>
         <rect className="zona-porta" {...rectEm(q, p.parede, g.a, -T, g.b, 0)} />
         <line className="vao-l" {...linhaEm(q, p.parede, g.a, -T / 2, g.b, -T / 2)} />
-        {!p.herdada && <rect className="hit" {...rectEm(q, p.parede, g.a, -T, g.b, 24)} />}
+        {hit(24)}
       </g>
     );
   }
-  const lin = arcoUV(q, p.parede, g.hu, g.du, g.r, g.sv), H = uv2xy(q, p.parede, g.hu, 0), E = uv2xy(q, p.parede, g.hu, g.sv * g.r);
+  if (jeito === 'correr') {
+    // de correr: a folha dentro da parede, fechada no vão (onde ela fica aberta vai por cima da parede, em CorrerAberta)
+    return (
+      <g {...comum}>
+        <rect className="zona-porta" {...rectEm(q, p.parede, g.a, -T, g.b, 0)} />
+        <rect className="correr-folha" {...rectEm(q, p.parede, g.a, -T * 0.66, g.b, -T * 0.34)} />
+        {hit(24)}
+      </g>
+    );
+  }
+  const folhas = folhasPorta(q, p);
   return (
     <g {...comum}>
-      <path className="zona-porta" d={`M${n1(H[0])},${n1(H[1])} L${lin} Z`} />
-      <path className="arco" d={`M${lin}`} />
-      {!p.herdada && <rect className="hit" {...rectEm(q, p.parede, g.a, -T, g.b, Math.min(30, g.r))} />}
-      <line className="folha-porta" x1={n1(H[0])} y1={n1(H[1])} x2={n1(E[0])} y2={n1(E[1])} />
+      {folhas.map((f, k) => {
+        const lin = arcoUV(q, p.parede, f.hu, f.du, f.r, g.sv), H = uv2xy(q, p.parede, f.hu, 0);
+        return <g key={k}><path className="zona-porta" d={`M${n1(H[0])},${n1(H[1])} L${lin} Z`} /><path className="arco" d={`M${lin}`} /></g>;
+      })}
+      {hit(Math.min(30, g.r))}
+      {folhas.map((f, k) => { const H = uv2xy(q, p.parede, f.hu, 0), E = uv2xy(q, p.parede, f.hu, g.sv * f.r); return <line key={k} className="folha-porta" x1={n1(H[0])} y1={n1(H[1])} x2={n1(E[0])} y2={n1(E[1])} />; })}
     </g>
   );
+}
+
+/** Porta de correr aberta: o contorno tracejado da folha, dentro da parede, do lado para onde ela corre. */
+function CorrerAberta({ q, p, sel }: { q: Q; p: ElParede; sel: boolean }) {
+  const g = geoEl(q, p), w = g.b - g.a;
+  const [u1, u2] = p.dobradica === 'b' ? [g.b, Math.min(g.b + w, g.L + T)] : [Math.max(g.a - w, -T), g.a];
+  if (u2 - u1 < 2) return null;
+  return <rect className={`correr-aberta${sel ? ' sel' : ''}`} aria-hidden="true" {...rectEm(q, p.parede, u1, -T * 0.66, u2, -T * 0.34)} />;
 }
 
 function Janela({ q, j, sel, ruim }: { q: Q; j: ElParede; sel: boolean; ruim: boolean }) {
@@ -169,8 +198,10 @@ export function RotulosSala({ q, vista, k = 1 }: { q: Q; vista: Vista; k?: numbe
     <g className="rotulos" aria-hidden="true" style={k !== 1 ? ({ '--k': Math.round(k * 100) / 100 } as React.CSSProperties) : undefined}>
       {q.portas.map((p) => {
         if ((p.herdada && casa) || p.semParede) return null;
-        const g = geoPorta(q, p);
-        const lab = p.abre === 'vao' ? uv2xy(q, p.parede, (g.a + g.b) / 2, 10) : uv2xy(q, p.parede, g.hu + g.du * g.r * 0.55, g.sv * g.r * 0.3);
+        const g = geoPorta(q, p), j = jeitoDaPorta(p);
+        const lab = j === 'vao' || j === 'correr' ? uv2xy(q, p.parede, (g.a + g.b) / 2, 10)
+          : j === 'dupla' ? uv2xy(q, p.parede, (g.a + g.b) / 2, g.sv * g.r * 0.22)
+            : uv2xy(q, p.parede, g.hu + g.du * g.r * 0.55, g.sv * g.r * 0.3);
         return <text key={'p' + p.id + (p.herdada ? 'h' : '')} className={`porta-nome${p.herdada ? ' herdada' : ''}`} x={n1(lab[0])} y={n1(lab[1])} textAnchor="middle" dy=".35em">{p.nome}</text>;
       })}
       {q.janelas.map((j) => {
@@ -195,10 +226,10 @@ export function lugarEtiqueta(q: Q, w: number, h: number): { x: number; y: numbe
   const ocupado: Ret[] = [];
   for (const p of q.portas) {
     if (p.semParede) continue;
-    const g = geoPorta(q, p);
-    // a folha que abre para dentro deste cômodo (dele ou do vizinho) e o nome de um vão dele
-    if (p.abre === 'dentro') ocupado.push(retUV(q, p.parede, Math.min(g.hu, g.hu + g.du * g.r), 0, Math.max(g.hu, g.hu + g.du * g.r), g.r));
-    else if (p.abre === 'vao' && !p.herdada) ocupado.push(retUV(q, p.parede, g.a, 0, g.b, 18));
+    const g = geoPorta(q, p), j = jeitoDaPorta(p);
+    // as folhas que abrem para dentro deste cômodo (dele ou do vizinho) e o nome de um vão ou porta de correr dele
+    if (giraParaDentro(p)) for (const f of folhasPorta(q, p)) ocupado.push(retUV(q, p.parede, Math.min(f.hu, f.hu + f.du * f.r), 0, Math.max(f.hu, f.hu + f.du * f.r), f.r));
+    else if ((j === 'vao' || j === 'correr') && !p.herdada) ocupado.push(retUV(q, p.parede, g.a, 0, g.b, 18));
   }
   for (const a of q.ares) { const z = zonaAr(q, a); ocupado.push(retUV(q, a.parede, z.a, 0, z.b, AR_PROF + 14)); }
   for (const i of q.interruptores) { const g = geoEl(q, i); ocupado.push(retUV(q, i.parede, g.a - 4, 0, g.b + 4, 7)); }
@@ -284,9 +315,25 @@ export interface PropsSala {
   ty: number | null;
   setasTodos: boolean;
   selComodo: boolean;
+  /** Portas atrapalhadas em qualquer cômodo visível (a porta é dos dois lados da parede). */
+  bloqueadas?: Set<string>;
 }
 
-export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, selComodo }: PropsSala) {
+/** Porta deste cômodo cuja folha abre para o outro lado da parede: na planta da casa o desenho dela vai numa camada
+ *  por cima (PortasPorCima), senão o piso do vizinho, desenhado depois, cobriria a folha. A área de toque fica aqui,
+ *  embaixo dos móveis e da etiqueta do cômodo, como a das outras portas. */
+const abreParaFora = (p: ElParede): boolean => !p.herdada && !p.semParede && temGiro(p) && p.abre === 'fora';
+
+/** Na planta da casa, por cima de todos os cômodos: as portas que abrem para o vizinho (ou para a rua) e as portas de
+ *  correr abertas dentro da parede (que o vizinho cobriria com a parede dele). */
+export function PortasPorCima({ q, selEl, bloqueadas }: { q: Q; selEl: string | null; bloqueadas: Set<string> }) {
+  return <>
+    {q.portas.filter(abreParaFora).map((p) => <Porta key={'pf' + p.id} q={q} p={p} sel={selEl === p.id} bloq={bloqueadas.has(p.id)} vista="casa" parte="desenho" />)}
+    {q.portas.filter((p) => !p.herdada && !p.semParede && jeitoDaPorta(p) === 'correr').map((p) => <CorrerAberta key={'ca' + p.id} q={q} p={p} sel={selEl === p.id} />)}
+  </>;
+}
+
+export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, selComodo, bloqueadas }: PropsSala) {
   const casa = vista === 'casa', varios = vista !== 'um';
   const grade: ReactNode[] = [];
   for (let x = 50; x < q.w; x += 50) grade.push(<line key={'gx' + x} className="grade-l" x1={x} y1={0} x2={x} y2={q.h} />);
@@ -298,8 +345,9 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
     <>
       <rect className={`piso${q.corredor ? ' corredor' : ''} q-${tipoDoComodo(q)}`} x={0} y={0} width={q.w} height={q.h} data-piso={q.id} />
       {grade}
-      {q.portas.map((p) => <Porta key={'p' + p.id + (p.herdada ? 'h' : '')} q={q} p={p} sel={selEl === p.id && !p.herdada} bloq={av.portasBloq.has(p.id)} vista={vista} />)}
+      {q.portas.map((p) => <Porta key={'p' + p.id + (p.herdada ? 'h' : '')} q={q} p={p} sel={selEl === p.id} bloq={(bloqueadas || av.portasBloq).has(p.id)} vista={vista} parte={casa && abreParaFora(p) ? 'casca' : 'tudo'} />)}
       <Paredes q={q} />
+      {!casa && q.portas.filter((p) => !p.semParede && jeitoDaPorta(p) === 'correr').map((p) => <CorrerAberta key={'ca' + p.id + (p.herdada ? 'h' : '')} q={q} p={p} sel={selEl === p.id} />)}
       {(varios && foco) || selComodo ? <rect className={`sala-foco${selComodo ? ' forte' : ''}`} x={-T - 4} y={-T - 4} width={q.w + 2 * T + 8} height={q.h + 2 * T + 8} rx={4} /> : null}
       {q.ares.map((a) => <ArBase key={a.id} q={q} a={a} sel={selEl === a.id} />)}
       {q.janelas.map((j) => <Janela key={j.id} q={q} j={j} sel={selEl === j.id} ruim={av.elsRuins.has(j.id)} />)}

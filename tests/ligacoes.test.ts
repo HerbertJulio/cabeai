@@ -30,12 +30,15 @@ describe('cômodos que grudam', () => {
     const porta = { ...p, id: 'p', criado: 1 } as ElParede;
     // ainda encostados: fica
     expect(revisarLigacoes({ a: quarto, c: cor }, [porta])).toEqual({ remover: [], mudar: [] });
-    // o corredor desceu: o trecho dividido encolheu e a porta vai para o meio do que sobrou
-    const desceu = { ...cor, y: 180 };
-    const r = revisarLigacoes({ a: quarto, c: desceu }, [porta]);
+    // a porta fica perto do canto de baixo do quarto (o de cima é o fundo do corredor)
+    expect(p).toMatchObject({ inicio: 210, dobradica: 'b' });
+    // o corredor desceu um pouco: a porta ainda cabe no trecho e fica onde está
+    expect(revisarLigacoes({ a: quarto, c: { ...cor, y: 180 } }, [porta]).mudar).toEqual([]);
+    // subiu: o trecho dividido acaba antes da porta, e ela vai para o canto de cima, virando a dobradiça
+    const subiu = { ...cor, y: -150 };
+    const r = revisarLigacoes({ a: quarto, c: subiu }, [porta]);
     expect(r.remover).toEqual([]);
-    expect(r.mudar[0]).toMatchObject({ id: 'p', largura: 80 });
-    expect(r.mudar[0].inicio).toBeGreaterThanOrEqual(180);
+    expect(r.mudar[0]).toEqual({ id: 'p', inicio: 10, largura: 80, dobradica: 'a' });
     // longe: a porta sai
     expect(revisarLigacoes({ a: quarto, c: { ...cor, x: 500 } }, [porta]).remover).toEqual(['p']);
     // uma porta posta à mão não sai

@@ -30,7 +30,9 @@ const P: Record<string, ReactNode> = {
   imagem: <><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="9" cy="10" r="2" /><path d="m21 16-5-5-9 9" /></>,
   copiar: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>,
   lista: <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />,
-  duplicar: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M4 16V6a2 2 0 0 1 2-2h10" /><path d="M14 11v6M11 14h6" /></>
+  duplicar: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M4 16V6a2 2 0 0 1 2-2h10" /><path d="M14 11v6M11 14h6" /></>,
+  virar: <path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" />,
+  porta: <><path d="M2 20h5M19 20h3" /><path d="M7 20V8" /><path d="M7 8a12 12 0 0 1 12 12" strokeDasharray="2.5 2.5" /></>
 };
 
 export function Icone({ n, className }: { n: string; className?: string }) {

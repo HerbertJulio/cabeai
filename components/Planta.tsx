@@ -4,20 +4,20 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEven
 import { espacos, imaBorda, imaComodo, retDesenhado } from '@/lib/casa';
 import { COMODO_NOME, T, horizontal } from '@/lib/catalogo';
 import type { Borda } from '@/lib/edicao';
-import { comodosDoAndar, avaliacao, cq, idsVisiveis, listaAtiva, vizinhosDeParede, type ParedeVizinha } from '@/lib/consultas';
+import { comodosDoAndar, avaliacao, cq, elVisto, idsVisiveis, ladosDaPorta, listaAtiva, vizinhosDeParede, type ParedeVizinha } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
-import { dims, geoEl, ima, paredePerto, prender, ret, uDaParede } from '@/lib/geometria';
+import { dims, geoEl, geoPorta, giraParaDentro, ima, jeitoDaPorta, paredePerto, prender, ret, temGiro, uDaParede, uv2xy } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
 import { registrarPlanta } from '@/lib/exportar';
 import { areaDoAndar, fmtArea } from '@/lib/resumo';
 import {
   abrirMenu, alternarParede, atualizar, avisarLigacoes, conectarComodo, desenharComodo, editarItem, estadoAtual, esticar, estreito, fecharMenu, fimEsticar, focarComodo, girar, girarComodo,
-  limparSel, moverComodo, salvarEl, salvarMovel, selecionar, selecionarComodo, toast, useApp, zoomEm
+  limparSel, moverComodo, porNaParede, salvarElVisto, salvarMovel, selecionar, selecionarComodo, toast, useApp, virarAbertura, virarDobradica, zoomEm
 } from '@/lib/store';
-import type { Comodo, Vista } from '@/lib/tipos';
+import type { Comodo, Dados, Parede, Vista } from '@/lib/tipos';
 import { fmtM, n1 } from '@/lib/util';
 import { layoutDe, vbAtual, vbBase, type Layout } from '@/lib/vista';
-import { RotulosSala, Sala, Seta } from './desenho/Sala';
+import { PortasPorCima, RotulosSala, Sala, Seta } from './desenho/Sala';
 
 const ALVOS = '.mv, .jan, .arel, .porta-el, .interr-el';
 type Pt = { x: number; y: number };
@@ -29,6 +29,12 @@ const BORDAS: Borda[] = ['esq', 'dir', 'cima', 'baixo'];
 const VB_VAZIO: Layout['vb'] = [-50, -50, 1300, 900];
 /** Medida da trena, em coordenadas da planta (cm). */
 interface Trena { a: Pt; b: Pt }
+/** O item tocado na planta: móvel ({id}) ou item de parede ({eid}); a porta tocada pelo lado do vizinho traz "via". */
+function alvoDoEl(el: Element): { id?: string; eid?: string; via?: string } {
+  if (!el.hasAttribute('data-eid')) return { id: el.getAttribute('data-id')! };
+  const via = el.getAttribute('data-via');
+  return via ? { eid: el.getAttribute('data-eid')!, via } : { eid: el.getAttribute('data-eid')! };
+}
 /** Onde fica, no desenho do cômodo, um ponto da linha do meio da parede (v = deslocamento para dentro). */
 function naParede(c: Comodo, p: ParedeVizinha['parede'], u: number, v = 0): Pt {
   if (p === 'cima') return { x: u, y: -T / 2 + v };
@@ -93,7 +99,8 @@ export default function Planta() {
     for (const id of lay0.ids) { const c = dados.comodos[id]; if (c && c.andar === congelado.andar) off[id] = { x: congelado.ox + c.x, y: congelado.oy + c.y }; else if (congelado.off[id]) off[id] = congelado.off[id]; }
     return { ...lay0, off, vb: congelado.vb, andares: congelado.andares };
   }, [lay0, congelado, dados, vista, desenho.ativo]);
-  const base = useMemo(() => vbBase(lay, tela.w, tela.h, tela.w < 900), [lay, tela]);
+  // desenhando, a barra do desenho fica embaixo: a planta se enquadra acima dela
+  const base = useMemo(() => vbBase(lay, tela.w, tela.h, tela.w < 900, desenho.ativo ? (tela.w < 900 ? 180 : 215) : 0), [lay, tela, desenho.ativo]);
   const vb = vbAtual(base, cam);
   useEffect(() => { const s = estadoAtual(); if (s.camBase.cx !== base.cx || s.camBase.cy !== base.cy) atualizar((e) => { e.camBase = { cx: base.cx, cy: base.cy }; }); }, [base]);
 
@@ -101,9 +108,9 @@ export default function Planta() {
   const g = useRef({
     ptrs: new Map<number, Pt>(),
     drag: null as null | { id: string; dx: number; dy: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number },
-    dragEl: null as null | { id: string; du: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number },
+    dragEl: null as null | { id: string; du: number; via: string | null; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number },
     dragQ: null as null | { id: string; dx: number; dy: number; ox: number; oy: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number; offAntes: Pt },
-    pan: null as null | { pid: number; x: number; y: number; cx0: number; cy0: number; esc: number; moveu: boolean; qid: string | null; tit: boolean; so?: boolean },
+    pan: null as null | { pid: number; x: number; y: number; cx0: number; cy0: number; esc: number; moveu: boolean; qid: string | null; tit: boolean; so?: boolean; por?: Pt },
     risco: null as null | { pid: number; andar: string | null; ox: number; oy: number; p0: Pt; r?: { x: number; y: number; w: number; h: number } },
     trena: null as null | { pid: number; a: Pt; cx: number; cy: number },
     estica: null as null | { pid: number; id: string; borda: Borda; ox: number; oy: number; moveu: boolean },
@@ -143,9 +150,9 @@ export default function Planta() {
     }
     return soDentro ? (md < 1 ? melhor : null) : melhor;
   }
-  function infoAlvo(target: EventTarget | null, cx: number, cy: number): { id?: string; eid?: string; qid?: string; x?: number; y?: number; tit?: string } {
+  function infoAlvo(target: EventTarget | null, cx: number, cy: number): { id?: string; eid?: string; via?: string; qid?: string; x?: number; y?: number; tit?: string } {
     const el = target instanceof Element ? target.closest(ALVOS) : null;
-    if (el && svgRef.current?.contains(el)) return el.hasAttribute('data-eid') ? { eid: el.getAttribute('data-eid')! } : { id: el.getAttribute('data-id')! };
+    if (el && svgRef.current?.contains(el)) return alvoDoEl(el);
     const tit = target instanceof Element ? target.closest('[data-qt]') : null;
     const p = ptSvg(cx, cy), qid = tit ? tit.getAttribute('data-qt') : salaNoPonto(p, false);
     if (!qid) return {};
@@ -181,7 +188,7 @@ export default function Planta() {
     const s = estadoAtual();
     if (s.verCen) { abrirMenu({ x: cx, y: cy, tipo: 'cen-planta', cen: s.verCen, teclado }); return; }
     if (info.id && s.dados.moveis[info.id]) { selecionar({ id: info.id }, { painel: false }); atualizar((e) => { e.folha = false; }); abrirMenu({ x: cx, y: cy, tipo: 'item', id: info.id, teclado }); return; }
-    if (info.eid && s.dados.els[info.eid]) { selecionar({ eid: info.eid }, { painel: false }); atualizar((e) => { e.folha = false; }); abrirMenu({ x: cx, y: cy, tipo: 'item', eid: info.eid, teclado }); return; }
+    if (info.eid && s.dados.els[info.eid]) { selecionar({ eid: info.eid }, { painel: false, via: info.via }); atualizar((e) => { e.folha = false; }); abrirMenu({ x: cx, y: cy, tipo: 'item', eid: info.eid, teclado }); return; }
     if (info.qid && s.dados.comodos[info.qid]) {
       if (info.tit && s.vista === 'casa') { selecionarComodo(info.qid); abrirMenu({ x: cx, y: cy, tipo: 'comodo', comodo: info.qid, teclado }); return; }
       const q = s.dados.comodos[info.qid], pp = paredePerto(q, info.x || 0, info.y || 0);
@@ -275,6 +282,8 @@ export default function Planta() {
       return;
     }
     if (perto('[data-girar-m]')) { e.preventDefault(); girar(); return; }
+    const vp = perto('[data-virar-porta]');
+    if (vp && s.selEl) { e.preventDefault(); if (vp.getAttribute('data-virar-porta') === 'abre') virarAbertura(s.selEl); else virarDobradica(s.selEl); return; }
     const pv = perto('[data-parede-viz]');
     if (pv && s.selComodo) { e.preventDefault(); alternarParede(s.selComodo, pv.getAttribute('data-parede-viz')!); return; }
     const alca = perto('[data-alca]');
@@ -297,8 +306,16 @@ export default function Planta() {
       return;
     }
     const tit = perto('[data-qt]');
+    // modo de desenhar com a ferramenta de porta ou janela: tocar numa porta ou janela pega ela (seleciona e arrasta
+    // pela parede, como fora do modo); tocar na parede põe a peça ali; arrastar move a planta
+    if (s.desenho.ativo && !s.verCen && s.desenho.item && !perto('.porta-el, .jan')) {
+      e.preventDefault();
+      iniciarPan(e, null, true);
+      if (g.pan) g.pan.por = ptSvg(e.clientX, e.clientY);
+      return;
+    }
     // modo de desenhar: o cômodo (pelo nome ou pelo piso) se arrasta; fora dele, o arraste desenha um cômodo novo
-    if (s.desenho.ativo && !s.verCen) {
+    if (s.desenho.ativo && !s.verCen && !s.desenho.item) {
       const p = ptSvg(e.clientX, e.clientY), qid = tit ? tit.getAttribute('data-qt') : salaNoPonto(p, true);
       if (qid && arrastarComodo(qid, e)) return;
       e.preventDefault();
@@ -319,13 +336,15 @@ export default function Planta() {
     e.preventDefault();
     const eid = alvo.getAttribute('data-eid'), mid = alvo.getAttribute('data-id');
     if (eid ? !s.dados.els[eid] : !mid || !s.dados.moveis[mid]) return;
-    const ja = eid ? s.selEl === eid : s.sel === mid;
-    if (!ja) selecionar(eid ? { eid } : { id: mid! });
+    // porta da parede dividida tocada pelo lado do vizinho: é a mesma porta, medida na parede de lá
+    const via = eid ? alvo.getAttribute('data-via') : null;
+    const ja = eid ? s.selEl === eid && (!via || s.comodo === via) : s.sel === mid;
+    if (!ja) selecionar(eid ? { eid } : { id: mid! }, via ? { via } : {});
     atualizar((x) => { x.folha = false; });
     const p = ptSvg(e.clientX, e.clientY);
     if (eid) {
-      const el = s.dados.els[eid], q = s.dados.comodos[el.comodo], gg = geoEl(q, el), l = localDe(el.comodo, p);
-      g.dragEl = { id: eid, du: uDaParede(el.parede, l) - gg.a, pid: e.pointerId, moveu: false, ativo: false, cx: e.clientX, cy: e.clientY };
+      const f = quadroDoItem(s.dados, eid, via, p);
+      if (f) g.dragEl = { id: eid, du: f.u - f.a, via, pid: e.pointerId, moveu: false, ativo: false, cx: e.clientX, cy: e.clientY };
     } else {
       const m = s.dados.moveis[mid!], l = localDe(m.comodo, p);
       g.drag = { id: mid!, dx: l.x - m.x, dy: l.y - m.y, pid: e.pointerId, moveu: false, ativo: false, cx: e.clientX, cy: e.clientY };
@@ -390,12 +409,12 @@ export default function Planta() {
     const de = g.dragEl;
     if (de && e.pointerId === de.pid) {
       if (!de.ativo) { if (Math.hypot(e.clientX - de.cx, e.clientY - de.cy) < 5) return; de.ativo = true; atualizar((x) => { x.arrastando = true; }); }
-      const el = s.dados.els[de.id]; if (!el) return;
-      const q = s.dados.comodos[el.comodo], gg = geoEl(q, el), w = gg.b - gg.a, l = localDe(el.comodo, ptSvg(e.clientX, e.clientY));
-      let a = Math.min(Math.max(0, uDaParede(el.parede, l) - de.du), gg.L - w);
-      if (s.imaOn) { if (a < 6) a = 0; if (gg.L - w - a < 6) a = gg.L - w; }
+      const f = quadroDoItem(estadoAtual().dados, de.id, de.via, ptSvg(e.clientX, e.clientY)); if (!f) return;
+      let a = Math.min(Math.max(0, f.u - de.du), f.L - f.w);
+      if (s.imaOn) { if (a < 6) a = 0; if (f.L - f.w - a < 6) a = f.L - f.w; }
       a = Math.round(a);
-      if (a !== Math.round(gg.a)) { de.moveu = true; salvarEl(el.id, { inicio: a }); }
+      // pela parede do vizinho, a porta corre por ela inteira (se sair da parede dividida, passa a ser dele)
+      if (a !== Math.round(f.a)) { de.moveu = true; salvarElVisto(de.id, f.pelaVia ? de.via : null, { inicio: a }); }
       return;
     }
     const d = g.drag; if (!d || e.pointerId !== d.pid) return;
@@ -418,13 +437,55 @@ export default function Planta() {
     }
   }
 
+  /** O item de parede no quadro em que ele é arrastado: pela parede do vizinho "via" (a porta inteira na parede que os
+   *  dois dividem: é a mesma porta, medida de lá) ou pela do cômodo dela (com o ponto do dedo levado pela planta do
+   *  andar, se ela foi pega pelo vizinho). "u" é o dedo ao longo da parede, "a" o começo do item, "w" a largura. */
+  function quadroDoItem(d: Dados, eid: string, via: string | null, pt: Pt): { u: number; a: number; L: number; w: number; pelaVia: boolean } | null {
+    const e = d.els[eid]; if (!e || !d.comodos[e.comodo]) return null;
+    const vis = via && via !== e.comodo ? elVisto(d, eid, via) : null;
+    if (vis && !vis.dono) { const gg = geoEl(vis.q, vis.e); return { u: uDaParede(vis.e.parede, localDe(vis.q.id, pt)), a: gg.a, L: gg.L, w: gg.b - gg.a, pelaVia: true }; }
+    const q = d.comodos[e.comodo], gg = geoEl(q, e), viz = via && via !== e.comodo ? d.comodos[via] : null, lv = viz ? localDe(viz.id, pt) : null;
+    const l = viz && lv ? { x: lv.x + viz.x - q.x, y: lv.y + viz.y - q.y } : localDe(q.id, pt);
+    return { u: uDaParede(e.parede, l), a: gg.a, L: gg.L, w: gg.b - gg.a, pelaVia: false };
+  }
+
+  /** Ferramenta de parede: a parede mais perto do toque, no cômodo do lado em que o dedo caiu (a metade da espessura
+   *  da parede de cada lado é do cômodo daquele lado). Longe de qualquer parede, null. */
+  function paredeNoPonto(p: Pt): { qid: string; parede: Parede; u: number } | null {
+    const s = estadoAtual(), L = layRef.current, lim = Math.max(45, 28 / escalaTela());
+    let melhor: { qid: string; parede: Parede; u: number; fora: number } | null = null;
+    for (const id of L.ids) {
+      const c = s.dados.comodos[id], o = L.off[id]; if (!c || !o) continue;
+      const l = { x: p.x - o.x, y: p.y - o.y };
+      const fora = Math.hypot(Math.max(-l.x, 0, l.x - c.w), Math.max(-l.y, 0, l.y - c.h));
+      if (fora > T + lim || (melhor && fora >= melhor.fora)) continue;
+      const pp = paredePerto(c, l.x, l.y);
+      if ((fora > 0 ? fora : pp.dist) > lim) continue;
+      melhor = { qid: id, parede: pp.parede, u: pp.u, fora };
+    }
+    return melhor;
+  }
+  /** Põe a porta, a passagem ou a janela da ferramenta na parede tocada. */
+  function colocarPeca(p: Pt) {
+    const item = estadoAtual().desenho.item; if (!item) return;
+    const w = paredeNoPonto(p);
+    if (!w) { toast(tx('Toque em cima de uma parede (ou bem perto dela) para pôr ali.', 'Tap on a wall (or right next to it) to put it there.'), 'erro'); return; }
+    const r = porNaParede(item, w.qid, w.parede, w.u);
+    if ('erro' in r) { toast(r.erro, 'erro'); return; }
+    const q = estadoAtual().dados.comodos[w.qid];
+    toast(item === 'porta' || item === 'correr'
+      ? tx(`${r.nome} em ${q.nome}, abrindo para dentro dele. Os botões ao lado viram a porta; toque em outra parede para pôr mais.`, `${r.nome} added to ${q.nome}, opening into it. The buttons next to it flip the door; tap another wall to add more.`)
+      : tx(`${r.nome} em ${q.nome}. Arraste pela parede para ajustar; toque em outra parede para pôr mais.`, `${r.nome} added to ${q.nome}. Drag it along the wall to adjust; tap another wall to add more.`), '', 'desfazer');
+  }
+
   // Toque sem arrastar: abre as opções (simples); dois toques seguidos editam.
   function toque(chave: string) {
     const agora = Date.now(), duplo = g.toque && g.toque.chave === chave && agora - g.toque.t < 400;
     clearTimeout(g.toqueT);
     if (duplo) { g.toque = null; editarItem(); return; }
     g.toque = { chave, t: agora };
-    if (estadoAtual().modo === 'simples') {
+    // (no modo de desenhar o painel de baixo não abre: a barra do desenho fica lá)
+    if (estadoAtual().modo === 'simples' && !estadoAtual().desenho.ativo) {
       g.toqueT = window.setTimeout(() => {
         const s = estadoAtual();
         if (g.toque && g.toque.chave === chave && !g.drag && !g.dragEl && (s.sel === chave || s.selEl === chave) && !s.menu && !s.dlg) atualizar((x) => { x.folha = true; });
@@ -487,7 +548,11 @@ export default function Planta() {
       return;
     }
     const pan = g.pan;
-    if (pan && e.pointerId === pan.pid) { g.pan = null; solta(pan.pid); if (!pan.moveu && !cancelou && !pan.so) toqueVazio(pan); return; }
+    if (pan && e.pointerId === pan.pid) {
+      g.pan = null; solta(pan.pid);
+      if (!pan.moveu && !cancelou) { if (pan.por) colocarPeca(pan.por); else if (!pan.so) toqueVazio(pan); }
+      return;
+    }
     const dq = g.dragQ;
     if (dq && e.pointerId === dq.pid) {
       g.dragQ = null; solta(dq.pid); setJuntaQ(null);
@@ -539,7 +604,7 @@ export default function Planta() {
     if (g.dragEl && !g.dragEl.moveu) g.dragEl = null;
     if (g.dragQ && !g.dragQ.moveu) { g.dragQ = null; setCongelado(null); }
     if (g.pan && !g.pan.moveu) g.pan = null;
-    abrirMenuNaPlanta(x, y, teclado && el ? (el.hasAttribute('data-eid') ? { eid: el.getAttribute('data-eid')! } : { id: el.getAttribute('data-id')! }) : infoAlvo(e.target, x, y), teclado);
+    abrirMenuNaPlanta(x, y, teclado && el ? alvoDoEl(el) : infoAlvo(e.target, x, y), teclado);
   }
   function onKeyDown(e: React.KeyboardEvent<SVGSVGElement>) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -551,7 +616,8 @@ export default function Planta() {
       return;
     }
     e.preventDefault();
-    selecionar(gEl.hasAttribute('data-eid') ? { eid: gEl.getAttribute('data-eid')! } : { id: gEl.getAttribute('data-id')! }, { abrir: s.modo === 'simples' });
+    const a = alvoDoEl(gEl);
+    selecionar(a.id ? { id: a.id } : { eid: a.eid }, { abrir: s.modo === 'simples' && !s.desenho.ativo, via: a.via });
     if (s.modo === 'simples') setTimeout(() => (document.querySelector('#folha-in button') as HTMLElement | null)?.focus({ preventScroll: true }), 30);
   }
 
@@ -658,6 +724,44 @@ export default function Planta() {
       </g>
     );
   })();
+  // botões de virar a porta selecionada: para que lado ela abre (seta atravessando a parede) e o lado da dobradiça
+  // (seta ao longo da parede). Ficam do lado da parede para onde a folha não abre, para não cobrir a porta.
+  const botoesPorta = (() => {
+    if (!selEl || verCen || arrastando || medir) return null;
+    const e0 = dados.els[selEl]; if (!e0 || e0.tipo !== 'porta' || e0.semParede) return null;
+    const jeito = jeitoDaPorta(e0); if (jeito === 'vao') return null;
+    // o cômodo onde a porta está desenhada: o dela, ou o vizinho que a mostra (vendo só ele)
+    const qid = lay.off[e0.comodo] ? e0.comodo : comodo && lay.off[comodo] ? comodo : null;
+    const q = qid ? cq(dados, qid) : null, p = q ? q.portas.find((x) => x.id === selEl) : null;
+    if (!qid || !q || !p) return null;
+    const o = lay.off[qid], gp = geoPorta(q, p), meio = (gp.a + gp.b) / 2, r = 12 * upx, hz = horizontal(p.parede);
+    const v = giraParaDentro(p) ? -(T + r + 6 * upx) : r + 6 * upx;
+    const lados = ladosDaPorta(dados, e0), outro = e0.abre === 'fora' ? lados.dentro : lados.fora;
+    const bts: { k: 'abre' | 'dob'; rot: string }[] = [];
+    if (temGiro(p)) bts.push({ k: 'abre', rot: tx(`Abrir para ${outro}`, `Open into ${outro}`) });
+    if (jeito === 'abrir' || jeito === 'correr') bts.push({ k: 'dob', rot: jeito === 'correr' ? tx('Correr para o outro lado', 'Slide to the other side') : tx('Virar a dobradiça para o outro lado', 'Flip the hinge to the other side') });
+    const passo = 2 * r + 6 * upx, VERT = 'M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4', HORIZ = 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4';
+    return (
+      <g className="portas-btns" transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
+        {bts.map((b, i) => {
+          const c = uv2xy(q, p.parede, meio + (i - (bts.length - 1) / 2) * passo, v);
+          return (
+            <g key={b.k} className="porta-btn" data-virar-porta={b.k} role="button" aria-label={b.rot} transform={`translate(${n1(c[0])} ${n1(c[1])})`}>
+              <title>{b.rot}</title>
+              <circle r={f3(r)} />
+              <g transform={`scale(${f3(r / 15)}) translate(-12 -12)`}><path d={(b.k === 'abre') === hz ? VERT : HORIZ} /></g>
+            </g>
+          );
+        })}
+      </g>
+    );
+  })();
+  // portas atrapalhadas em qualquer cômodo visível: a porta é dos dois lados da parede
+  const bloqueadas = useMemo(() => {
+    const b = new Set<string>();
+    for (const id of lay.ids) { const av = avaliacao(dados, verCen, id); if (av) for (const x of av.portasBloq) b.add(x); }
+    return b;
+  }, [dados, verCen, lay.ids]);
   const girarMovel = (() => {
     if (!sel || verCen || arrastando || desenho.ativo || medir) return null;
     const m = dados.moveis[sel], o = m ? lay.off[m.comodo] : null;
@@ -674,7 +778,7 @@ export default function Planta() {
   const rotulo = !b0 ? tx('Planta vazia', 'Empty floor plan') : vista === 'casa' ? tx('Planta da casa', 'Home floor plan') : ids.length > 1 ? tx('Todos os cômodos lado a lado', 'All rooms side by side') : tx(`Planta de ${b0.nome}, ${fmtM(b0.w)} por ${fmtM(b0.h)} metros`, `Floor plan of ${b0.nome}, ${fmtM(b0.w)} by ${fmtM(b0.h)} meters`);
   return (
     <svg id="planta" ref={svgRef} xmlns="http://www.w3.org/2000/svg" role="group" aria-label={rotulo} viewBox={vb.map(n1).join(' ')}
-      className={`${arrastando ? 'arrastando' : ''} vista-${vista}${desenho.ativo ? ' desenhando' : ''}${medir ? ' medindo' : ''}${semCamadas}`}
+      className={`${arrastando ? 'arrastando' : ''} vista-${vista}${desenho.ativo ? ' desenhando' : ''}${desenho.ativo && desenho.item ? ' ferr-parede' : ''}${medir ? ' medindo' : ''}${semCamadas}`}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(e) => fim(e, false)} onPointerCancel={(e) => fim(e, true)}
       onLostPointerCapture={(e) => { if (g.ptrs.has(e.pointerId) && !g.drag && !g.dragEl && !g.dragQ && !g.pan) g.ptrs.delete(e.pointerId); }}
       onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
@@ -694,9 +798,15 @@ export default function Planta() {
         return (
           <g key={id} className={`sala${selComodo === id ? ' sel-q' : ''}`} data-q={id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
             <Sala q={q} lista={listaAtiva(dados, verCen, id)} av={av} sel={sel} selEl={selEl} foco={id === comodo && ids.length > 1} vista={vista as Vista}
-              ty={lay.ex[id]?.ty ?? null} setasTodos={modo === 'avancado' && setasTodos} selComodo={selComodo === id} />
+              ty={lay.ex[id]?.ty ?? null} setasTodos={modo === 'avancado' && setasTodos} selComodo={selComodo === id} bloqueadas={bloqueadas} />
           </g>
         );
+      })}
+      {/* planta da casa: as portas que abrem para o vizinho ficam por cima do piso dele */}
+      {vista === 'casa' && lay.ids.map((id) => {
+        const q = cq(dados, id); if (!q) return null;
+        const o = lay.off[id] || { x: 0, y: 0 };
+        return <g key={'pc' + id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}><PortasPorCima q={q} selEl={selEl} bloqueadas={bloqueadas} /></g>;
       })}
       {/* nomes de portas, janelas e pontos por cima de tudo (móveis e cômodos vizinhos) */}
       {lay.ids.map((id) => {
@@ -707,6 +817,7 @@ export default function Planta() {
       {juntas}
       {alcas}
       {paredeBtns}
+      {botoesPorta}
       {girarMovel}
       {risco && risco.w > 0 && risco.h > 0 && (
         <g className="risco-g" aria-hidden="true">

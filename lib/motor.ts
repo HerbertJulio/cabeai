@@ -2,7 +2,7 @@
 import { NOME_PAREDE, PAREDES, PONTO_DO, horizontal } from './catalogo';
 import {
   COSTAS, FRENTE, avaliar, bloqueiaPorta, cobreInterruptor, dims, distRet, folgas, folgasRet, geoEl, geoPorta, janelaRuim, ladosCama,
-  lugarLivre, naAreaDoAr, naFrentePorta, noTrecho, normRot, paredeDe, pontosUsados, posValida, precisaFrente, ret, sobrepoe, temCadeiras,
+  lugarLivre, naAreaDoAr, naFrentePorta, noTrecho, normRot, paredeDe, pontosUsados, posValida, precisaFrente, precisaFrenteLivre, ret, sobrepoe, temCadeiras,
   uv2xy, zonaFrente, zonasCadeiras
 } from './geometria';
 import { registro, tx } from './i18n';
@@ -19,7 +19,7 @@ export function aleatorio(semente: number): () => number {
 
 function estaticoOk(q: ComodoCompleto, m: Movel, r: Ret): boolean {
   if (r.x1 < -0.5 || r.y1 < -0.5 || r.x2 > q.w + 0.5 || r.y2 > q.h + 0.5) return false;
-  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && !p.semParede && naFrentePorta(q, p, r)))) return false;
+  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (precisaFrenteLivre(p) && naFrentePorta(q, p, r)))) return false;
   if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   return true;
@@ -36,7 +36,7 @@ function zonasDe(m: Movel, x: number, y: number, rot: number): Ret[] {
   if (temCadeiras(m)) for (const z of zonasCadeiras(m, x, y, rot)) out.push(z.r);
   return out;
 }
-const portasLivres = (q: ComodoCompleto, zs: Ret[]) => zs.every((z) => !q.portas.some((p) => p.abre === 'dentro' && bloqueiaPorta(q, p, z)));
+const portasLivres = (q: ComodoCompleto, zs: Ret[]) => zs.every((z) => !q.portas.some((p) => bloqueiaPorta(q, p, z)));
 
 /** Posições encostadas: costas (ou a lateral, para cama de solteiro e berço) numa parede. Mesa com cadeiras dos dois lados vai para o meio. */
 function candidatosDe(q: ComodoCompleto, m: Movel): Cand[] {

@@ -1,7 +1,7 @@
 // Geometria de um cômodo (cm; origem = canto interno de cima à esquerda do cômodo).
 import { tx } from './i18n';
 import { NOME_PAREDE, PAREDES, PONTO_USA, PUXAR_CADEIRA, TIPOS, VERBO_AB, ehInterruptor, horizontal, pontoDe } from './catalogo';
-import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Ponto, Problema, Ret, RetMedida, TipoMovel } from './tipos';
+import type { Avaliacao, ComodoCompleto, ElParede, JeitoPorta, Movel, Parede, Ponto, Problema, Ret, RetMedida, TipoMovel } from './tipos';
 import { clamp } from './util';
 
 export type Lado = 'esq' | 'dir' | 'cima' | 'baixo';
@@ -106,22 +106,42 @@ export function geoPorta(q: Caixa, p: ElParede): { a: number; b: number; hu: num
   return { a: g.a, b: g.b, hu: p.dobradica === 'a' ? g.a : g.b, du: p.dobradica === 'a' ? 1 : -1, sv: p.abre === 'dentro' ? 1 : -1, r: g.b - g.a };
 }
 
-/** O retângulo entra no quarto de círculo que a folha da porta varre? */
-export function bloqueiaPorta(q: Caixa, p: ElParede, r: Ret): boolean {
-  if (p.abre !== 'dentro') return false;
+type ComJeito = Pick<ElParede, 'abre' | 'estilo'> & { semParede?: boolean };
+/** De abrir, dupla, de correr ou passagem (vão livre). */
+export const jeitoDaPorta = (p: ComJeito): JeitoPorta =>
+  p.abre === 'vao' || p.semParede ? 'vao' : p.estilo === 'dupla' || p.estilo === 'correr' ? p.estilo : 'abrir';
+/** A porta tem folha que gira (de abrir ou dupla): é ela que escolhe para que lado abre. */
+export const temGiro = (p: ComJeito): boolean => { const j = jeitoDaPorta(p); return j === 'abrir' || j === 'dupla'; };
+/** A folha gira para dentro deste cômodo (e precisa do quarto de círculo livre). */
+export const giraParaDentro = (p: ComJeito): boolean => p.abre === 'dentro' && temGiro(p);
+
+/** Folhas que giram, em coordenadas da parede: dobradiça em "hu", abrindo no sentido "du", com raio "r".
+ *  Porta de abrir tem uma; a dupla tem duas (metade da largura cada, uma em cada ponta); de correr e passagem, nenhuma. */
+export function folhasPorta(q: Caixa, p: ElParede): { hu: number; du: number; r: number }[] {
+  const j = jeitoDaPorta(p);
+  if (j !== 'abrir' && j !== 'dupla') return [];
   const g = geoPorta(q, p);
-  const R = rectUV(q, p.parede, r);
-  const su1 = Math.min(g.hu, g.hu + g.du * g.r);
-  const su2 = Math.max(g.hu, g.hu + g.du * g.r);
-  const iu1 = Math.max(R.u1, su1);
-  const iu2 = Math.min(R.u2, su2);
-  const iv1 = Math.max(R.v1, 0);
-  const iv2 = Math.min(R.v2, g.r);
-  if (iu2 - iu1 <= 0.5 || iv2 - iv1 <= 0.5) return false;
-  const cu = Math.min(Math.max(g.hu, iu1), iu2);
-  const cv = Math.min(Math.max(0, iv1), iv2);
-  return Math.hypot(cu - g.hu, cv) < g.r - 1;
+  if (j === 'dupla') { const r = g.r / 2; return [{ hu: g.a, du: 1, r }, { hu: g.b, du: -1, r }]; }
+  return [{ hu: g.hu, du: g.du, r: g.r }];
 }
+
+/** O retângulo entra no quarto de círculo que alguma folha da porta varre (do lado de dentro do cômodo)? */
+export function bloqueiaPorta(q: Caixa, p: ElParede, r: Ret): boolean {
+  if (!giraParaDentro(p)) return false;
+  const R = rectUV(q, p.parede, r);
+  return folhasPorta(q, p).some((f) => {
+    const su1 = Math.min(f.hu, f.hu + f.du * f.r), su2 = Math.max(f.hu, f.hu + f.du * f.r);
+    const iu1 = Math.max(R.u1, su1), iu2 = Math.min(R.u2, su2);
+    const iv1 = Math.max(R.v1, 0), iv2 = Math.min(R.v2, f.r);
+    if (iu2 - iu1 <= 0.5 || iv2 - iv1 <= 0.5) return false;
+    const cu = Math.min(Math.max(f.hu, iu1), iu2), cv = Math.min(Math.max(0, iv1), iv2);
+    return Math.hypot(cu - f.hu, cv) < f.r - 1;
+  });
+}
+
+/** O vão precisa de passagem livre na frente (40 cm) deste lado: a porta não gira para cá (abre para o outro lado,
+ *  é de correr ou é só a passagem). A parede tirada não conta (o espaço continua). */
+export const precisaFrenteLivre = (p: ElParede): boolean => !p.semParede && !giraParaDentro(p);
 
 export function naFrentePorta(q: Caixa, p: ElParede, r: Ret): boolean {
   const g = geoPorta(q, p);
@@ -368,8 +388,8 @@ export function avaliar(q: ComodoCompleto, lista: Movel[]): Avaliacao {
     const r = ret(m);
     if (r.x1 < -0.5 || r.y1 < -0.5 || r.x2 > q.w + 0.5 || r.y2 > q.h + 0.5) anota(tx(`${m.nome} está saindo do cômodo.`, `${m.nome} is sticking out of the room.`), m.id);
     for (const p of q.portas) {
-      if (p.abre === 'dentro' && bloqueiaPorta(q, p, r)) { anota(tx(`${m.nome} atrapalha a abertura de “${p.nome}”.`, `${m.nome} blocks “${p.nome}” from opening.`), m.id, p.id); portasBloq.add(p.id); }
-      else if (p.abre !== 'dentro' && !p.semParede && naFrentePorta(q, p, r)) { anota(tx(`${m.nome} fica na frente de “${p.nome}”.`, `${m.nome} is in front of “${p.nome}”.`), m.id, p.id); portasBloq.add(p.id); }
+      if (bloqueiaPorta(q, p, r)) { anota(tx(`${m.nome} atrapalha a abertura de “${p.nome}”.`, `${m.nome} blocks “${p.nome}” from opening.`), m.id, p.id); portasBloq.add(p.id); }
+      else if (precisaFrenteLivre(p) && naFrentePorta(q, p, r)) { anota(tx(`${m.nome} fica na frente de “${p.nome}”.`, `${m.nome} is in front of “${p.nome}”.`), m.id, p.id); portasBloq.add(p.id); }
     }
     for (const i of q.interruptores) {
       if (!cobreInterruptor(q, i, r, m.alto, m.tipo)) continue;
@@ -398,7 +418,7 @@ export function avaliar(q: ComodoCompleto, lista: Movel[]): Avaliacao {
       for (const z of zonasCadeiras(m)) {
         const g = f[ladoNaSala(m.rot, z.lado)].gap;
         if (g < nc - 0.5) falta = Math.min(falta, g);
-        for (const p of q.portas) if (p.abre === 'dentro' && bloqueiaPorta(q, p, z.r)) { anota(tx(`As cadeiras de ${m.nome} atrapalham a abertura de “${p.nome}”.`, `The chairs at ${m.nome} block “${p.nome}” from opening.`), m.id, p.id); portasBloq.add(p.id); }
+        for (const p of q.portas) if (bloqueiaPorta(q, p, z.r)) { anota(tx(`As cadeiras de ${m.nome} atrapalham a abertura de “${p.nome}”.`, `The chairs at ${m.nome} block “${p.nome}” from opening.`), m.id, p.id); portasBloq.add(p.id); }
       }
       if (falta < Infinity) anota(tx(`As cadeiras de ${m.nome} precisam de ${nc} cm livres para puxar e sentar (tem ${Math.max(0, Math.round(falta))} cm).`, `The chairs at ${m.nome} need ${nc} cm free to pull out and sit (have ${Math.max(0, Math.round(falta))} cm).`), m.id);
     }
@@ -438,7 +458,7 @@ export function posValida(q: ComodoCompleto, m: Movel, x: number, y: number, rot
   const d = dims(m, rot), r = { x1: x, y1: y, x2: x + d.w, y2: y + d.h };
   if (x < 0 || y < 0 || r.x2 > q.w || r.y2 > q.h) return false;
   if (outros.some((o) => sobrepoe(r, ret(o)))) return false;
-  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (p.abre !== 'dentro' && !p.semParede && naFrentePorta(q, p, r)))) return false;
+  if (q.portas.some((p) => bloqueiaPorta(q, p, r) || (precisaFrenteLivre(p) && naFrentePorta(q, p, r)))) return false;
   if (q.interruptores.some((i) => cobreInterruptor(q, i, r, m.alto, m.tipo))) return false;
   if (m.alto && (q.ares.some((a) => naAreaDoAr(q, a, r)) || q.janelas.some((j) => janelaRuim(q, j, r)))) return false;
   if (exigirFrente) {

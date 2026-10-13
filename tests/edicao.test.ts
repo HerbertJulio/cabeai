@@ -75,7 +75,8 @@ describe('desenhar cômodos', () => {
     const quarto = comodo({ id: 'q', tipo: 'quarto', x: 430, y: 0, w: 300, h: 300 });
     const s = comodo({ id: 's', tipo: 'sala', ...sala });
     const pq = portaEntre(corredor, quarto, [])!;
-    expect(pq).toMatchObject({ comodo: 'q', parede: 'esquerda', abre: 'dentro', largura: 80, inicio: 110 });
+    // perto do canto do quarto que não é o fundo do corredor, com a dobradiça do lado do canto
+    expect(pq).toMatchObject({ comodo: 'q', parede: 'esquerda', abre: 'dentro', largura: 80, inicio: 210, dobradica: 'b' });
     const ps = portaEntre(corredor, s, [])!;
     expect(ps).toMatchObject({ comodo: 'c', parede: 'esquerda', abre: 'vao', largura: 120 });
     // já tem porta nesse trecho: não põe outra

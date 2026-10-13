@@ -1,16 +1,16 @@
 // Estado do app (Zustand + Immer): os dados da casa e o estado da tela.
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import { COMODO_NOME, GRUPOS_DO_COMODO, LIM_COMODO, MOVEL_DO_COMODO, PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, nomePadraoPonto, pontoDe, tipoDoComodo, tipoMovel } from './catalogo';
-import { invade, nomeAndarNovo, planoCorredor, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
-import { alvoSel, andaresOrdem, cenariosLista, comodosDoAndar, comodosOrdem, cq, idsVisiveis } from './consultas';
+import { COMODO_NOME, GRUPOS_DO_COMODO, JEITO_VIROU, LIM_COMODO, MOVEL_DO_COMODO, PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, horizontal, nomePadraoPonto, pontoDe, tipoDoComodo, tipoMovel } from './catalogo';
+import { invade, nomeAndarNovo, paredeDividida, planoCorredor, portaVistaDe, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
+import { alvoSel, andaresOrdem, cenariosLista, comodosDoAndar, comodosOrdem, cq, elVisto, idsVisiveis, ladosDaPorta } from './consultas';
 import { exemplo, moveisDo } from './dados';
-import { acomodar, esticarComodo, girarComodo90, janelaNaParede, paredeTirada, portaDeEntrada, portaEntre, portaLigacao, revisarLigacoes, semParedeEntre, type Borda } from './edicao';
+import { acomodar, esticarComodo, girarComodo90, janelaNaParede, ladoDaDobradica, ladoDeCorrer, lugarNaParede, paredeTirada, portaDeEntrada, portaEntre, portaLigacao, revisarLigacoes, semParedeEntre, type Borda } from './edicao';
 import { Historico, aparar, lerPontos, novoPonto, CHAVE_PONTOS, type InfoPasso, type InfoPonto, type PontoRestauracao } from './historico';
 import { lerPlanta, type PlantaIA } from './planta';
-import { centrar, geoEl, lugarLivre, normRot, posNoPonto, posValida, prender } from './geometria';
+import { centrar, geoEl, jeitoDaPorta, lugarLivre, normRot, posNoPonto, posValida, prender, temGiro } from './geometria';
 import { sugerirCasa, sugerirComodo, type Opcao } from './motor';
-import type { Andar, Cenario, Comodo, Dados, ElParede, Escopo, Modo, Movel, Parede, Ponto, TipoComodo, TipoMovel, TipoParede, Vista } from './tipos';
+import type { Andar, Cenario, Comodo, Dados, ElParede, Escopo, JeitoPorta, Modo, Movel, Parede, Ponto, TipoComodo, TipoMovel, TipoParede, Vista } from './tipos';
 import { vazio } from './tipos';
 import { definirIdioma, idioma, tx, type Idioma } from './i18n';
 import { novoId, pl } from './util';
@@ -23,6 +23,8 @@ export interface Camadas { moveis: boolean; portas: boolean; ar: boolean; pontos
 export type Camada = keyof Camadas;
 export type Tema = 'auto' | 'claro' | 'escuro';
 export const CAMADAS_TODAS: Camadas = { moveis: true, portas: true, ar: true, pontos: true, nomes: true, grade: true };
+/** O que o modo de desenhar põe na parede tocada. */
+export type PecaParede = 'porta' | 'correr' | 'vao' | 'janela';
 
 export interface Estado {
   dados: Dados;
@@ -63,8 +65,9 @@ export interface Estado {
    *  aviso for o último: "marca" é a do histórico naquela hora). */
   toast: { msg: string; tipo: '' | 'erro'; n: number; acao?: 'desfazer'; marca?: number } | null;
   arrastando: boolean;
-  /** Desenhar cômodos arrastando na planta da casa, e o tipo do próximo. */
-  desenho: { ativo: boolean; tipo: TipoComodo };
+  /** Desenhar cômodos arrastando na planta da casa, e o tipo do próximo. Com "item", tocar numa parede põe ali uma
+   *  porta, uma porta de correr, uma passagem ou uma janela (em vez de desenhar cômodo). */
+  desenho: { ativo: boolean; tipo: TipoComodo; item: PecaParede | null };
   /** Trena: arrastar na planta mede a distância entre dois pontos. */
   medir: boolean;
   camadas: Camadas;
@@ -89,7 +92,7 @@ const inicial = (): Estado => ({
   verCen: null, cenBase: null, idioma: 'pt', folha: false, folhaModo: 'acoes', dlg: null, avisosAbertos: false,
   add: { tipo: 'guarda-roupa', ctx: null, rascunho: {} },
   sug: { busy: false, msg: '' }, ia: { busy: false, msg: '' }, iaCtl: null, planta: { busy: false, msg: '' }, plantaCtl: null,
-  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto' }, medir: false, camadas: { ...CAMADAS_TODAS }, tema: 'auto',
+  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto', item: null }, medir: false, camadas: { ...CAMADAS_TODAS }, tema: 'auto',
   hist: { desfazer: false, refazer: false, v: 0 }, pontos: [], estreito: false
 });
 
@@ -239,12 +242,15 @@ export function garantirComodo() {
 
 export function limparSel() { set((s) => { s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.folhaModo = 'acoes'; }); }
 
-/** Seleciona um móvel ({id}) ou item de parede ({eid}); o cômodo em foco passa a ser o dele. */
-export function selecionar(alvo: { id?: string; eid?: string }, o: { abrir?: boolean; painel?: boolean } = {}) {
+/** Seleciona um móvel ({id}) ou item de parede ({eid}); o cômodo em foco passa a ser o dele. Uma porta da parede
+ *  dividida tocada pelo lado do vizinho ("via") deixa o foco no vizinho: é a mesma porta, vista de lá. */
+export function selecionar(alvo: { id?: string; eid?: string }, o: { abrir?: boolean; painel?: boolean; via?: string } = {}) {
+  const d0 = get().dados, e0 = alvo.eid ? d0.els[alvo.eid] : null;
+  const via = e0 && o.via && o.via !== e0.comodo && cq(d0, o.via)?.portas.some((p) => p.id === e0.id) ? o.via : null;
   set((s) => {
     const mudou = alvo.id ? s.sel !== alvo.id : s.selEl !== alvo.eid;
     if (alvo.id) { const m = s.dados.moveis[alvo.id]; if (!m) return; s.sel = alvo.id; s.selEl = null; s.comodo = m.comodo; }
-    else if (alvo.eid) { const e = s.dados.els[alvo.eid]; if (!e) return; s.selEl = alvo.eid; s.sel = null; s.comodo = e.comodo; }
+    else if (alvo.eid) { const e = s.dados.els[alvo.eid]; if (!e) return; s.selEl = alvo.eid; s.sel = null; s.comodo = via || e.comodo; }
     s.selComodo = null;
     s.verCen = null;
     if (mudou) s.folhaModo = 'acoes';
@@ -371,14 +377,15 @@ function andarPadrao(): string {
 /** Onde pôr um cômodo: encostado num lado de outro, com alinhamento e espaço opcional entre as paredes. */
 export interface Junto { ref: string; lado: Lado4; alinhar: Alinhar; espaco?: number }
 
-export function criarComodo(v: { nome: string; w: number; h: number; andar?: string; junto?: Junto | null }): string {
+export function criarComodo(v: { nome: string; w: number; h: number; andar?: string; junto?: Junto | null; tipo?: TipoComodo | '' }): string {
   const ref0 = v.junto ? get().dados.comodos[v.junto.ref] : null;
   const andar = ref0 ? ref0.andar : v.andar && get().dados.andares[v.andar] ? v.andar : andarPadrao();
   const id = novoId('c');
   set((s) => {
     const ref = v.junto ? s.dados.comodos[v.junto.ref] : null;
     const p = ref && v.junto ? posicaoAoLado({ w: v.w, h: v.h }, ref, v.junto.lado, v.junto.alinhar, v.junto.espaco || 0) : posicaoNova(comodosDoAndar(s.dados, andar), v.w, v.h);
-    s.dados.comodos[id] = { id, nome: v.nome.slice(0, 30), w: v.w, h: v.h, andar, x: p.x, y: p.y, criado: Date.now() };
+    const nome = v.nome.slice(0, 30), corredor = tipoDoComodo({ nome, tipo: v.tipo || undefined }) === 'corredor';
+    s.dados.comodos[id] = { id, nome, w: v.w, h: v.h, andar, x: p.x, y: p.y, criado: Date.now(), ...(v.tipo ? { tipo: v.tipo } : {}), ...(corredor ? { corredor: true } : {}) };
     ligar(s.dados, s.dados.comodos[id]);
     s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.latAberta = false; s.folha = false;
   });
@@ -402,7 +409,13 @@ export function posicionarComodo(id: string, j: Junto) {
 function revisar(d: Dados) {
   const r = revisarLigacoes(d.comodos, Object.values(d.els));
   for (const id of r.remover) delete d.els[id];
-  for (const m of r.mudar) { const e = d.els[m.id]; if (e) { e.inicio = m.inicio; e.largura = m.largura; } }
+  for (const m of r.mudar) { const e = d.els[m.id]; if (e) { e.inicio = m.inicio; e.largura = m.largura; if (m.dobradica) e.dobradica = m.dobradica; } }
+}
+/** Guarda a porta nova; "Porta" num cômodo que já tem uma vira "Porta 2" (e assim por diante). */
+function guardarPorta(d: Dados, p: Omit<ElParede, 'id' | 'criado'>, k: number): string {
+  const eid = novoId('e'), generico = p.nome === TIPOS_PAREDE.porta.rot;
+  d.els[eid] = { ...p, id: eid, nome: generico ? proximoNomeEl(d, p.comodo, 'porta') : p.nome, criado: Date.now() + k };
+  return eid;
 }
 /** Porta (ou passagem) entre o cômodo e cada vizinho de parede, quando um dos dois é corredor ou varanda. Devolve os nomes de quem ganhou ligação. */
 function ligar(d: Dados, c: Comodo): string[] {
@@ -412,8 +425,7 @@ function ligar(d: Dados, c: Comodo): string[] {
     if (o.id === c.id) continue;
     const p = portaEntre(c, o, Object.values(d.els));
     if (!p) continue;
-    const eid = novoId('e');
-    d.els[eid] = { ...p, id: eid, criado: Date.now() + k++ };
+    guardarPorta(d, p, k++);
     novos.push(o.nome);
   }
   return novos;
@@ -521,34 +533,49 @@ export function criarCorredor(o: { nome: string; a: string; b: string | null; la
   const id = novoId('c');
   set((s) => {
     const c = plano.corredor;
-    s.dados.comodos[id] = { id, nome: (o.nome || nomeCorredorNovo(s.dados)).slice(0, 30), w: c.w, h: c.h, andar: A.andar, x: c.x, y: c.y, criado: Date.now(), corredor: true };
+    s.dados.comodos[id] = { id, nome: (o.nome || nomeCorredorNovo(s.dados)).slice(0, 30), w: c.w, h: c.h, andar: A.andar, x: c.x, y: c.y, criado: Date.now(), tipo: 'corredor', corredor: true };
     if (B && plano.b) { const bb = s.dados.comodos[B.id]; bb.x = plano.b.x; bb.y = plano.b.y; revisar(s.dados); }
     if (o.portas) {
-      const larg = Math.max(40, Math.min(80, o.largura - 10)), inicio = Math.round((o.largura - larg) / 2), pa = PAREDE_DE_SAIDA[o.lado];
-      const porta = (parede: Parede, k: number, liga: string) => {
-        const eid = novoId('e');
-        s.dados.els[eid] = { id: eid, tipo: 'porta', nome: k === 1 ? tx('Porta', 'Door') : tx(`Porta ${k}`, `Door ${k}`), comodo: id, parede, inicio, largura: larg, criado: Date.now() + k, dobradica: 'a', abre: 'fora', auto: true, liga };
+      const corr = s.dados.comodos[id], pa = PAREDE_DE_SAIDA[o.lado];
+      // a mesma ligação que entraria sozinha (porta perto do canto abrindo para o quarto, passagem para a sala…);
+      // corredor estreito demais para isso ganha uma porta no meio da ponta, abrindo para o cômodo
+      const porta = (parede: Parede, k: number, X: Comodo) => {
+        const els = Object.values(s.dados.els), pd = paredeDividida(corr, X);
+        const p = portaEntre(corr, X, els) || portaLigacao(corr, X, true, els, true);
+        if (p) { guardarPorta(s.dados, p, k); return; }
+        if (!pd || pd.u2 - pd.u1 >= 70) return; // já tem porta nesse trecho
+        const larg = Math.max(40, Math.min(80, o.largura - 10)), inicio = Math.round((o.largura - larg) / 2);
+        guardarPorta(s.dados, { tipo: 'porta', nome: TIPOS_PAREDE.porta.rot, comodo: id, parede, inicio, largura: larg, dobradica: 'a', abre: 'fora', auto: true, liga: X.id }, k);
       };
-      porta(pa, 1, A.id);
-      if (B) porta(OPOSTA[pa], 2, B.id);
+      porta(pa, 1, s.dados.comodos[A.id]);
+      if (B) porta(OPOSTA[pa], 2, s.dados.comodos[B.id]);
     }
     s.comodo = id; s.sel = null; s.selEl = null; s.selComodo = id; s.verCen = null; s.latAberta = false; s.folha = false;
   });
   return { id };
 }
 
-/** Muda nome, medidas, posição ou andar; o que ficou fora do cômodo volta para dentro. */
-export function salvarComodo(id: string, campos: Partial<Comodo>) {
+/** Campos de um cômodo para salvar; o tipo vazio ('') volta a ser pelo nome. */
+export type CamposComodo = Omit<Partial<Comodo>, 'tipo'> & { tipo?: TipoComodo | '' };
+/** Muda nome, medidas, posição, andar ou tipo; o que ficou fora do cômodo volta para dentro. Virou corredor (ou
+ *  mudou de lugar)? As ligações com os vizinhos se refazem. */
+export function salvarComodo(id: string, campos: CamposComodo) {
   set((s) => {
     const c = s.dados.comodos[id]; if (!c) return;
     if (campos.andar && campos.andar !== c.andar && s.dados.andares[campos.andar] && campos.x == null) {
       const p = posicaoNova(comodosDoAndar(s.dados, campos.andar), campos.w ?? c.w, campos.h ?? c.h);
       campos = { ...campos, x: p.x, y: p.y };
     }
-    const antes = { x: c.x, y: c.y, w: c.w, h: c.h, andar: c.andar };
-    Object.assign(c, campos);
+    const antes = { x: c.x, y: c.y, w: c.w, h: c.h, andar: c.andar, tipo: tipoDoComodo(c) };
+    const { tipo, ...resto } = campos;
+    Object.assign(c, resto);
+    if (tipo !== undefined) {
+      if (tipo) c.tipo = tipo; else delete c.tipo;
+      // a marca de corredor acompanha o tipo (sem tipo, o nome decide)
+      if (tipoDoComodo({ nome: c.nome, tipo: c.tipo }) === 'corredor') c.corredor = true; else delete c.corredor;
+    }
     acomodar(c, Object.values(s.dados.moveis).filter((m) => m.comodo === id), Object.values(s.dados.els).filter((e) => e.comodo === id));
-    if (antes.x !== c.x || antes.y !== c.y || antes.w !== c.w || antes.h !== c.h || antes.andar !== c.andar) { revisar(s.dados); ligar(s.dados, c); }
+    if (antes.x !== c.x || antes.y !== c.y || antes.w !== c.w || antes.h !== c.h || antes.andar !== c.andar || antes.tipo !== tipoDoComodo(c)) { revisar(s.dados); ligar(s.dados, c); }
   });
 }
 
@@ -598,11 +625,42 @@ export function fimEsticar(id: string): string[] {
 export function modoDesenho(ativo: boolean, tipo?: TipoComodo) {
   set((s) => {
     const entrou = ativo && !s.desenho.ativo, saiu = !ativo && s.desenho.ativo;
-    s.desenho = { ativo, tipo: tipo || s.desenho.tipo };
+    // escolher um tipo de cômodo volta a desenhar cômodos (larga a ferramenta de porta ou janela)
+    s.desenho = { ativo, tipo: tipo || s.desenho.tipo, item: entrou || tipo ? null : s.desenho.item };
     if (entrou) { s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.verCen = null; s.menu = null; s.latAberta = false; s.medir = false; }
     // no Pronto, o último cômodo desenhado deixa de estar selecionado (um toque nele volta a selecionar)
-    if (saiu) { s.selComodo = null; s.folha = false; }
+    if (saiu) { s.selComodo = null; s.selEl = null; s.folha = false; s.desenho.item = null; }
   });
+}
+/** No modo de desenhar: tocar numa parede põe ali uma porta, porta de correr, passagem ou janela. */
+export function ferramentaDesenho(item: PecaParede | null) {
+  set((s) => { s.desenho.item = item; s.selComodo = null; s.folha = false; if (!item) s.selEl = null; });
+}
+
+/** Porta, porta de correr, passagem ou janela posta na parede tocada (no ponto "u" dela), abrindo para o cômodo tocado
+ *  e com a dobradiça do lado do canto mais perto. Desvia de outras portas e janelas daquela parede. */
+export function porNaParede(item: PecaParede, comodo: string, parede: Parede, u: number): { id: string; nome: string } | { erro: string } {
+  const d = get().dados, q = cq(d, comodo);
+  if (!q) return { erro: tx('Toque perto de uma parede de um cômodo.', 'Tap near a wall of a room.') };
+  const L = horizontal(parede) ? q.w : q.h;
+  const largura = Math.round(item === 'janela' ? Math.min(120, L - 20) : item === 'vao' ? Math.min(90, L - 10) : Math.min(80, L - 10));
+  if (largura < 40) return { erro: tx('Essa parede é curta demais para isso.', 'That wall is too short for it.') };
+  const inicio = lugarNaParede(q, parede, u, largura, item !== 'janela');
+  if (inicio == null) return { erro: tx('Não sobrou lugar livre nessa parede.', 'There’s no free spot left on that wall.') };
+  const tipo: TipoParede = item === 'janela' ? 'janela' : 'porta';
+  const nome = item === 'vao' ? nomeLivre(Object.values(d.els).filter((e) => e.comodo === comodo), tx('Passagem', 'Opening')) : proximoNomeEl(d, comodo, tipo);
+  const novo: Omit<ElParede, 'id'> = { tipo, nome, comodo, parede, inicio, largura, criado: Date.now() };
+  // a porta de abrir fica com a dobradiça do lado do canto (ou da outra porta) mais perto; a de correr corre para o
+  // lado onde sobra parede
+  const lado = { id: '', parede, inicio, largura };
+  if (tipo === 'janela') Object.assign(novo, { abertura: 'correr', folhas: 2 });
+  else Object.assign(novo, { abre: item === 'vao' ? 'vao' : 'dentro', dobradica: item === 'correr' ? ladoDeCorrer(q, lado) : ladoDaDobradica(q, lado), ...(item === 'correr' ? { estilo: 'correr' } : {}) });
+  const id = novoId('e');
+  comRotulo(tx(`Pôs ${nome} em ${q.nome}`, `Added ${nome} to ${q.nome}`), () => set((s) => {
+    s.dados.els[id] = { ...novo, id };
+    s.selEl = id; s.sel = null; s.selComodo = null; s.comodo = comodo; s.folha = false;
+  }));
+  return { id, nome };
 }
 
 /** "Quarto 1", "Quarto 2"; "Sala", "Sala 2"… */
@@ -658,20 +716,82 @@ export function removerComodo(id: string) {
 export function criarMovel(dados: Omit<Movel, 'id'>): string { const id = novoId('m'); set((s) => { s.dados.moveis[id] = { ...dados, id }; }); return id; }
 export function salvarMovel(id: string, campos: Partial<Movel>) { set((s) => { const m = s.dados.moveis[id]; if (m) Object.assign(m, campos); }); }
 export function criarEl(dados: Omit<ElParede, 'id'>): string { const id = novoId('e'); set((s) => { s.dados.els[id] = { ...dados, id }; }); return id; }
+/** Muda o item de parede (um campo "undefined" sai do item). */
+function mudarEl(d: Dados, e: ElParede, campos: Partial<ElParede>) {
+  // trocou o tipo de ponto e o nome ainda é o padrão ("Tomada 2")? O nome acompanha ("Ponto de TV").
+  const antes = pontoDe(e);
+  if (e.tipo === 'interruptor' && campos.ponto && campos.ponto !== antes && (campos.nome == null || campos.nome === e.nome) && nomePadraoPonto(e.nome, antes)) {
+    campos = { ...campos, nome: proximoNomeEl(d, e.comodo, 'interruptor', campos.ponto) };
+  }
+  // a pessoa mudou a porta automática de parede, de lugar ou de largura: ela passa a ser uma porta dela
+  // (não some nem volta para o canto quando os cômodos mudarem)
+  if (e.auto && ((campos.parede != null && campos.parede !== e.parede) || (campos.inicio != null && campos.inicio !== e.inicio) || (campos.largura != null && campos.largura !== e.largura))) { delete e.auto; delete e.liga; }
+  const alvo = e as unknown as Record<string, unknown>;
+  for (const [k, v] of Object.entries(campos)) { if (v === undefined) delete alvo[k]; else alvo[k] = v; }
+  if (e.tipo === 'porta' && e.abre === 'vao') delete e.estilo;
+}
 export function salvarEl(id: string, campos: Partial<ElParede>) {
-  set((s) => {
-    const e = s.dados.els[id];
-    if (!e) return;
-    // trocou o tipo de ponto e o nome ainda é o padrão ("Tomada 2")? O nome acompanha ("Ponto de TV").
-    const antes = pontoDe(e);
-    if (e.tipo === 'interruptor' && campos.ponto && campos.ponto !== antes && (campos.nome == null || campos.nome === e.nome) && nomePadraoPonto(e.nome, antes)) {
-      campos = { ...campos, nome: proximoNomeEl(s.dados, e.comodo, 'interruptor', campos.ponto) };
-    }
-    // a pessoa mudou a porta automática de parede, de lugar ou de largura: ela passa a ser uma porta dela
-    // (não some nem volta para o meio quando os cômodos mudarem)
-    if (e.auto && ((campos.parede != null && campos.parede !== e.parede) || (campos.inicio != null && campos.inicio !== e.inicio) || (campos.largura != null && campos.largura !== e.largura))) { delete e.auto; delete e.liga; }
-    Object.assign(e, campos);
-  });
+  set((s) => { const e = s.dados.els[id]; if (e) mudarEl(s.dados, e, campos); });
+}
+
+/* ---------- portas: são da parede, não de um cômodo só ---------- */
+/** A porta passa a ser guardada no cômodo "via" (a mesma porta, na mesma parede: só muda de que lado ela é medida).
+ *  Só quando ela está inteira na parede que os dois dividem. */
+function adotar(d: Dados, eid: string, via: string): boolean {
+  const v = elVisto(d, eid, via), e = d.els[eid];
+  if (!v || v.dono || !e) return false;
+  const { e: ve } = v;
+  e.comodo = via; e.parede = ve.parede; e.inicio = ve.inicio; e.largura = ve.largura; e.abre = ve.abre;
+  if (ve.liga) e.liga = ve.liga; else delete e.liga;
+  return true;
+}
+/** Mudanças medidas pelo cômodo "via" numa porta da parede dividida: enquanto ela continua inteira na parede que os
+ *  dois dividem, segue guardada no cômodo dela (a medida volta para a parede de lá; mover, girar ou apagar o vizinho
+ *  não leva a porta junto). Se a mudança tira a porta dessa parede (correu para além dela, foi para outra parede do
+ *  "via"), ela passa a ser do "via". */
+function mudarPelaVista(d: Dados, eid: string, via: string | null, campos: Partial<ElParede>) {
+  const e = d.els[eid]; if (!e) return;
+  const v = via && via !== e.comodo ? elVisto(d, eid, via) : null;
+  if (!v || v.dono) { mudarEl(d, e, campos); return; }
+  const dono = d.comodos[e.comodo], viz = d.comodos[v.q.id];
+  const volta = portaVistaDe(viz, dono, { ...v.e, ...campos });
+  if (volta) mudarEl(d, e, { ...campos, ...volta });
+  else { adotar(d, eid, v.q.id); mudarEl(d, e, campos); }
+}
+/** Salva o que foi mudado num item visto pelo cômodo "via" (os campos vêm medidos na parede de lá). */
+export function salvarElVisto(eid: string, via: string | null, campos: Partial<ElParede>) {
+  set((s) => { mudarPelaVista(s.dados, eid, via, campos); });
+}
+
+const nomePorta = (e: ElParede) => e.nome;
+/** A porta abre para dentro do cômodo dela ("dentro") ou para o outro lado ("fora"). */
+export function abrirPortaPara(eid: string, lado: 'dentro' | 'fora') {
+  const d = get().dados, e = d.els[eid];
+  if (!e || e.tipo !== 'porta' || !temGiro(e) || e.abre === lado) return;
+  const para = lado === 'dentro' ? d.comodos[e.comodo]?.nome : ladosDaPorta(d, e).fora;
+  comRotulo(tx(`${nomePorta(e)} abre para ${para}`, `${nomePorta(e)} opens into ${para}`), () => salvarEl(eid, { abre: lado }));
+}
+/** Abre para o outro lado da parede. */
+export const virarAbertura = (eid: string) => { const e = get().dados.els[eid]; if (e) abrirPortaPara(eid, e.abre === 'fora' ? 'dentro' : 'fora'); };
+/** Troca o lado da dobradiça (na porta de correr, o lado para onde a folha corre). */
+export function virarDobradica(eid: string) {
+  const e = get().dados.els[eid];
+  if (!e || e.tipo !== 'porta') return;
+  comRotulo(tx(`Virou a dobradiça de ${nomePorta(e)}`, `Flipped the hinge of ${nomePorta(e)}`), () => salvarEl(eid, { dobradica: e.dobradica === 'b' ? 'a' : 'b' }));
+}
+/** De abrir, dupla, de correr ou só a passagem. O nome padrão acompanha ("Porta" ↔ "Passagem", sem repetir nome no
+ *  cômodo). A de correr corre para o lado com mais parede livre; a de abrir volta com a dobradiça do lado do canto. */
+export function mudarJeitoPorta(eid: string, jeito: JeitoPorta) {
+  const d = get().dados, e = d.els[eid], q = e ? cq(d, e.comodo) : null;
+  if (!e || !q || e.tipo !== 'porta' || e.semParede || jeitoDaPorta(e) === jeito) return;
+  const campos: Partial<ElParede> = jeito === 'vao' ? { abre: 'vao', estilo: undefined } : { abre: e.abre === 'vao' ? 'dentro' : e.abre, estilo: jeito === 'abrir' ? undefined : jeito };
+  if (jeito === 'correr') campos.dobradica = ladoDeCorrer(q, e);
+  else if (jeito === 'abrir' && jeitoDaPorta(e) === 'correr') campos.dobradica = ladoDaDobradica(q, e);
+  const porta = TIPOS_PAREDE.porta.rot, passagem = tx('Passagem', 'Opening'), base = e.nome.replace(/\s+\d+$/, '');
+  const outros = Object.values(d.els).filter((x) => x.comodo === e.comodo && x.id !== e.id);
+  if (jeito === 'vao' && base === porta) campos.nome = nomeLivre(outros, passagem);
+  else if (jeito !== 'vao' && base === passagem) campos.nome = nomeLivre(outros, porta);
+  comRotulo(tx(`${nomePorta(e)} virou ${JEITO_VIROU[jeito]}`, `${nomePorta(e)} is now ${JEITO_VIROU[jeito]}`), () => salvarEl(eid, campos));
 }
 export function removerAlvo() {
   const s = get(), a = alvoSel(s.dados, s.sel, s.selEl);
@@ -778,7 +898,7 @@ export function adicionarEl(tipo: TipoParede, campos: Partial<ElParede>, ctx: Ct
   const dados: Omit<ElParede, 'id'> = { tipo, nome: '', comodo: cid, parede: tp.parede, inicio: 0, largura: tp.larg, criado: Date.now(), ...campos };
   if (tipo === 'interruptor') dados.ponto = dados.ponto || 'interruptor';
   if (!dados.nome) dados.nome = proximoNomeEl(s.dados, cid, tipo, dados.ponto);
-  if (tipo === 'porta') { dados.dobradica = dados.dobradica || 'a'; dados.abre = dados.abre || 'dentro'; }
+  if (tipo === 'porta') { dados.dobradica = dados.dobradica || 'a'; dados.abre = dados.abre || 'dentro'; if (!dados.estilo || dados.abre === 'vao') delete dados.estilo; }
   if (tipo === 'janela') { dados.abertura = dados.abertura || 'correr'; dados.folhas = dados.folhas || 2; }
   if (tipo === 'ar' && dados.folga == null) dados.folga = 30;
   const id = criarEl(dados);

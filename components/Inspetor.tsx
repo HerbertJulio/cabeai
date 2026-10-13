@@ -1,21 +1,22 @@
 'use client';
 // Painel de propriedades do modo avançado: cada campo vale ao sair dele (ou com Enter).
 import { useEffect, useState } from 'react';
-import { AB_NOME, LIM_COMODO, PAREDES, PONTO_NOME, TIPOS, TIPOS_PAREDE, horizontal, pontoDe, tipoMovel } from '@/lib/catalogo';
+import { AB_NOME, JEITOS_PORTA, JEITO_NOME, LIM_COMODO, PAREDES, PONTO_NOME, TIPOS, TIPOS_PAREDE, ehTipoComodo, horizontal, pontoDe, tipoMovel } from '@/lib/catalogo';
 import { alvoSel, andaresOrdem, comodosOrdem, cq } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { valsMovel, valsParede, validarMovel, validarParede, type Valores } from '@/lib/formularios';
-import { centrar, folgas, folhaDe, geoEl, lugarLivre, nivel, normRot, precisaCadeira, precisaFrente, prender, tam, temCadeiras, zonaAr, compParede } from '@/lib/geometria';
+import { centrar, folgas, folhaDe, geoEl, jeitoDaPorta, lugarLivre, nivel, normRot, precisaCadeira, precisaFrente, prender, tam, temCadeiras, temGiro, zonaAr, compParede } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
 import {
-  abrirDialogo, atualizar, duplicar, duplicarComodo, estreito, focarComodo, girar, levar, limparSel, pedirRemover, salvarComodo, salvarEl, salvarMovel, toast, useApp
+  abrirDialogo, abrirPortaPara, atualizar, duplicar, duplicarComodo, estreito, focarComodo, girar, levar, limparSel, mudarJeitoPorta, pedirRemover, salvarComodo, salvarElVisto, salvarMovel, toast, useApp, virarDobradica
 } from '@/lib/store';
 import { areaLivre, areaM2, fmtArea } from '@/lib/resumo';
 import { abrirMenuEmBotao } from './Topo';
-import { espacoAberto, vizinhosDeParede } from '@/lib/consultas';
-import type { Comodo, ComodoCompleto, ElParede, Movel } from '@/lib/tipos';
+import { elVisto, espacoAberto, ladosDaPorta, vizinhosDeParede } from '@/lib/consultas';
+import type { Comodo, ComodoCompleto, ElParede, Movel, TipoComodo } from '@/lib/tipos';
+import { descEl } from './Faixa';
 import { clamp, fmtM, parseCm, parseMedida, pl } from '@/lib/util';
-import { CamposMovel, CamposParede, Texto, Escolha } from './campos';
+import { CamposMovel, CamposParede, Texto, Escolha, opcoesTipoComodo } from './campos';
 import { Icone } from './icones';
 
 export function ChipsFolga({ q, m, outros }: { q: ComodoCompleto; m: Movel; outros: Movel[] }) {
@@ -42,6 +43,27 @@ export function ChipsEl({ q, el }: { q: Comodo; el: ElParede }) {
       <span className="fchip">{h ? tx('Do canto direito', 'From the right corner') : tx('Do canto de baixo', 'From the bottom corner')}: {Math.round(g.L - g.b)} cm</span>
       {el.tipo === 'ar' && (() => { const z = zonaAr(q, el); return <span className="fchip"><i className="c-nao" />{tx(`Sem móvel alto: de ${fmtM(z.a)} a ${fmtM(z.b)} m`, `No tall furniture: from ${fmtM(z.a)} to ${fmtM(z.b)} m`)}</span>; })()}
       {el.tipo === 'janela' && el.abertura === 'abrir' && <span className="fchip">{tx(`Folha de ${folhaDe(q, el)} cm abrindo para dentro`, `${folhaDe(q, el)} cm panel opening inward`)}</span>}
+    </div>
+  );
+}
+
+/** A porta é da parede: o jeito dela, para que lado (cômodo) abre, pelo nome, e o lado da dobradiça. */
+export function ControlesPorta({ e }: { e: ElParede }) {
+  const dados = useApp((s) => s.dados);
+  const j = jeitoDaPorta(e), l = ladosDaPorta(dados, e);
+  return (
+    <div className="porta-ctrl">
+      <div className="tipos" role="group" aria-label={tx('Tipo de porta', 'Door type')}>
+        {JEITOS_PORTA.map((k) => <button key={k} type="button" className="tipo" data-jeito={k} aria-pressed={j === k} onClick={() => mudarJeitoPorta(e.id, k)}>{JEITO_NOME[k]}</button>)}
+      </div>
+      {temGiro(e) && <div className="porta-lado">
+        <span className="porta-rot" id={`abre-${e.id}`}>{tx('Abre para', 'Opens into')}</span>
+        <div className="seg" role="group" aria-labelledby={`abre-${e.id}`}>
+          <button type="button" data-abre="dentro" aria-pressed={e.abre !== 'fora'} onClick={() => abrirPortaPara(e.id, 'dentro')}>{l.dentro}</button>
+          <button type="button" data-abre="fora" aria-pressed={e.abre === 'fora'} onClick={() => abrirPortaPara(e.id, 'fora')}>{l.fora}</button>
+        </div>
+      </div>}
+      {(j === 'abrir' || j === 'correr') && <button className="btn" type="button" data-f="dob" onClick={() => virarDobradica(e.id)}><Icone n="virar" />{j === 'correr' ? tx('Correr para o outro lado', 'Slide the other way') : tx('Virar a dobradiça', 'Flip the hinge')}</button>}
     </div>
   );
 }
@@ -127,32 +149,39 @@ function PropMovel({ m }: { m: Movel }) {
 
 function PropEl({ e }: { e: ElParede }) {
   const dados = useApp((s) => s.dados);
-  const q = dados.comodos[e.comodo];
+  const comodo = useApp((s) => s.comodo);
+  // a porta da parede dividida, vista pelo vizinho em foco, vem medida na parede dele
+  const vis = elVisto(dados, e.id, comodo), ev = vis ? vis.e : e, q = vis ? vis.q : dados.comodos[e.comodo];
   const [erro, setErro] = useState('');
-  const [v, set] = useCampos(valsParede(q, e), e.id);
+  const [v, set] = useCampos(valsParede(q, ev), e.id);
   const commit = (k: string, val: string | boolean) => {
     setErro('');
-    const atual = useApp.getState().dados.els[e.id]; if (!atual) return;
-    const qq = useApp.getState().dados.comodos[atual.comodo], g = geoEl(qq, atual), w = g.b - g.a;
+    const s = useApp.getState(), vv = elVisto(s.dados, e.id, s.comodo); if (!vv) return;
+    const atual = vv.e, qq = vv.q, via = vv.dono ? null : qq.id, g = geoEl(qq, atual), w = g.b - g.a;
     if (k === 'inicioCm') {
       const d = parseCm(val);
       if (d == null || Number.isNaN(d)) { setErro(tx('Distância em cm, por exemplo 80.', 'Distance in cm, for example 80.')); return; }
-      salvarEl(e.id, { inicio: Math.round(clamp(d, 0, g.L - w)) }); return;
+      const inicio = Math.round(clamp(d, 0, g.L - w));
+      if (inicio !== Math.round(g.a)) salvarElVisto(e.id, via, { inicio });
+      return;
     }
     if (k === 'parede') {
       const p = String(val) as ElParede['parede']; if (!PAREDES.includes(p) || p === atual.parede) return;
       const L = compParede(qq, p), nw = Math.min(w, L);
-      salvarEl(e.id, { parede: p, largura: nw, inicio: Math.round(clamp(g.a, 0, L - nw)) }); return;
+      salvarElVisto(e.id, via, { parede: p, largura: nw, inicio: Math.round(clamp(g.a, 0, L - nw)) }); return;
     }
     const r = validarParede({ ...v, dist: fmtM(g.a), [k]: val }, atual.tipo, qq, atual);
     if (r.erro) { setErro(r.erro); return; }
-    salvarEl(e.id, r.campos!);
+    // (nada mudou: não mexe, para não virar um passo do histórico à toa)
+    if (Object.entries(r.campos!).every(([kk, x]) => (atual as unknown as Record<string, unknown>)[kk] === x)) return;
+    salvarElVisto(e.id, via, r.campos!);
   };
   return <>
-    <div className="insp-cab"><div><h2 className="sec-t">{e.nome}</h2><div className="sub">{e.tipo === 'interruptor' ? PONTO_NOME[pontoDe(e)] : TIPOS_PAREDE[e.tipo].rot} · {q.nome}</div></div><Fechar /></div>
+    <div className="insp-cab"><div><h2 className="sec-t">{e.nome}</h2><div className="sub">{e.tipo === 'interruptor' ? PONTO_NOME[pontoDe(e)] : TIPOS_PAREDE[e.tipo].rot} · {e.tipo === 'porta' ? descEl(dados, e) : q.nome}</div></div><Fechar /></div>
     <CamposParede px="fp" tipo={e.tipo} v={v} set={set} commit={commit} avancado />
+    {e.tipo === 'porta' && !e.semParede && <ControlesPorta e={e} />}
     {erro && <p className="erro" id="fp-erro">{erro}</p>}
-    <ChipsEl q={q} el={e} />
+    <ChipsEl q={q} el={ev} />
     <div className="grade-acoes">
       <button className="btn" type="button" data-p="duplicar" onClick={duplicar}>{tx('Duplicar', 'Duplicate')}</button>
       <button className="btn perigo" type="button" data-p="remover" onClick={pedirRemover}>{tx('Remover', 'Remove')}</button>
@@ -166,7 +195,7 @@ function PropComodo({ c }: { c: Comodo }) {
   const [erro, setErro] = useState('');
   const q = cq(dados, c.id)!;
   const as = andaresOrdem(dados);
-  const [v, set] = useCampos({ 'q-nome': c.nome, 'q-w': fmtM(c.w), 'q-h': fmtM(c.h), 'q-x': String(c.x), 'q-y': String(c.y), 'q-andar': c.andar }, c.id);
+  const [v, set] = useCampos({ 'q-nome': c.nome, 'q-tipo': c.tipo || (c.corredor ? 'corredor' : ''), 'q-w': fmtM(c.w), 'q-h': fmtM(c.h), 'q-x': String(c.x), 'q-y': String(c.y), 'q-andar': c.andar }, c.id);
   const commit = (k: string, val: string | boolean) => {
     setErro('');
     const t = String(val);
@@ -178,6 +207,7 @@ function PropComodo({ c }: { c: Comodo }) {
     }
     if (k === 'q-x' || k === 'q-y') { const n = parseCm(t, true); if (n == null || Number.isNaN(n)) { setErro(tx('Posição em cm, por exemplo 315.', 'Position in cm, for example 315.')); return; } salvarComodo(c.id, { [k === 'q-x' ? 'x' : 'y']: n }); return; }
     if (k === 'q-andar' && t !== c.andar && dados.andares[t]) salvarComodo(c.id, { andar: t });
+    if (k === 'q-tipo' && t !== (c.tipo || (c.corredor ? 'corredor' : '')) && (t === '' || ehTipoComodo(t))) salvarComodo(c.id, { tipo: t as TipoComodo | '' });
   };
   const n = moveisDo(dados, c.id).length, livre = areaLivre(c, moveisDo(dados, c.id)), temViz = vizinhosDeParede(dados, c.id).length > 0;
   const junto = espacoAberto(dados, c.id);
@@ -185,6 +215,7 @@ function PropComodo({ c }: { c: Comodo }) {
     <div className="insp-cab"><div><h2 className="sec-t">{c.nome}</h2><div className="sub">{tx('Cômodo', 'Room')} · {dados.andares[c.andar]?.nome || ''}</div></div><Fechar /></div>
     <div className="campos">
       <Texto px="fq" k="q-nome" rot={tx('Nome do cômodo', 'Room name')} v={v} set={set} commit={commit} full max={30} />
+      <Escolha px="fq" k="q-tipo" rot={tx('O que é', 'What it is')} v={v} set={set} commit={commit} full opts={opcoesTipoComodo(c.nome)} />
       <Texto px="fq" k="q-w" rot={tx('Largura (esquerda → direita)', 'Width (left → right)')} v={v} set={set} commit={commit} num />
       <Texto px="fq" k="q-h" rot={tx('Comprimento (cima → baixo)', 'Length (top → bottom)')} v={v} set={set} commit={commit} num />
       <Texto px="fq" k="q-x" rot={tx('Na planta: da esquerda (cm)', 'On the floor plan: from the left (cm)')} v={v} set={set} commit={commit} num />
@@ -195,7 +226,7 @@ function PropComodo({ c }: { c: Comodo }) {
     <div className="folgas">
       <span className="fchip">{tx('Área', 'Area')}: {fmtArea(areaM2(c))}</span><span className="fchip">{tx('Chão livre', 'Free floor')}: {fmtArea(livre.m2)} ({livre.pct}%)</span>
       {junto.length > 1 && <span className="fchip">{tx('Espaço aberto com', 'Open space with')} {junto.filter((id) => id !== c.id).map((id) => dados.comodos[id].nome).join(', ')}: {fmtArea(junto.reduce((t, id) => t + areaM2(dados.comodos[id]), 0))}</span>}
-      <span className="fchip">{pl(n, tx('móvel', 'item'), tx('móveis', 'items'))}</span><span className="fchip">{pl(q.portas.filter((p) => !p.herdada && !p.semParede).length, tx('porta', 'door'), tx('portas', 'doors'))}</span>
+      <span className="fchip">{pl(n, tx('móvel', 'item'), tx('móveis', 'items'))}</span><span className="fchip">{pl(q.portas.filter((p) => !p.semParede).length, tx('porta', 'door'), tx('portas', 'doors'))}</span>
       <span className="fchip">{pl(q.janelas.length, tx('janela', 'window'), tx('janelas', 'windows'))}</span><span className="fchip">{pl(q.ares.length, tx('ar-condicionado', 'air conditioner'), tx('ares-condicionados', 'air conditioners'))}</span>
     </div>
     <div className="grade-acoes">

@@ -1,13 +1,15 @@
 'use client';
 // Menu de opções: botão direito, dedo segurado e os botões "⋯".
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { GRUPOS_DO_COMODO, NOME_PAREDE, ORDEM_PAREDE, ORDEM_TIPOS, TIPOS, TIPOS_PAREDE, ehParede, tipoDoComodo } from '@/lib/catalogo';
-import { andaresOrdem, comodosDoAndar, comodosOrdem, vizinhosDeParede } from '@/lib/consultas';
+import { GRUPOS_DO_COMODO, JEITOS_PORTA, JEITO_NOME, NOME_PAREDE, ORDEM_PAREDE, ORDEM_TIPOS, TIPOS, TIPOS_PAREDE, ehParede, tipoDoComodo } from '@/lib/catalogo';
+import { andaresOrdem, comodosDoAndar, comodosOrdem, ladosDaPorta, vizinhosDeParede } from '@/lib/consultas';
+import { jeitoDaPorta, temGiro } from '@/lib/geometria';
+import type { JeitoPorta } from '@/lib/tipos';
 import { paraArquivo } from '@/lib/dados';
 import { imagemDaPlanta } from '@/lib/exportar';
 import {
   abrirDialogo, alternar, alternarCamada, alternarParede, atualizar, avisarLigacoes, colar, copiar, duplicar, duplicarComodo, editarItem, fecharMenu, focarComodo, girar, iniciarAdd, levar,
-  mostrarTudo, mudarIdioma, mudarModo, mudarTema, mudarVista, pedirRemover, girarComodo, sairCenario, selecionarComodo, temCopia, toast, travar, useApp, usarCenario, type Camada, type InfoMenu
+  mostrarTudo, mudarIdioma, mudarJeitoPorta, mudarModo, mudarTema, mudarVista, pedirRemover, girarComodo, sairCenario, selecionarComodo, temCopia, toast, travar, useApp, usarCenario, virarAbertura, virarDobradica, type Camada, type InfoMenu
 } from '@/lib/store';
 import { tx } from '@/lib/i18n';
 import { clamp } from '@/lib/util';
@@ -44,11 +46,17 @@ function blocos(m: InfoMenu): Bloco[] {
         { itens: [{ a: 'remover', t: tx('Remover…', 'Remove…'), perigo: true }] }];
     }
     if (m.eid && d.els[m.eid]) {
-      const e = d.els[m.eid], its: Item[] = [{ a: 'editar', t: tx('Editar…', 'Edit…') }];
-      if (e.tipo === 'porta' && e.abre !== 'vao') its.push({ a: 'dob', t: tx('Trocar o lado da dobradiça', 'Switch the hinge side') }, { a: 'abre', t: e.abre === 'dentro' ? tx('Abrir para fora', 'Open outward') : tx('Abrir para dentro', 'Open inward') });
+      const e = d.els[m.eid], its: Item[] = [{ a: 'editar', t: tx('Editar…', 'Edit…') }], extra: Bloco[] = [];
+      if (e.tipo === 'porta' && !e.semParede) {
+        // a porta é da parede: para que lado abre, pelo nome do cômodo, e o jeito dela
+        const j = jeitoDaPorta(e), l = ladosDaPorta(d, e), outro = e.abre === 'fora' ? l.dentro : l.fora;
+        if (temGiro(e)) its.push({ a: 'abre', t: tx(`Abrir para ${outro}`, `Open into ${outro}`) });
+        if (j === 'abrir' || j === 'correr') its.push({ a: 'dob', t: j === 'correr' ? tx('Correr para o outro lado', 'Slide the other way') : tx('Virar a dobradiça', 'Flip the hinge') });
+        extra.push({ titulo: tx('Tipo de porta', 'Door type'), grade: true, itens: JEITOS_PORTA.map((k) => ({ a: 'jeito:' + k, t: JEITO_NOME[k], marcado: j === k })) });
+      }
       if (e.tipo === 'janela') its.push({ a: 'jan', t: e.abertura === 'abrir' ? tx('Mudar para de correr', 'Change to sliding') : tx('Mudar para de abrir', 'Change to hinged') });
       its.push({ a: 'duplicar', t: tx('Duplicar', 'Duplicate') }, { a: 'copiar', t: tx('Copiar (para colar em outro lugar)', 'Copy (to paste somewhere else)') });
-      return [{ titulo: e.nome, itens: its }, { itens: [{ a: 'remover', t: tx('Remover…', 'Remove…'), perigo: true }] }];
+      return [{ titulo: e.nome, itens: its }, ...extra, { itens: [{ a: 'remover', t: tx('Remover…', 'Remove…'), perigo: true }] }];
     }
     return [];
   }
@@ -137,6 +145,7 @@ function executar(a: string, m: InfoMenu) {
   if (a === 'setas') { atualizar((x) => { x.setasTodos = !x.setasTodos; }); return; }
   if (a === 'ima') { atualizar((x) => { x.imaOn = !x.imaOn; }); return; }
   fecharMenu();
+  if (a.startsWith('jeito:')) { if (s.selEl) mudarJeitoPorta(s.selEl, a.slice(6) as JeitoPorta); return; }
   if (a.startsWith('parede:')) { const q = m.comodo || s.selComodo || s.comodo; if (q) alternarParede(q, a.slice(7)); return; }
   if (a === 'add:movel') { const q = (m.comodo && d.comodos[m.comodo]) || (s.comodo && d.comodos[s.comodo]); if (q) iniciarAdd('movel', m.px != null && m.py != null ? { comodo: q.id, x: Math.round(clamp(m.px, 0, q.w)), y: Math.round(clamp(m.py, 0, q.h)) } : { comodo: q.id }); return; }
   if (a.startsWith('add:')) {
@@ -152,7 +161,9 @@ function executar(a: string, m: InfoMenu) {
     case 'levar': levar(); break;
     case 'travar': travar(); break;
     case 'remover': pedirRemover(); break;
-    case 'dob': case 'abre': case 'jan': alternar(a); break;
+    case 'dob': if (s.selEl) virarDobradica(s.selEl); break;
+    case 'abre': if (s.selEl) virarAbertura(s.selEl); break;
+    case 'jan': alternar('jan'); break;
     case 'q-editar': abrirDialogo('comodo', { id: qid }); break;
     case 'q-ver': focarComodo(qid, true); break;
     case 'q-add': focarComodo(qid, false); iniciarAdd('movel', { comodo: qid }); break;

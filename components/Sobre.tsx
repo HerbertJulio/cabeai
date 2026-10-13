@@ -7,7 +7,7 @@ import { andaresOrdem, avaliacao, comodosDoAndar, comodosDoCenario, idsVisiveis,
 import { moveisDo } from '@/lib/dados';
 import { tx } from '@/lib/i18n';
 import {
-  abrirDialogo, abrirMenu, alternarCamada, atualizar, atualizarCenario, criarExemplo, enquadrar, iniciarAdd, modoDesenho, modoMedir, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm
+  abrirDialogo, abrirMenu, alternarCamada, atualizar, atualizarCenario, criarExemplo, enquadrar, ferramentaDesenho, iniciarAdd, modoDesenho, modoMedir, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm, type PecaParede
 } from '@/lib/store';
 import { abrirMenuEmBotao } from './Topo';
 import type { Problema } from '@/lib/tipos';
@@ -45,7 +45,7 @@ export function Avisos() {
       <div key={g.qid}>
         {(grupos.length > 1 || invasoes.length > 0) && <p className="sub">{nomeComodo(dados, g.qid)}</p>}
         <ul>{g.itens.map((i, k) => <li key={k}>{clicavel && (i.mid || i.eid)
-          ? <button type="button" onClick={() => { if (i.mid) selecionar({ id: i.mid }, { abrir: true }); else if (i.eid && dados.els[i.eid]) selecionar({ eid: i.eid }, { abrir: true }); }}>{i.t}</button>
+          ? <button type="button" onClick={() => { if (i.mid) selecionar({ id: i.mid }, { abrir: true }); else if (i.eid && dados.els[i.eid]) selecionar({ eid: i.eid }, { abrir: true, via: g.qid }); }}>{i.t}</button>
           : i.t}</li>)}</ul>
       </div>
     ))}
@@ -99,20 +99,36 @@ export function Botoes() {
   );
 }
 
-/** Barra do modo de desenhar: o tipo do próximo cômodo e o "Pronto". */
+const PECAS = (): [PecaParede, string][] => [['porta', tx('Porta', 'Door')], ['correr', tx('Porta de correr', 'Sliding door')], ['vao', tx('Passagem', 'Opening')], ['janela', tx('Janela', 'Window')]];
+
+/** Barra do modo de desenhar: o tipo do próximo cômodo, a porta ou janela que um toque na parede põe, e o "Pronto". */
 export function BarraDesenho() {
   const d = useApp((s) => s.desenho);
   if (!d.ativo) return null;
+  const peca = d.item ? PECAS().find(([k]) => k === d.item)?.[1] || '' : '';
   return (
-    <div className="flut flut-desenho" id="barra-desenho" role="toolbar" aria-label={tx('Desenhar cômodos', 'Draw rooms')}>
+    <div className="flut flut-desenho" id="barra-desenho" role="toolbar" aria-label={tx('Desenhar a planta', 'Draw the plan')}>
       <div className="desenho-cab">
-        <p className="desenho-t"><Icone n="lapis" />{tx('Arraste o dedo ou o mouse na planta para desenhar', 'Drag your finger or the mouse on the plan to draw')}</p>
+        <p className="desenho-t" aria-live="polite"><Icone n={d.item ? 'porta' : 'lapis'} />{d.item
+          ? tx(`Toque numa parede para pôr ${d.item === 'janela' ? 'a janela' : d.item === 'vao' ? 'a passagem' : 'a porta'}`, `Tap a wall to add the ${peca.toLowerCase()}`)
+          : tx('Arraste o dedo ou o mouse na planta para desenhar', 'Drag your finger or the mouse on the plan to draw')}</p>
         <button type="button" className="btn prim peq" data-acao="desenho-pronto" onClick={() => modoDesenho(false)}>{tx('Pronto', 'Done')}</button>
       </div>
-      <div className="tipos tipos-desenho" role="group" aria-label={tx('O que desenhar', 'What to draw')}>
-        {TIPOS_COMODO.map((t) => <button key={t} type="button" className="tipo" data-tipo-comodo={t} aria-pressed={d.tipo === t} onClick={() => modoDesenho(true, t)}>{COMODO_NOME[t]}</button>)}
+      <div className="desenho-grupo">
+        <span className="desenho-rot" id="rot-desenho-comodo">{tx('Cômodo', 'Room')}</span>
+        <div className="tipos tipos-desenho" role="group" aria-labelledby="rot-desenho-comodo">
+          {TIPOS_COMODO.map((t) => <button key={t} type="button" className="tipo" data-tipo-comodo={t} aria-pressed={!d.item && d.tipo === t} onClick={() => modoDesenho(true, t)}>{COMODO_NOME[t]}</button>)}
+        </div>
       </div>
-      <p className="nota">{tx('Arraste num espaço vazio para desenhar; arraste um cômodo (pelo piso ou pelo nome) para mudar de lugar. Perto de outro cômodo as paredes grudam, e corredor e varanda já ganham porta para quem tocam. A tesoura na parede junta dois cômodos num espaço só. Com dois dedos (ou o espaço do teclado) você move a planta.', 'Drag on an empty spot to draw; drag a room (by its floor or name) to move it. Near another room the walls snap together, and hallways and porches get a door to the rooms they touch. The scissors on a wall join two rooms into one space. Use two fingers (or hold the space bar) to move the plan.')}</p>
+      <div className="desenho-grupo">
+        <span className="desenho-rot" id="rot-desenho-parede">{tx('Na parede', 'On a wall')}</span>
+        <div className="tipos tipos-desenho" role="group" aria-labelledby="rot-desenho-parede">
+          {PECAS().map(([k, rot]) => <button key={k} type="button" className="tipo peca" data-peca={k} aria-pressed={d.item === k} onClick={() => ferramentaDesenho(d.item === k ? null : k)}>{rot}</button>)}
+        </div>
+      </div>
+      <p className="nota">{d.item
+        ? tx('Entra onde você tocou, abrindo para o cômodo desse lado da parede, com a dobradiça do lado do canto mais perto. Toque numa porta para virar ou arrastar pela parede.', 'It goes where you tapped, opening into the room on that side of the wall, with the hinge toward the nearest corner. Tap a door to flip it or drag it along the wall.')
+        : tx('Arraste num espaço vazio para desenhar e arraste um cômodo para mudar de lugar; perto de outro, as paredes grudam e corredor e varanda já ganham porta. Dois dedos (ou o espaço do teclado) movem a planta.', 'Drag on an empty spot to draw and drag a room to move it; near another one the walls snap and hallways and porches get a door. Two fingers (or the space bar) move the plan.')}</p>
     </div>
   );
 }

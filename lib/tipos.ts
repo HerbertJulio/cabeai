@@ -12,6 +12,8 @@ export type LadoCadeiras = 'frente' | 'dois' | 'volta';
 /** Onde fica o baú em relação à cama: no meio, alinhado à esquerda ou à direita (mais um ajuste em cm). */
 export type AlinhaBau = 'centro' | 'esq' | 'dir';
 export type TipoParede = 'porta' | 'janela' | 'ar' | 'interruptor';
+/** Como é a porta: de abrir (uma folha), dupla, de correr ou só a passagem (vão livre, sem porta). */
+export type JeitoPorta = 'abrir' | 'dupla' | 'correr' | 'vao';
 /** Ponto na parede (o item de parede "interruptor"): elétrico (interruptor, tomada, os dois, arandela),
  *  de sinal (TV, internet) ou de água e gás (água, esgoto, gás). */
 export type Ponto = 'interruptor' | 'tomada' | 'ambos' | 'luz' | 'tv' | 'rede' | 'agua' | 'esgoto' | 'gas';
@@ -97,6 +99,8 @@ export interface ElParede {
   dobradica?: 'a' | 'b';
   /** Para onde a folha abre; "vao" = vão livre, sem porta (passagem). */
   abre?: 'dentro' | 'fora' | 'vao';
+  /** Porta dupla (duas folhas de abrir) ou de correr; sem o campo, uma folha de abrir. */
+  estilo?: 'dupla' | 'correr';
   abertura?: 'correr' | 'abrir';
   folhas?: 1 | 2;
   folga?: number;
