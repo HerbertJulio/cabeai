@@ -73,11 +73,12 @@ export function Cota({ a, b, em, eixo, texto, k = 1, cls = '' }: { a: number; b:
 }
 
 /** O terreno: a rua e a calçada na frente, a grama, o caminho até a porta da rua, as árvores, a divisa e as medidas. */
-export function TerrenoDesenho({ t, cs, els, k = 1, previa = false }: { t: TerrenoPos; cs: Comodo[]; els: ElParede[]; k?: number; previa?: boolean }) {
+/** "plano": só o chão (para a vista em 3D, que desenha as árvores em pé e não tem cotas). */
+export function TerrenoDesenho({ t, cs, els, k = 1, previa = false, plano = false }: { t: TerrenoPos; cs: Comodo[]; els: ElParede[]; k?: number; previa?: boolean; plano?: boolean }) {
   const f = faixasDaRua(t);
   const cam = useMemo(() => caminhos(t, cs, els), [t, cs, els]);
   // as árvores só aparecem com a casa no lugar (antes, elas ficariam onde a casa vai entrar)
-  const arv = useMemo(() => (cs.length && !previa ? arvores(t, cs, cam) : []), [t, cs, cam, previa]);
+  const arv = useMemo(() => (cs.length && !previa && !plano ? arvores(t, cs, cam) : []), [t, cs, cam, previa, plano]);
   const hz = t.rua === 'baixo' || t.rua === 'cima', meioRua = hz ? (f.rua.y1 + f.rua.y2) / 2 : (f.rua.x1 + f.rua.x2) / 2;
   const frente = hz ? t.w : t.h, fundo = hz ? t.h : t.w;
   // as cotas do terreno ficam nos lados que não são a rua
@@ -92,10 +93,12 @@ export function TerrenoDesenho({ t, cs, els, k = 1, previa = false }: { t: Terre
       {cam.map((c, i) => <rect key={i} className="caminho" {...r(c)} fill="url(#caminho)" />)}
       {arv.map((a, i) => <Arvore key={i} {...a} k={i * 0.9 + 0.3} />)}
       <rect className="lote-borda" x={n1(t.x)} y={n1(t.y)} width={n1(t.w)} height={n1(t.h)} />
-      <Cota a={t.x} b={t.x + t.w} em={cotaX} eixo="x" texto={`${fmtM(hz ? frente : fundo)} m`} k={k} cls="cota-terreno" />
-      <Cota a={t.y} b={t.y + t.h} em={cotaY} eixo="y" texto={`${fmtM(hz ? fundo : frente)} m`} k={k} cls="cota-terreno" />
-      {/* no canto de cima à direita (à esquerda, em cima da casa, fica o título do andar) */}
-      <text className="lote-t" x={n1(t.x + t.w - 14 * k)} y={n1(t.y + 26 * k)} textAnchor="end" style={{ fontSize: n1(13 * k) }}>{tx('Terreno', 'Plot')} · {fmtArea((t.w * t.h) / 10000)}</text>
+      {!plano && <>
+        <Cota a={t.x} b={t.x + t.w} em={cotaX} eixo="x" texto={`${fmtM(hz ? frente : fundo)} m`} k={k} cls="cota-terreno" />
+        <Cota a={t.y} b={t.y + t.h} em={cotaY} eixo="y" texto={`${fmtM(hz ? fundo : frente)} m`} k={k} cls="cota-terreno" />
+        {/* no canto de cima à direita (à esquerda, em cima da casa, fica o título do andar) */}
+        <text className="lote-t" x={n1(t.x + t.w - 14 * k)} y={n1(t.y + 26 * k)} textAnchor="end" style={{ fontSize: n1(13 * k) }}>{tx('Terreno', 'Plot')} · {fmtArea((t.w * t.h) / 10000)}</text>
+      </>}
     </g>
   );
 }

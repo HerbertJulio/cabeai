@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 const P: Record<string, ReactNode> = {
   girar: <><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></>,
+  'girar-esq': <><path d="M4 12a8 8 0 1 0 2.34-5.66" /><path d="M4 4v5h5" /></>,
   x: <path d="M6 6l12 12M18 6L6 18" />,
   mais: <><circle cx="5" cy="12" r="1.4" /><circle cx="12" cy="12" r="1.4" /><circle cx="19" cy="12" r="1.4" /></>,
   add: <path d="M12 5v14M5 12h14" />,

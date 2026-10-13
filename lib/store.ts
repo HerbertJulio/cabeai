@@ -13,6 +13,7 @@ import { centrar, geoEl, jeitoDaPorta, lugarLivre, normRot, posNoPonto, posValid
 import { sugerirCasa, sugerirComodo, type Opcao } from './motor';
 import type { Andar, Cenario, Comodo, Dados, ElParede, Escopo, JeitoPorta, Modo, Movel, Parede, Ponto, Terreno, TipoComodo, TipoMovel, TipoParede, Vista } from './tipos';
 import { vazio } from './tipos';
+import type { Giro } from './iso';
 import { definirIdioma, idioma, tx, type Idioma } from './i18n';
 import { fmtM, novoId, pl } from './util';
 
@@ -98,6 +99,9 @@ export interface Estado {
   medir: boolean;
   /** Marcando na parede entre "a" e "b" de onde até onde cortar (a tesoura da planta da casa). */
   corte: { a: string; b: string } | null;
+  /** A casa em 3D (só para ver): quantos quartos de volta ela girou, que andar aparece e se as paredes da frente
+   *  também sobem até o teto. */
+  tres: { ativo: boolean; giro: Giro; andar: string | null; altas: boolean };
   camadas: Camadas;
   tema: Tema;
   /** Dá para desfazer ou refazer agora; "v" muda a cada passo novo (a lista do histórico se atualiza). */
@@ -120,7 +124,7 @@ const inicial = (): Estado => ({
   verCen: null, cenBase: null, idioma: 'pt', folha: false, folhaModo: 'acoes', dlg: null, avisosAbertos: false,
   add: { tipo: 'guarda-roupa', ctx: null, rascunho: {} },
   sug: { busy: false, msg: '' }, ia: { busy: false, msg: '' }, iaCtl: null, planta: { busy: false, msg: '' }, plantaCtl: null,
-  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto', item: null, dividir: false }, passo: { ...PASSOS_FECHADO }, medir: false, corte: null, camadas: { ...CAMADAS_TODAS }, tema: 'auto',
+  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto', item: null, dividir: false }, passo: { ...PASSOS_FECHADO }, medir: false, corte: null, tres: { ativo: false, giro: 0, andar: null, altas: false }, camadas: { ...CAMADAS_TODAS }, tema: 'auto',
   hist: { desfazer: false, refazer: false, v: 0 }, pontos: [], estreito: false
 });
 
@@ -323,12 +327,32 @@ export function focarComodo(id: string, mostrar = false) {
 
 export function mudarVista(v: Vista) {
   set((s) => {
-    s.vista = v; s.selComodo = v === 'casa' ? s.selComodo : null;
+    s.vista = v; s.selComodo = v === 'casa' ? s.selComodo : null; s.tres.ativo = false;
     const c = s.verCen ? s.dados.cenarios[s.verCen] : null;
     if (v === 'um' && c && c.escopo === 'comodo' && c.comodo !== s.comodo) s.verCen = null;
   });
   enquadrar();
 }
+
+/* ---------- a casa em 3D ---------- */
+/** Liga ou desliga a vista em 3D (ela mostra o andar do cômodo em foco). */
+export function verEm3D(ativo: boolean) {
+  set((s) => {
+    // (sem cômodo, ou no meio do passo a passo, fica na planta)
+    if (ativo && (!Object.keys(s.dados.comodos).length || s.passo.ativo)) return;
+    s.tres.ativo = ativo;
+    if (ativo) {
+      const c = s.comodo ? s.dados.comodos[s.comodo] : null;
+      s.tres.andar = c ? c.andar : s.tres.andar && s.dados.andares[s.tres.andar] ? s.tres.andar : null;
+      s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.menu = null; s.medir = false; s.corte = null;
+      if (s.desenho.ativo) { s.desenho.ativo = false; s.desenho.item = null; s.desenho.dividir = false; }
+    }
+  });
+}
+/** Gira a casa 90° (1: no sentido do relógio; -1: ao contrário). */
+export function girar3D(lado: 1 | -1) { set((s) => { s.tres.giro = (((s.tres.giro + lado) % 4) + 4) % 4 as Giro; }); }
+export function andar3D(id: string) { set((s) => { if (s.dados.andares[id]) s.tres.andar = id; }); }
+export function paredesAltas3D(altas: boolean) { set((s) => { s.tres.altas = altas; }); }
 
 export function mudarModo(m: Modo) { set((s) => { s.modo = m; s.folha = false; s.folhaModo = 'acoes'; }); }
 
@@ -1338,6 +1362,7 @@ export function abrirPassos(rota: Rota) {
   set((s) => {
     s.passo = { ...PASSOS_FECHADO, ativo: true, rota, etapa, feitas: !temCasa && d.terreno && rota === 'casa' ? ['terreno'] : [] };
     s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.verCen = null; s.menu = null; s.latAberta = false; s.medir = false; s.dlg = null;
+    s.tres.ativo = false; s.corte = null;
   });
   aplicarEtapa(etapa);
   enquadrar();

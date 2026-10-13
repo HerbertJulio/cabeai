@@ -7,7 +7,7 @@ import { andaresOrdem, avaliacao, comodosDoAndar, comodosDoCenario, idsVisiveis,
 import { moveisDo } from '@/lib/dados';
 import { tx } from '@/lib/i18n';
 import {
-  abrirDialogo, abrirMenu, abrirPassos, alternarCamada, atualizar, atualizarCenario, criarExemplo, enquadrar, ferramentaDesenho, ferramentaDividir, iniciarAdd, modoDesenho, modoMedir, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm, type PecaParede
+  abrirDialogo, abrirMenu, abrirPassos, verEm3D, alternarCamada, atualizar, atualizarCenario, criarExemplo, enquadrar, ferramentaDesenho, ferramentaDividir, iniciarAdd, modoDesenho, modoMedir, sairCenario, selecionar, selecionarComodo, toast, useApp, usarCenario, zoomEm, type PecaParede
 } from '@/lib/store';
 import { abrirMenuEmBotao } from './Topo';
 import type { Problema } from '@/lib/tipos';
@@ -20,10 +20,11 @@ export function Avisos() {
   const comodo = useApp((s) => s.comodo);
   const verCen = useApp((s) => s.verCen);
   const abertos = useApp((s) => s.avisosAbertos);
+  const tres = useApp((s) => s.tres.ativo);
   const ultimo = useRef<string | null>(null);
   useEffect(() => { if (!verCen && ultimo.current) atualizar((s) => { s.avisosAbertos = false; }); ultimo.current = verCen; }, [verCen]);
   const ids = idsVisiveis(dados, vista, comodo);
-  if (!ids.length) return <div className="flut flut-ce" id="avisos" />;
+  if (!ids.length || tres) return <div className="flut flut-ce" id="avisos" />;
   const cv = verCen ? dados.cenarios[verCen] : null;
   const grupos: { qid: string; itens: Problema[] }[] = [];
   let total = 0, temAlgo = false;
@@ -90,7 +91,8 @@ export function Botoes() {
   const vista = useApp((s) => s.vista);
   const desenhando = useApp((s) => s.desenho.ativo);
   const passos = useApp((s) => s.passo.ativo);
-  if (!n || desenhando || passos) return null;
+  const tres = useApp((s) => s.tres.ativo);
+  if (!n || desenhando || passos || tres) return null;
   return (
     <div className="flut dock" id="dock" role="toolbar" aria-label={tx('Ações da planta', 'Plan actions')}>
       <button type="button" className="dock-b prim" id="b-add" onClick={() => { const s = useApp.getState(); iniciarAdd(s.add.tipo || 'guarda-roupa', { comodo: s.comodo || undefined }); }}><Icone n="add" /><span>{tx('Adicionar', 'Add')}</span></button>
@@ -135,13 +137,15 @@ export function BarraDesenho() {
 
 export function Controles() {
   const n = useApp((s) => Object.keys(s.dados.comodos).length);
+  const tres = useApp((s) => s.tres.ativo);
+  const passos = useApp((s) => s.passo.ativo);
   const modo = useApp((s) => s.modo);
   const setas = useApp((s) => s.setasTodos);
   const imaOn = useApp((s) => s.imaOn);
   const z = useApp((s) => s.cam.z);
   const camadas = useApp((s) => s.camadas);
   const medir = useApp((s) => s.medir);
-  if (!n) return <div className="flut flut-bd" id="controles" />;
+  if (!n || tres) return <div className="flut flut-bd" id="controles" />;
   const escondidas = Object.values(camadas).filter((v) => !v).length;
   const moveis = () => {
     alternarCamada('moveis');
@@ -154,6 +158,9 @@ export function Controles() {
   };
   return (
     <div className="flut flut-bd" id="controles">
+      <div className="ctrl-grupo">
+        <button type="button" data-t="3d" disabled={passos} aria-label={tx('Ver a casa em 3D', 'See the home in 3D')} title={tx('Ver a casa em 3D', 'See the home in 3D')} onClick={() => verEm3D(true)}><Icone n="cubo" /></button>
+      </div>
       <div className="ctrl-grupo">
         <button type="button" data-t="moveis" aria-pressed={!camadas.moveis} aria-label={camadas.moveis ? tx('Esconder os móveis', 'Hide the furniture') : tx('Mostrar os móveis', 'Show the furniture')} title={camadas.moveis ? tx('Esconder os móveis', 'Hide the furniture') : tx('Mostrar os móveis', 'Show the furniture')} onClick={moveis}><Icone n="sofa" />{!camadas.moveis && <i className="risco-ico" aria-hidden="true" />}</button>
         <button type="button" id="b-camadas" data-t="camadas" aria-haspopup="menu" aria-label={tx('O que aparece na planta', 'What shows on the plan')} title={tx('O que aparece na planta', 'What shows on the plan')} onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'camadas')}><Icone n="camadas" />{escondidas > 0 && <span className="ponto-aviso" aria-hidden="true" />}</button>

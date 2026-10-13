@@ -10,7 +10,7 @@ import { ehIdioma, idiomaDoNavegador, tx } from '@/lib/i18n';
 import {
   CAMADAS_TODAS, abrirDialogo, desfazerDoAviso, aplicarIdioma, aplicarTema, atualizar, avisarLigacoes, carregarPontos, colar, conectarComodo, copiar, desfazer, duplicar, duplicarComodo, enquadrar, estadoAtual, estreito, ferramentaDesenho,
   liberarEspaco,
-  cancelarCorte, fecharMenu, garantirComodo, girar, girarComodo, limparSel, modoDesenho, modoMedir, moverComodo, moverCorte, pedirRemover, pontoAutomatico, pontoPeriodico, porParede, refazer, salvarEl, salvarMovel, selecionar,
+  cancelarCorte, verEm3D, fecharMenu, garantirComodo, girar, girarComodo, limparSel, modoDesenho, modoMedir, moverComodo, moverCorte, pedirRemover, pontoAutomatico, pontoPeriodico, porParede, refazer, salvarEl, salvarMovel, selecionar,
   temCopia, toast, useApp, zoomEm, type Camadas, type Estado, type Tema
 } from '@/lib/store';
 import type { Modo, Vista } from '@/lib/tipos';
@@ -22,6 +22,7 @@ import Lateral from './Lateral';
 import Menu from './Menu';
 import Passos from './Passos';
 import Planta from './Planta';
+import Vista3D from './Vista3D';
 import { Avisos, BarraDesenho, Botoes, Controles, Vazio } from './Sobre';
 import Topo from './Topo';
 
@@ -56,6 +57,7 @@ export default function Editor() {
   const lingua = useApp((s) => s.idioma);
   const desenhando = useApp((s) => s.desenho.ativo);
   const passos = useApp((s) => s.passo.ativo);
+  const tres = useApp((s) => s.tres.ativo);
   const arquivo = useRef<HTMLInputElement>(null);
 
   // abrir: dados salvos neste navegador e as preferências
@@ -140,6 +142,7 @@ export default function Editor() {
         if (s.menu) { e.preventDefault(); fecharMenu(); return; }
         if (s.dlg) return;
         if (s.corte) { cancelarCorte(); return; }
+        if (s.tres.ativo) { verEm3D(false); return; }
         if (s.medir) { modoMedir(false); return; }
         // no passo a passo, o Esc só tira a seleção (a etapa decide a ferramenta)
         if (s.passo.ativo) { if (s.sel || s.selEl || s.selComodo) limparSel(); return; }
@@ -239,7 +242,7 @@ export default function Editor() {
     r.readAsText(f);
   };
 
-  const cls = ['app', modo === 'avancado' ? 'avancado' : '', `vista-${vista}`, !lateral ? 'sem-lateral' : '', est && latAberta ? 'lat-aberta' : '', carregado ? 'pronto' : 'abrindo', desenhando ? 'desenhando' : '', passos ? 'com-passos' : ''].filter(Boolean).join(' ');
+  const cls = ['app', modo === 'avancado' ? 'avancado' : '', `vista-${vista}`, !lateral ? 'sem-lateral' : '', est && latAberta ? 'lat-aberta' : '', carregado ? 'pronto' : 'abrindo', desenhando ? 'desenhando' : '', passos ? 'com-passos' : '', tres ? 'com-3d' : ''].filter(Boolean).join(' ');
   // trocar o idioma monta a tela de novo, já com os textos no idioma escolhido
   return (
     <Fragment key={lingua}>
@@ -251,7 +254,7 @@ export default function Editor() {
           <main className="area" id="area">
             <Faixa />
             <div className="tela" id="tela">
-              <Planta />
+              {tres ? <Vista3D /> : <Planta />}
               <Avisos />
               <Botoes />
               <BarraDesenho />

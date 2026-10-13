@@ -1,6 +1,6 @@
 'use client';
 import { andaresOrdem, comodosOrdem } from '@/lib/consultas';
-import { abrirDialogo, abrirMenu, atualizar, desfazer, estreito, fecharMenu, mudarModo, mudarVista, refazer, useApp } from '@/lib/store';
+import { abrirDialogo, abrirMenu, atualizar, desfazer, estreito, fecharMenu, mudarModo, mudarVista, refazer, useApp, verEm3D } from '@/lib/store';
 import { tx } from '@/lib/i18n';
 import { areaDaCasa, areaM2, fmtArea } from '@/lib/resumo';
 import type { Vista } from '@/lib/tipos';
@@ -20,6 +20,8 @@ export default function Topo() {
   const dados = useApp((s) => s.dados);
   const comodo = useApp((s) => s.comodo);
   const vista = useApp((s) => s.vista);
+  const tres = useApp((s) => s.tres.ativo);
+  const passos = useApp((s) => s.passo.ativo);
   const modo = useApp((s) => s.modo);
   const lateral = useApp((s) => s.lateral);
   const latAberta = useApp((s) => s.latAberta);
@@ -43,7 +45,8 @@ export default function Topo() {
       <div className="topo-quarto" id="topo-titulo">{titulo}</div>
       <div className="topo-ctrl">
         <div className="seg" id="vista" role="group" aria-label={tx('Vista', 'View')}>
-          {vistas().map(([v, t]) => <button key={v} type="button" data-vista={v} aria-pressed={vista === v} onClick={() => mudarVista(v)}>{t}</button>)}
+          {vistas().map(([v, t]) => <button key={v} type="button" data-vista={v} aria-pressed={vista === v && !tres} onClick={() => mudarVista(v)}>{t}</button>)}
+          <button type="button" data-vista="3d" aria-pressed={tres} disabled={!nc || passos} title={tx('A casa em 3D', 'The home in 3D')} onClick={() => verEm3D(true)}>3D</button>
         </div>
         <div className="seg" id="modo" role="group" aria-label={tx('Modo', 'Mode')}>
           <button type="button" data-modo="simples" aria-pressed={modo === 'simples'} onClick={() => mudarModo('simples')}>{tx('Simples', 'Simple')}</button>

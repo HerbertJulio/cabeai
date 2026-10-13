@@ -9,7 +9,7 @@ import { paraArquivo } from '@/lib/dados';
 import { imagemDaPlanta } from '@/lib/exportar';
 import {
   abrirDialogo, abrirPassos, alternar, alternarCamada, alternarParede, atualizar, avisarLigacoes, colar, copiar, cortarParedeToda, duplicar, duplicarComodo, editarItem, fecharMenu, focarComodo, girar, iniciarAdd, iniciarCorte, levar,
-  mostrarTudo, mudarIdioma, mudarJeitoPorta, mudarModo, mudarTema, mudarVista, pedirRemover, girarComodo, porParede, sairCenario, selecionarComodo, temCopia, toast, travar, useApp, usarCenario, virarAbertura, virarDobradica, type Camada, type InfoMenu
+  mostrarTudo, mudarIdioma, mudarJeitoPorta, mudarModo, mudarTema, mudarVista, pedirRemover, girarComodo, porParede, sairCenario, verEm3D, selecionarComodo, temCopia, toast, travar, useApp, usarCenario, virarAbertura, virarDobradica, type Camada, type InfoMenu
 } from '@/lib/store';
 import { tx } from '@/lib/i18n';
 import { clamp } from '@/lib/util';
@@ -125,6 +125,7 @@ function blocos(m: InfoMenu): Bloco[] {
     const temCasa = Object.keys(d.comodos).length > 0;
     out.push({ titulo: tx('Casa', 'Home'), itens: [
       { a: 'passos', t: tx('Montar passo a passo (terreno, casa, cômodos…)', 'Build step by step (plot, house, rooms…)') },
+      ...(Object.keys(d.comodos).length ? [{ a: 'ver-3d', t: tx('Ver a casa em 3D', 'See the home in 3D') }] : []),
       { a: 'historico', t: tx('Histórico e pontos de restauração', 'History and restore points') },
       ...(temCasa ? [{ a: 'resumo', t: tx('Resumo e lista de móveis', 'Summary and furniture list') }, { a: 'imagem', t: tx('Salvar a planta como imagem', 'Save the plan as an image') }] : [])
     ] });
@@ -199,6 +200,7 @@ function executar(a: string, m: InfoMenu) {
     case 'colar': colar(m.comodo ? { comodo: m.comodo, x: m.px != null ? Math.round(m.px) : undefined, y: m.py != null ? Math.round(m.py) : undefined } : null); break;
     case 'cam-tudo': mostrarTudo(); break;
     case 'passos': abrirPassos('casa'); break;
+    case 'ver-3d': verEm3D(true); break;
     case 'historico': abrirDialogo('historico'); break;
     case 'resumo': abrirDialogo('resumo'); break;
     case 'imagem': void imagemDaPlanta(); break;

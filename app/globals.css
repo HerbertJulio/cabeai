@@ -13,6 +13,7 @@
   --piso-varanda:#F1F6EC; --piso-agua:#EEF5F8; --piso-cozinha:#FAF5EC; --piso-garagem:#F1F2F3;
   --piso-madeira:#F2E8D8; --piso-madeira-l:#E2D1B6; --piso-porc:#FBFBF9; --piso-porc-l:#E7E7E1; --piso-coz-l:#EBE0CC; --piso-ceram-l:#D6E2E9; --piso-deck:#ECDFC8; --piso-deck-l:#D6C2A1;
   --grama:#E2EBD7; --grama-l:#C3D5B0; --calcada:#ECECE8; --calcada-l:#D5D7D1; --caminho:#E8E3D8; --caminho-l:#CFC7B6; --asfalto:#D3D6DA; --arvore:#B7CEA2; --arvore-l:#86A772;
+  --iso-p1:#F3F4F1; --iso-p2:#DCDFD9; --iso-base:#C9CDC6; --iso-aresta:rgba(27,31,36,.42);
   --shadow:0 1px 2px rgba(20,24,30,.06),0 6px 20px rgba(20,24,30,.08);
   --sheet-shadow:0 -6px 30px rgba(20,24,30,.18);
   --f-display:var(--fonte-titulo),'Barlow Condensed','Arial Narrow',sans-serif;
@@ -33,6 +34,7 @@
   --piso-varanda:#18201A; --piso-agua:#152026; --piso-cozinha:#221E18; --piso-garagem:#1C1F23;
   --piso-madeira:#28231C; --piso-madeira-l:#3A3228; --piso-porc:#181C21; --piso-porc-l:#252B33; --piso-coz-l:#30291F; --piso-ceram-l:#203039; --piso-deck:#2A231A; --piso-deck-l:#3B3124;
   --grama:#162019; --grama-l:#22342A; --calcada:#1F2328; --calcada-l:#2D3239; --caminho:#2A2722; --caminho-l:#3A352D; --asfalto:#252A30; --arvore:#29392B; --arvore-l:#47644B;
+  --iso-p1:#3A414B; --iso-p2:#2B3139; --iso-base:#22272D; --iso-aresta:rgba(0,0,0,.55);
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
   --sheet-shadow:0 -6px 30px rgba(0,0,0,.55);
   color-scheme:dark;
@@ -51,6 +53,7 @@
   --piso-varanda:#18201A; --piso-agua:#152026; --piso-cozinha:#221E18; --piso-garagem:#1C1F23;
   --piso-madeira:#28231C; --piso-madeira-l:#3A3228; --piso-porc:#181C21; --piso-porc-l:#252B33; --piso-coz-l:#30291F; --piso-ceram-l:#203039; --piso-deck:#2A231A; --piso-deck-l:#3B3124;
   --grama:#162019; --grama-l:#22342A; --calcada:#1F2328; --calcada-l:#2D3239; --caminho:#2A2722; --caminho-l:#3A352D; --asfalto:#252A30; --arvore:#29392B; --arvore-l:#47644B;
+  --iso-p1:#3A414B; --iso-p2:#2B3139; --iso-base:#22272D; --iso-aresta:rgba(0,0,0,.55);
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
   --sheet-shadow:0 -6px 30px rgba(0,0,0,.55);
   color-scheme:dark;
@@ -709,3 +712,27 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .divisao{pointer-events:none}
 .divisao-p{fill:var(--accent);opacity:.6}
 #planta.desenhando.com-dividir,#planta.cortando{cursor:crosshair}
+
+/* ---------- a casa em 3D (só para ver) ---------- */
+#planta3d{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+#planta3d:active{cursor:grabbing}
+.iso .piso{stroke:none}
+.iso-base{fill:var(--iso-base)}
+.iso-sombra{fill:#10141a;opacity:.09}
+.iso-sombra-casa{fill:#10141a;opacity:.07}
+.iso-p{stroke:var(--iso-aresta);stroke-width:1;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+.iso-p.iso-fx{fill:var(--iso-p1)}.iso-p.iso-fy{fill:var(--iso-p2)}.iso-p.iso-ft{fill:var(--wall)}
+.iso-sx,.iso-sy{fill:#000;pointer-events:none}.iso-sx{opacity:.05}.iso-sy{opacity:.15}
+.iso-parede .iso-sx,.iso-parede .iso-sy{display:none}
+.iso-v{fill:var(--glass);fill-opacity:.3;stroke:var(--glass);stroke-width:1;vector-effect:non-scaling-stroke}
+.iso-vidro .iso-sx,.iso-vidro .iso-sy{display:none}
+.iso-mv .mv-base{stroke-width:1}
+.iso-tronco{stroke:#8B6A48;stroke-linecap:round}
+.iso-copa{fill:var(--arvore);stroke:var(--arvore-l);stroke-width:1.4;vector-effect:non-scaling-stroke}
+.iso-copa-luz{fill:#fff;opacity:.16;pointer-events:none}
+.iso-nome{font-family:var(--f-display);font-weight:700;fill:var(--ink);paint-order:stroke;stroke:var(--paper);stroke-linejoin:round;pointer-events:none;letter-spacing:.01em}
+.vazio-3d{position:absolute;inset:0;display:grid;place-items:center}
+.iso-arvore.na-frente{opacity:.42}
+.dock.dock-3d .dock-b:not(.prim) span.sempre{display:inline}
+.dock.dock-3d .dock-b[data-3d-andar]:not(.prim){width:auto;padding:0 11px}
+@media (max-width:520px){.dock.dock-3d .dock-b:not(.prim) span:not(.sempre){display:none}.dock.dock-3d .dock-sep{display:none}.dock.dock-3d .dock-b.prim{padding:0 12px}}

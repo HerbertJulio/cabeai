@@ -59,7 +59,7 @@ export async function pngDaPlanta(titulo: string): Promise<Blob | null> {
   fundo.setAttribute('style', 'fill:var(--paper-2)');
   copia.insertBefore(fundo, copia.firstChild);
   const estilo = document.createElementNS('http://www.w3.org/2000/svg', 'style');
-  estilo.textContent = (await estilos()) + `\n#planta{position:static;width:${W}px;height:${H}px;cursor:default}`;
+  estilo.textContent = (await estilos()) + `\n#planta,#planta3d{position:static;width:${W}px;height:${H}px;cursor:default}`;
   copia.insertBefore(estilo, copia.firstChild);
   const texto = new XMLSerializer().serializeToString(copia);
   const url = URL.createObjectURL(new Blob([texto], { type: 'image/svg+xml;charset=utf-8' }));
@@ -108,7 +108,7 @@ export const nomeImagem = () => tx('cabeai-planta-', 'cabeai-plan-') + new Date(
 /** O botão "Salvar a planta como imagem": título com a área da casa (ou o nome do cômodo, vendo um só). */
 export async function imagemDaPlanta() {
   const s = useApp.getState(), d = s.dados, q = s.comodo ? d.comodos[s.comodo] : null;
-  const titulo = s.vista === 'um' && q ? `Cabeaí · ${q.nome}` : `Cabeaí · ${tx('Casa', 'Home')} · ${fmtArea(areaDaCasa(d))}`;
+  const titulo = s.tres.ativo ? `Cabeaí · ${tx('Casa em 3D', 'Home in 3D')} · ${fmtArea(areaDaCasa(d))}` : s.vista === 'um' && q ? `Cabeaí · ${q.nome}` : `Cabeaí · ${tx('Casa', 'Home')} · ${fmtArea(areaDaCasa(d))}`;
   toast(tx('Preparando a imagem…', 'Preparing the image…'));
   const r = await salvarImagem(titulo, nomeImagem());
   if (r === 'erro') toast(tx('Não deu para montar a imagem neste navegador.', 'Couldn’t make the image in this browser.'), 'erro');
