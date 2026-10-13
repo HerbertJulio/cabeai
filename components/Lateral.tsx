@@ -31,7 +31,7 @@ export default function Lateral() {
     [tx('Tomadas e outros pontos', 'Outlets and hookups'), 'interruptor', 'interruptor', q.interruptores, tx('Nenhum.', 'None.'), tx('tomada, interruptor, ponto de TV, água ou gás', 'outlet, switch, TV, water or gas hookup')]
   ] as const) : [];
   // paredes tiradas (deste lado ou do vizinho): o cômodo continua no vizinho
-  const abertas = q ? q.portas.filter((p) => p.semParede).map((p) => (p.herdada ? p.origemComodo : p.liga)).filter((id): id is string => !!id && !!dados.comodos[id]) : [];
+  const abertas = q ? q.portas.filter((p) => p.semParede).map((p) => ({ id: (p.herdada ? p.origemComodo : p.liga) || '', w: p.largura, parcial: !!(p.herdada && p.origem ? dados.els[p.origem]?.parcial : p.parcial) })).filter((x) => !!x.id && !!dados.comodos[x.id]) : [];
 
   return (
     <aside className="lateral" id="lateral" aria-label={tx('Cômodos e itens', 'Rooms and items')}>
@@ -100,8 +100,10 @@ export default function Lateral() {
                   ); })}
                 </ul>
               ) : <p className="nota">{vazio}</p>}
-              {tipo === 'porta' && abertas.map((id) => (
-                <p key={id} className="nota sem-parede-nota">{tx(`Sem parede com ${dados.comodos[id].nome}: é um espaço só.`, `No wall with ${dados.comodos[id].nome}: it’s one space.`)} <button type="button" className="link" data-acao="por-parede" onClick={() => porParede(q.id, id)}>{tx('Pôr a parede de volta', 'Put the wall back')}</button></p>
+              {tipo === 'porta' && abertas.map(({ id, w, parcial }) => (
+                <p key={id} className="nota sem-parede-nota">{parcial
+                  ? tx(`Parede com ${dados.comodos[id].nome} cortada em ${fmtM(w)} m.`, `Wall with ${dados.comodos[id].nome} cut for ${fmtM(w)} m.`)
+                  : tx(`Sem parede com ${dados.comodos[id].nome}: é um espaço só.`, `No wall with ${dados.comodos[id].nome}: it’s one space.`)} <button type="button" className="link" data-acao="por-parede" onClick={() => porParede(q.id, id)}>{tx('Pôr a parede de volta', 'Put the wall back')}</button></p>
               ))}
             </div>
           ))}

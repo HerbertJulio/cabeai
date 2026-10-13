@@ -116,6 +116,9 @@ export interface ElParede {
   liga?: string;
   /** A parede entre os dois cômodos foi tirada: o espaço continua no vizinho (a "porta" ocupa a parede dividida inteira). */
   semParede?: boolean;
+  /** A parede foi cortada só num trecho (de onde até onde a pessoa marcou); sem isso, o corte é a parede dividida
+   *  inteira e acompanha quando ela cresce ou encolhe. */
+  parcial?: boolean;
 }
 
 export interface ItemCenario {
@@ -137,12 +140,24 @@ export interface Cenario {
   explicacao: string;
 }
 
+/** O terreno da casa: um retângulo (cm) na planta do andar de baixo e o lado em que fica a rua. */
+export interface Terreno {
+  andar: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rua: Parede;
+}
+
 export interface Dados {
   andares: Record<string, Andar>;
   comodos: Record<string, Comodo>;
   moveis: Record<string, Movel>;
   els: Record<string, ElParede>;
   cenarios: Record<string, Cenario>;
+  /** Sem terreno, a planta mostra só a casa. */
+  terreno?: Terreno;
 }
 
 /** Cômodo com os itens de parede já separados (o que a geometria usa). */

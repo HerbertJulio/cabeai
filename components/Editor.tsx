@@ -10,7 +10,7 @@ import { ehIdioma, idiomaDoNavegador, tx } from '@/lib/i18n';
 import {
   CAMADAS_TODAS, abrirDialogo, desfazerDoAviso, aplicarIdioma, aplicarTema, atualizar, avisarLigacoes, carregarPontos, colar, conectarComodo, copiar, desfazer, duplicar, duplicarComodo, enquadrar, estadoAtual, estreito, ferramentaDesenho,
   liberarEspaco,
-  fecharMenu, garantirComodo, girar, girarComodo, limparSel, modoDesenho, modoMedir, moverComodo, pedirRemover, pontoAutomatico, pontoPeriodico, refazer, salvarEl, salvarMovel, selecionar,
+  cancelarCorte, fecharMenu, garantirComodo, girar, girarComodo, limparSel, modoDesenho, modoMedir, moverComodo, moverCorte, pedirRemover, pontoAutomatico, pontoPeriodico, porParede, refazer, salvarEl, salvarMovel, selecionar,
   temCopia, toast, useApp, zoomEm, type Camadas, type Estado, type Tema
 } from '@/lib/store';
 import type { Modo, Vista } from '@/lib/tipos';
@@ -20,6 +20,7 @@ import Folha from './Folha';
 import Inspetor from './Inspetor';
 import Lateral from './Lateral';
 import Menu from './Menu';
+import Passos from './Passos';
 import Planta from './Planta';
 import { Avisos, BarraDesenho, Botoes, Controles, Vazio } from './Sobre';
 import Topo from './Topo';
@@ -54,6 +55,7 @@ export default function Editor() {
   const est = useApp((s) => s.estreito);
   const lingua = useApp((s) => s.idioma);
   const desenhando = useApp((s) => s.desenho.ativo);
+  const passos = useApp((s) => s.passo.ativo);
   const arquivo = useRef<HTMLInputElement>(null);
 
   // abrir: dados salvos neste navegador e as preferências
@@ -137,7 +139,10 @@ export default function Editor() {
       if (e.key === 'Escape') {
         if (s.menu) { e.preventDefault(); fecharMenu(); return; }
         if (s.dlg) return;
+        if (s.corte) { cancelarCorte(); return; }
         if (s.medir) { modoMedir(false); return; }
+        // no passo a passo, o Esc só tira a seleção (a etapa decide a ferramenta)
+        if (s.passo.ativo) { if (s.sel || s.selEl || s.selComodo) limparSel(); return; }
         // desenhando: tira a seleção, depois larga a ferramenta de porta ou janela, depois sai do modo
         if (s.desenho.ativo) { if (s.sel || s.selEl || s.selComodo) limparSel(); else if (s.desenho.item) ferramentaDesenho(null); else modoDesenho(false); return; }
         if (s.latAberta) { atualizar((x) => { x.latAberta = false; }); return; }
@@ -176,6 +181,9 @@ export default function Editor() {
         if (a.id ? s.sel !== a.id : s.selEl !== a.eid) selecionar(a, { painel: false, via: gFoco.getAttribute('data-via') || undefined });
       }
       const s2 = estadoAtual(), item = alvoSel(s2.dados, s2.sel, s2.selEl), qSel = !item && s2.selComodo && s2.dados.comodos[s2.selComodo] ? s2.selComodo : null;
+      // (o corte da parede não se remove: a parede volta)
+      const elSel = s2.selEl ? s2.dados.els[s2.selEl] : null;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && elSel?.semParede && elSel.liga) { e.preventDefault(); porParede(elSel.comodo, elSel.liga); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && item) { e.preventDefault(); pedirRemover(); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && qSel) { e.preventDefault(); abrirDialogo('remover-comodo', { id: qSel }); return; }
       if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey) && item) { e.preventDefault(); duplicar(); return; }
@@ -194,7 +202,8 @@ export default function Editor() {
         const h = horizontal(el.parede), dd = h ? dx : dy; if (!dd) return;
         e.preventDefault();
         const g = geoEl(s2.dados.comodos[el.comodo], el);
-        salvarEl(el.id, { inicio: Math.round(Math.min(Math.max(0, g.a + dd), g.L - (g.b - g.a))) });
+        if (el.semParede) moverCorte(el.id, g.a + dd);
+        else salvarEl(el.id, { inicio: Math.round(Math.min(Math.max(0, g.a + dd), g.L - (g.b - g.a))) });
         return;
       }
       if (s2.sel) {
@@ -230,7 +239,7 @@ export default function Editor() {
     r.readAsText(f);
   };
 
-  const cls = ['app', modo === 'avancado' ? 'avancado' : '', `vista-${vista}`, !lateral ? 'sem-lateral' : '', est && latAberta ? 'lat-aberta' : '', carregado ? 'pronto' : 'abrindo', desenhando ? 'desenhando' : ''].filter(Boolean).join(' ');
+  const cls = ['app', modo === 'avancado' ? 'avancado' : '', `vista-${vista}`, !lateral ? 'sem-lateral' : '', est && latAberta ? 'lat-aberta' : '', carregado ? 'pronto' : 'abrindo', desenhando ? 'desenhando' : '', passos ? 'com-passos' : ''].filter(Boolean).join(' ');
   // trocar o idioma monta a tela de novo, já com os textos no idioma escolhido
   return (
     <Fragment key={lingua}>
@@ -246,6 +255,7 @@ export default function Editor() {
               <Avisos />
               <Botoes />
               <BarraDesenho />
+              <Passos />
               <Controles />
               <Vazio />
             </div>

@@ -237,6 +237,8 @@ export const horizontal = (parede: Parede): boolean => parede === 'cima' || pare
 export const rotDist = (parede: Parede): string => (horizontal(parede) ? tx('Distância do canto esquerdo', 'Distance from the left corner') : tx('Distância do canto de cima', 'Distance from the top corner'));
 
 export const LIM_COMODO = { min: 60, max: 3000 };
+/** Terreno: de 3 m a 300 m de cada lado. */
+export const LIM_TERRENO = { min: 300, max: 30000 };
 export const LIM_MOVEL = { min: 10, max: 600 };
 export const LIM_CADEIRA = { min: 25, max: 120 };
 export const LIM_BAU = { min: 10, max: 150 };

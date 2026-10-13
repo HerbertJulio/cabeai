@@ -2,9 +2,9 @@
 // A planta: desenho em escala + mouse, toque, pinça e teclado.
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { espacos, imaBorda, imaComodo, retDesenhado } from '@/lib/casa';
-import { COMODO_NOME, T, horizontal } from '@/lib/catalogo';
-import type { Borda } from '@/lib/edicao';
+import { espacos, imaBorda, imaComodo, linhaDaParede, paredeDividida, paredeNoPontoDaCasa, retDesenhado, type LinhaParede } from '@/lib/casa';
+import { COMODO_NOME, LIM_COMODO, T, horizontal } from '@/lib/catalogo';
+import { limitesDoCorte, semParedeEntre, type Borda } from '@/lib/edicao';
 import { comodosDoAndar, avaliacao, cq, elVisto, idsVisiveis, listaAtiva, vizinhosDeParede, type ParedeVizinha } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
 import { dims, folhasPorta, geoEl, ima, paredePerto, prender, ret, temGiro, uDaParede, uv2xy } from '@/lib/geometria';
@@ -12,18 +12,20 @@ import { tx } from '@/lib/i18n';
 import { registrarPlanta } from '@/lib/exportar';
 import { areaDoAndar, fmtArea } from '@/lib/resumo';
 import {
-  abrirMenu, alternarParede, atualizar, avisarLigacoes, conectarComodo, desenharComodo, editarItem, estadoAtual, esticar, fecharMenu, fimEsticar, focarComodo, girarComodo,
-  limparSel, moverComodo, porNaParede, salvarElVisto, salvarMovel, selecionar, selecionarComodo, toast, useApp, zoomEm
+  abrirMenu, ajustarCorte, anotarPasso, atualizar, avisarLigacoes, cancelarCorte, conectarComodo, cortarParede, desenharComodo, dividirComodoEm, editarItem, esquecerPasso, estadoAtual, fecharMenu, fimMoverParede, focarComodo,
+  girarComodo, iniciarCorte, limparSel, moverComodo, moverCorte, moverParedeReta, porNaParede, porParede, salvarElVisto, salvarMovel, selecionar, selecionarComodo, toast, useApp, zoomEm
 } from '@/lib/store';
-import type { Comodo, Dados, Parede, Vista } from '@/lib/tipos';
+import type { Comodo, Dados, ElParede, Parede, Ret, Vista } from '@/lib/tipos';
 import { fmtM, n1 } from '@/lib/util';
-import { layoutDe, vbAtual, vbBase, type Layout } from '@/lib/vista';
+import { COTA_CASA, comPrevia, layoutDe, vbAtual, vbBase, type Layout } from '@/lib/vista';
+import { extensaoTerreno } from '@/lib/jardim';
 import BarraContexto, { type AlvoTela } from './Contexto';
 import { DefsPlanta, PortasPorCima, RotulosSala, Sala, Seta } from './desenho/Sala';
+import { Cota, CotasCasa, DefsJardim, PreviaCasa, PreviaComodo, SombraCasa, TerrenoDesenho } from './desenho/Terreno';
 
 const ALVOS = '.mv, .jan, .arel, .porta-el, .interr-el';
 type Pt = { x: number; y: number };
-interface Congelado { andar: string; ox: number; oy: number; off: Record<string, Pt>; vb: Layout['vb']; andares: Layout['andares'] }
+interface Congelado { andar: string; ox: number; oy: number; off: Record<string, Pt>; vb: Layout['vb']; foco: Layout['foco']; andares: Layout['andares'] }
 /** Retângulo sendo desenhado (coordenadas do andar) e o deslocamento do andar na tela. */
 interface Risco { andar: string | null; ox: number; oy: number; x: number; y: number; w: number; h: number }
 const BORDAS: Borda[] = ['esq', 'dir', 'cima', 'baixo'];
@@ -45,6 +47,20 @@ function naParede(c: Comodo, p: ParedeVizinha['parede'], u: number, v = 0): Pt {
   return { x: c.w + T / 2 - v, y: u };
 }
 
+/** O ponto "l" (no desenho do cômodo) visto pela parede: "u" ao longo dela e a distância até o meio da espessura. */
+function naLinhaDaParede(c: Comodo, p: Parede, l: Pt): { u: number; dist: number } {
+  if (p === 'cima') return { u: l.x, dist: Math.abs(l.y + T / 2) };
+  if (p === 'baixo') return { u: l.x, dist: Math.abs(l.y - c.h - T / 2) };
+  if (p === 'esquerda') return { u: l.y, dist: Math.abs(l.x + T / 2) };
+  return { u: l.y, dist: Math.abs(l.x - c.w - T / 2) };
+}
+/** Retângulo (no desenho do cômodo) de um trecho da parede: "u" ao longo dela, "v" para dentro do cômodo (a parede
+ *  vai de v = -T a 0). */
+function retNaParede(c: Comodo, p: Parede, u1: number, u2: number, v1: number, v2: number) {
+  const a = uv2xy(c, p, u1, v1), b = uv2xy(c, p, u2, v2), r = (v: number) => Math.round(v * 1000) / 1000;
+  return { x: r(Math.min(a[0], b[0])), y: r(Math.min(a[1], b[1])), width: r(Math.abs(a[0] - b[0])), height: r(Math.abs(a[1] - b[1])) };
+}
+
 export default function Planta() {
   const dados = useApp((s) => s.dados);
   const vista = useApp((s) => s.vista);
@@ -61,6 +77,8 @@ export default function Planta() {
   const medir = useApp((s) => s.medir);
   const camadas = useApp((s) => s.camadas);
   const folha = useApp((s) => s.folha);
+  const passo = useApp((s) => s.passo);
+  const corte = useApp((s) => s.corte);
   const svgRef = useRef<SVGSVGElement>(null);
   const [tela, setTela] = useState({ w: 800, h: 600 });
   const [congelado, setCongelado] = useState<Congelado | null>(null);
@@ -68,6 +86,13 @@ export default function Planta() {
   const [trena, setTrena] = useState<Trena | null>(null);
   /** Cômodo sendo arrastado ou esticado: as paredes que ele divide com os vizinhos ficam acesas ("grudou"). */
   const [juntaQ, setJuntaQ] = useState<string | null>(null);
+  /** A parede reta sendo arrastada (acesa no desenho) e a parede nova que vai dividir um cômodo (prévia). */
+  const [linhaViva, setLinhaViva] = useState<{ ox: number; oy: number; l: LinhaParede } | null>(null);
+  const [divisao, setDivisao] = useState<{ qid: string; eixo: 'x' | 'y'; u: number } | null>(null);
+  /** Montando a imagem da planta: os textos ficam do tamanho de perto (a imagem tem a escala dela). */
+  const [kFixo, setKFixo] = useState(false);
+  /** Tesoura: o trecho que está sendo marcado na parede (medido na parede do cômodo "a" do corte). */
+  const [marca, setMarca] = useState<{ u1: number; u2: number } | null>(null);
   const espaco = useRef(false);
   /** No modo de desenhar, a barra de ações vai para o painel de baixo (não cobre as paredes onde se toca). */
   const [doca, setDoca] = useState<HTMLElement | null>(null);
@@ -99,14 +124,34 @@ export default function Planta() {
   const lay0 = useMemo(() => layoutDe(dados, vista, ids, tela), [dados, vista, ids, tela]);
   // enquanto um cômodo é arrastado, a planta do andar não "pula" quando o contorno da casa muda
   const lay: Layout = useMemo(() => {
-    if (!lay0.ids.length && desenho.ativo) return { ...lay0, vb: VB_VAZIO };
+    // (só o terreno, sem cômodos: ele mesmo é o enquadramento)
+    if (!lay0.ids.length && !lay0.andares.length && desenho.ativo) return { ...lay0, vb: VB_VAZIO };
     if (!congelado || vista !== 'casa') return lay0;
     const off: Record<string, Pt> = { ...lay0.off };
     for (const id of lay0.ids) { const c = dados.comodos[id]; if (c && c.andar === congelado.andar) off[id] = { x: congelado.ox + c.x, y: congelado.oy + c.y }; else if (congelado.off[id]) off[id] = congelado.off[id]; }
-    return { ...lay0, off, vb: congelado.vb, andares: congelado.andares };
+    return { ...lay0, off, vb: congelado.vb, foco: congelado.foco, andares: congelado.andares };
   }, [lay0, congelado, dados, vista, desenho.ativo]);
-  // desenhando, a barra do desenho fica embaixo: a planta se enquadra acima dela
-  const base = useMemo(() => vbBase(lay, tela.w, tela.h, tela.w < 900, desenho.ativo ? (desenho.item ? 125 : 175) : 0), [lay, tela, desenho.ativo, desenho.item]);
+  // passo a passo: o que a pessoa ainda está digitando (terreno, contorno da casa, cômodo) aparece como prévia
+  const previa = passo.ativo ? passo.previa : null;
+  const layP = useMemo(() => {
+    if (!previa) return null;
+    const rs: Ret[] = [];
+    if (previa.terreno) rs.push(extensaoTerreno(previa.terreno));
+    if (previa.casa) rs.push({ x1: previa.casa.x - 70, y1: previa.casa.y - 40, x2: previa.casa.x + previa.casa.w + 20, y2: previa.casa.y + previa.casa.h + 20 });
+    if (previa.comodo) rs.push({ x1: -T - 70, y1: -T - 70, x2: previa.comodo.w + T + 20, y2: previa.comodo.h + T + 20 });
+    return comPrevia(lay, dados, rs);
+  }, [lay, previa, dados]);
+  // desenhando, a barra do desenho fica embaixo; no passo a passo, o painel (embaixo no celular, ao lado no computador)
+  const baixo = passo.ativo ? passo.alto : desenho.ativo ? (desenho.item ? 125 : 175) : 0, esq = passo.ativo ? passo.esq : 0;
+  const base = useMemo(() => vbBase(layP || lay, tela.w, tela.h, tela.w < 900, baixo, esq), [layP, lay, tela, baixo, esq]);
+  // os andares trocaram de arrumação (lado a lado ↔ um embaixo do outro, porque a tela mudou): a câmera de antes
+  // apontaria para o lugar errado, então a planta volta a se enquadrar
+  const empilhado = !!lay0.empilhado, empAntes = useRef(empilhado);
+  useEffect(() => {
+    if (empAntes.current === empilhado) return;
+    empAntes.current = empilhado;
+    if (estadoAtual().cam.cx != null) atualizar((s) => { s.cam = { z: 1, cx: null, cy: null }; });
+  }, [empilhado]);
   const vb = vbAtual(base, cam);
   useEffect(() => { const s = estadoAtual(); if (s.camBase.cx !== base.cx || s.camBase.cy !== base.cy) atualizar((e) => { e.camBase = { cx: base.cx, cy: base.cy }; }); }, [base]);
 
@@ -116,10 +161,17 @@ export default function Planta() {
     drag: null as null | { id: string; dx: number; dy: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number },
     dragEl: null as null | { id: string; du: number; via: string | null; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number },
     dragQ: null as null | { id: string; dx: number; dy: number; ox: number; oy: number; pid: number; moveu: boolean; ativo: boolean; cx: number; cy: number; offAntes: Pt },
-    pan: null as null | { pid: number; x: number; y: number; cx0: number; cy0: number; esc: number; moveu: boolean; qid: string | null; tit: boolean; so?: boolean; por?: Pt },
+    pan: null as null | { pid: number; x: number; y: number; cx0: number; cy0: number; esc: number; moveu: boolean; qid: string | null; tit: boolean; so?: boolean; por?: Pt; sairCorte?: boolean },
+    /** Tesoura: marcando na parede de onde ("u0") até onde ("u") cortar. */
+    corta: null as null | { pid: number; u0: number; u: number; moveu: boolean; cx: number; cy: number },
+    /** Arrastando uma das pontas do corte selecionado. */
+    ponta: null as null | { pid: number; eid: string; qual: 'a' | 'b'; du: number; moveu: boolean; cx: number; cy: number; rotulo: string },
     risco: null as null | { pid: number; andar: string | null; ox: number; oy: number; p0: Pt; r?: { x: number; y: number; w: number; h: number } },
     trena: null as null | { pid: number; a: Pt; cx: number; cy: number },
-    estica: null as null | { pid: number; id: string; borda: Borda; ox: number; oy: number; moveu: boolean },
+    /** Arrastando uma parede reta: os cômodos dos dois lados andam juntos. */
+    parede: null as null | { pid: number; l: LinhaParede; andar: string; ox: number; oy: number; p0: number; moveu: boolean; cx: number; cy: number; rotulo: string; qid: string },
+    /** Riscando uma parede nova dentro de um cômodo (ferramenta de dividir). */
+    divide: null as null | { pid: number; p0: Pt; moveu: boolean; cx: number; cy: number; ultimo: { qid: string; eixo: 'x' | 'y'; u: number } | null },
     pinca: null as null | { d0: number; z0: number; esc0: number; rc: Pt; m0: Pt; c0: Pt },
     lp: null as null | { pid: number; x: number; y: number; timer: number },
     toque: null as null | { chave: string; t: number },
@@ -129,7 +181,11 @@ export default function Planta() {
   }).current;
   const layRef = useRef(lay); layRef.current = lay;
   // para salvar a planta como imagem
-  useEffect(() => { registrarPlanta(() => (svgRef.current ? { svg: svgRef.current, vb: layRef.current.vb } : null)); return () => registrarPlanta(null); }, []);
+  useEffect(() => {
+    const preparar = (fixo: boolean) => new Promise<void>((ok) => { setKFixo(fixo); requestAnimationFrame(() => requestAnimationFrame(() => ok())); });
+    registrarPlanta(() => (svgRef.current ? { svg: svgRef.current, vb: layRef.current.vb } : null), preparar);
+    return () => registrarPlanta(null);
+  }, []);
   const vbRef = useRef(vb); vbRef.current = vb;
   const baseRef = useRef(base); baseRef.current = base;
 
@@ -169,12 +225,11 @@ export default function Planta() {
   /** Andar onde o ponto caiu (ou o do cômodo em foco) e o deslocamento dele na tela. */
   function andarNoPonto(p: Pt): { andar: string | null; ox: number; oy: number } {
     const s = estadoAtual(), d = s.dados, L = layRef.current;
-    let andar: string | null = null;
-    for (const a of L.andares) if (p.x >= a.x - 80 && p.x <= a.x + a.w + 80 && p.y >= a.y - 80 && p.y <= a.y + a.h + 80) { andar = a.id; break; }
-    if (!andar) { const c = s.comodo ? d.comodos[s.comodo] : null; andar = c ? c.andar : L.andares[0]?.id ?? null; }
-    const c0 = andar ? comodosDoAndar(d, andar).find((c) => L.off[c.id]) : null;
-    if (c0) return { andar, ox: L.off[c0.id].x - c0.x, oy: L.off[c0.id].y - c0.y };
-    return { andar, ox: 0, oy: 0 };
+    let a = L.andares.find((x) => p.x >= x.x - 80 && p.x <= x.x + x.w + 80 && p.y >= x.y - 80 && p.y <= x.y + x.h + 80) || null;
+    if (!a) { const c = s.comodo ? d.comodos[s.comodo] : null; a = (c && L.andares.find((x) => x.id === c.andar)) || L.andares[0] || null; }
+    if (a) return { andar: a.id, ox: a.ox, oy: a.oy };
+    const c0 = s.comodo ? d.comodos[s.comodo] : null;
+    return { andar: c0 ? c0.andar : null, ox: 0, oy: 0 };
   }
   /** Depois de criar, girar ou esticar um cômodo a planta do andar se reajusta; a câmera acompanha o deslocamento do
    *  andar (ox0, oy0 = onde o canto do andar estava na tela) para nada "pular", e a escala fica a mesma. */
@@ -225,7 +280,10 @@ export default function Planta() {
     const dq = g.dragQ;
     if (dq && dq.ativo) { if (dq.moveu) avisarLigacoes(dq.id, conectarComodo(dq.id)); setCongelado(null); }
     g.drag = null; g.dragEl = null; g.dragQ = null; g.pan = null; g.risco = null; g.trena = null;
-    if (g.estica) { fimEsticar(g.estica.id); g.estica = null; setCongelado(null); }
+    if (g.parede) { if (g.parede.moveu) fimMoverParede(g.parede.l); g.parede = null; setCongelado(null); setLinhaViva(null); }
+    g.divide = null; setDivisao(null);
+    g.corta = null; setMarca(null);
+    if (g.ponta) { if (g.ponta.moveu) setTimeout(esquecerPasso, 40); g.ponta = null; }
     setRisco(null); setJuntaQ(null);
     const [a, b] = Array.from(g.ptrs.values()), v = vbRef.current, R = svgRef.current!.getBoundingClientRect();
     g.pinca = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: estadoAtual().cam.z, esc0: escalaTela(), rc: { x: R.left + R.width / 2, y: R.top + R.height / 2 }, m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, c0: { x: v[0] + v[2] / 2, y: v[1] + v[3] / 2 } };
@@ -279,17 +337,56 @@ export default function Planta() {
     if (ae && ae.closest && ae.closest('#p-prop') && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT')) ae.blur();
     const s = estadoAtual(), target = e.target as Element, perto = (sel: string) => (target.closest ? target.closest(sel) : null);
     if (soPan) { e.preventDefault(); iniciarPan(e, null, true); return; }
-    // botões desenhados na planta: tirar ou pôr parede, e as alças para esticar as paredes (girar fica na barra de ações)
+    // tesoura: apertar na parede marca de onde até onde cortar; longe dela, arrastar move a planta e um toque sai
+    if (s.corte && s.vista === 'casa' && !s.verCen && !s.medir) {
+      e.preventDefault();
+      const pc = paredeDoCorte();
+      if (pc) {
+        const p = ptSvg(e.clientX, e.clientY), k = naLinhaDaParede(pc.A, pc.pd.parede, { x: p.x - pc.o.x, y: p.y - pc.o.y }), tol = Math.max(T, 26 / escalaTela());
+        if (k.dist <= tol && k.u >= pc.pd.u1 - tol && k.u <= pc.pd.u2 + tol) {
+          const u = imantarCorte(Math.min(Math.max(k.u, pc.pd.u1), pc.pd.u2), [pc.pd.u1, pc.pd.u2]);
+          g.corta = { pid: e.pointerId, u0: u, u, moveu: false, cx: e.clientX, cy: e.clientY };
+          setMarca({ u1: u, u2: u });
+          try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+          return;
+        }
+      }
+      iniciarPan(e, null, true);
+      if (g.pan) g.pan.sairCorte = true;
+      return;
+    }
+    // botões desenhados na planta: a tesoura (marcar o trecho da parede para cortar) ou pôr a parede de volta, e as
+    // alças para esticar as paredes (girar fica na barra de ações)
     const pv = perto('[data-parede-viz]');
-    if (pv && s.selComodo) { e.preventDefault(); alternarParede(s.selComodo, pv.getAttribute('data-parede-viz')!); return; }
+    if (pv && s.selComodo) {
+      e.preventDefault();
+      const viz = pv.getAttribute('data-parede-viz')!, q = s.dados.comodos[s.selComodo], o = s.dados.comodos[viz];
+      if (semParedeEntre(s.selComodo, viz, Object.values(s.dados.els))) { porParede(s.selComodo, viz); return; }
+      iniciarCorte(s.selComodo, viz);
+      toast(tx(`Tesoura: arraste ao longo da parede entre ${q?.nome} e ${o?.nome}, de onde até onde cortar. Um toque nela corta 1 m ali; “Parede toda” tira ela inteira.`, `Scissors: drag along the wall between ${q?.nome} and ${o?.nome}, from where to where to cut. A tap on it cuts 1 m there; “Whole wall” removes all of it.`));
+      return;
+    }
+    // as pontas do corte selecionado: arrastar acerta de onde até onde a parede fica cortada
+    const pc0 = perto('[data-corte-ponta]'), elC = s.selEl ? s.dados.els[s.selEl] : null;
+    if (pc0 && elC && elC.semParede && s.dados.comodos[elC.comodo]) {
+      e.preventDefault();
+      const A = s.dados.comodos[elC.comodo], o = offDe(A.id), gg = geoEl(A, elC), p = ptSvg(e.clientX, e.clientY);
+      const qual = pc0.getAttribute('data-corte-ponta') === 'b' ? 'b' : 'a', k = naLinhaDaParede(A, elC.parede, { x: p.x - o.x, y: p.y - o.y });
+      const B = elC.liga ? s.dados.comodos[elC.liga] : null;
+      g.ponta = { pid: e.pointerId, eid: elC.id, qual, du: k.u - (qual === 'a' ? gg.a : gg.b), moveu: false, cx: e.clientX, cy: e.clientY,
+        rotulo: tx(`Acertou o corte da parede entre ${A.nome} e ${B?.nome || ''}`, `Adjusted the wall cut between ${A.nome} and ${B?.nome || ''}`) };
+      try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+      return;
+    }
     const alca = perto('[data-alca]');
     if (alca && s.selComodo && s.dados.comodos[s.selComodo] && s.vista === 'casa') {
+      // a alça leva a parede reta inteira: o cômodo do outro lado (e quem segue na mesma linha) acompanha
       e.preventDefault();
-      const c = s.dados.comodos[s.selComodo], o = offDe(c.id);
-      g.estica = { pid: e.pointerId, id: c.id, borda: alca.getAttribute('data-alca') as Borda, ox: o.x - c.x, oy: o.y - c.y, moveu: false };
-      setCongelado({ andar: c.andar, ox: o.x - c.x, oy: o.y - c.y, off: { ...layRef.current.off }, vb: layRef.current.vb, andares: layRef.current.andares });
-      atualizar((x) => { x.arrastando = true; });
-      try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+      const c = s.dados.comodos[s.selComodo], o = offDe(c.id), borda = alca.getAttribute('data-alca') as Borda;
+      const eixo = borda === 'esq' || borda === 'dir' ? 'x' : 'y';
+      const v = borda === 'dir' ? c.x + c.w : borda === 'esq' ? c.x - T : borda === 'baixo' ? c.y + c.h : c.y - T;
+      const l = linhaDaParede(comodosDoAndar(s.dados, c.andar), eixo, v, eixo === 'x' ? c.y + c.h / 2 : c.x + c.w / 2);
+      pegarParede(e, l, c.andar, o.x - c.x, o.y - c.y, c.id);
       return;
     }
     // trena: arrastar mede de um ponto ao outro
@@ -310,7 +407,22 @@ export default function Planta() {
       if (g.pan) g.pan.por = ptSvg(e.clientX, e.clientY);
       return;
     }
-    // modo de desenhar: o cômodo (pelo nome ou pelo piso) se arrasta; fora dele, o arraste desenha um cômodo novo
+    // ferramenta de dividir: riscar dentro de um cômodo põe uma parede nova (um toque seleciona o cômodo)
+    if (s.desenho.ativo && !s.verCen && s.desenho.dividir && !s.desenho.item) {
+      e.preventDefault();
+      const p = ptSvg(e.clientX, e.clientY);
+      if (!salaNoPonto(p, false) || !paredeOuDentro(p)) { iniciarPan(e, null, true); return; }
+      g.divide = { pid: e.pointerId, p0: p, moveu: false, cx: e.clientX, cy: e.clientY, ultimo: null };
+      try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+      return;
+    }
+    // modo de desenhar: pegar uma parede (nela ou por dentro do cômodo, perto dela) arrasta a parede reta (os dois
+    // lados acompanham); o cômodo (pelo nome ou pelo piso) se arrasta; fora dele, o arraste desenha um cômodo novo
+    // (começar do lado de fora, rente à parede, é desenhar o vizinho encostado nela)
+    if (s.desenho.ativo && !s.verCen && !s.desenho.item && !tit) {
+      const p = ptSvg(e.clientX, e.clientY), pr = paredeOuDentro(p) ? paredeRetaNoPonto(p) : null;
+      if (pr) { e.preventDefault(); pegarParede(e, pr.l, pr.andar, pr.ox, pr.oy, pr.l.antes[0] || pr.l.depois[0]); return; }
+    }
     if (s.desenho.ativo && !s.verCen && !s.desenho.item) {
       const p = ptSvg(e.clientX, e.clientY), qid = tit ? tit.getAttribute('data-qt') : salaNoPonto(p, true);
       if (qid && arrastarComodo(qid, e)) return;
@@ -362,15 +474,50 @@ export default function Planta() {
       setRisco({ andar: rc.andar, ox: rc.ox, oy: rc.oy, ...r });
       return;
     }
-    const es = g.estica;
-    if (es && e.pointerId === es.pid) {
-      const s0 = estadoAtual(), c = s0.dados.comodos[es.id]; if (!c) return;
-      const p = ptSvg(e.clientX, e.clientY), horiz = es.borda === 'esq' || es.borda === 'dir';
-      const outros = comodosDoAndar(s0.dados, c.andar).filter((o) => o.id !== c.id);
-      const v = imaBorda(horiz ? p.x - es.ox : p.y - es.oy, horiz ? 'x' : 'y', outros, 18 / escalaTela(), es.borda === 'esq' || es.borda === 'cima' ? 'ini' : 'fim');
-      if (!es.moveu) setJuntaQ(es.id);
-      es.moveu = true;
-      esticar(es.id, es.borda, v);
+    const ct = g.corta;
+    if (ct && e.pointerId === ct.pid) {
+      const pc = paredeDoCorte(); if (!pc) return;
+      if (!ct.moveu) { if (Math.hypot(e.clientX - ct.cx, e.clientY - ct.cy) < 5) return; ct.moveu = true; }
+      const p = ptSvg(e.clientX, e.clientY), k = naLinhaDaParede(pc.A, pc.pd.parede, { x: p.x - pc.o.x, y: p.y - pc.o.y });
+      ct.u = imantarCorte(Math.min(Math.max(k.u, pc.pd.u1), pc.pd.u2), [pc.pd.u1, pc.pd.u2]);
+      setMarca({ u1: Math.min(ct.u0, ct.u), u2: Math.max(ct.u0, ct.u) });
+      return;
+    }
+    const pt = g.ponta;
+    if (pt && e.pointerId === pt.pid) {
+      if (!pt.moveu) {
+        if (Math.hypot(e.clientX - pt.cx, e.clientY - pt.cy) < 4) return;
+        pt.moveu = true; anotarPasso(pt.rotulo); atualizar((x) => { x.arrastando = true; });
+      }
+      const d = estadoAtual().dados, el = d.els[pt.eid], A = el ? d.comodos[el.comodo] : null; if (!el || !A) return;
+      const o = offDe(A.id), gg = geoEl(A, el), p = ptSvg(e.clientX, e.clientY), k = naLinhaDaParede(A, el.parede, { x: p.x - o.x, y: p.y - o.y });
+      const lim = limitesDoCorte(d.comodos, el, Object.values(d.els));
+      const u = imantarCorte(k.u - pt.du, lim ? [lim.min, lim.max] : []);
+      if (pt.qual === 'a') ajustarCorte(pt.eid, u, gg.b); else ajustarCorte(pt.eid, gg.a, u);
+      return;
+    }
+    const pw = g.parede;
+    if (pw && e.pointerId === pw.pid) {
+      if (!pw.moveu) {
+        if (Math.hypot(e.clientX - pw.cx, e.clientY - pw.cy) < 4) return;
+        pw.moveu = true;
+        anotarPasso(pw.rotulo);
+        setCongelado({ andar: pw.andar, ox: pw.ox, oy: pw.oy, off: { ...layRef.current.off }, vb: layRef.current.vb, foco: layRef.current.foco, andares: layRef.current.andares });
+        atualizar((x) => { x.arrastando = true; });
+      }
+      const p = ptSvg(e.clientX, e.clientY), pos = pw.l.eixo === 'x' ? p.x - pw.ox : p.y - pw.oy, na = new Set([...pw.l.antes, ...pw.l.depois]);
+      const outros = comodosDoAndar(estadoAtual().dados, pw.andar).filter((c) => !na.has(c.id));
+      const v = imaBorda(pw.l.v + pos - pw.p0, pw.l.eixo, outros, 16 / escalaTela(), 'fim');
+      const ficou = moverParedeReta(pw.l, v);
+      setLinhaViva({ ox: pw.ox, oy: pw.oy, l: { ...pw.l, v: ficou } });
+      return;
+    }
+    const dv = g.divide;
+    if (dv && e.pointerId === dv.pid) {
+      const p = ptSvg(e.clientX, e.clientY);
+      if (!dv.moveu) { if (Math.hypot(e.clientX - dv.cx, e.clientY - dv.cy) < 10) return; dv.moveu = true; }
+      dv.ultimo = paredeNova(dv.p0, p);
+      setDivisao(dv.ultimo);
       return;
     }
     const pan = g.pan;
@@ -389,7 +536,7 @@ export default function Planta() {
         const c = s.dados.comodos[dq.id];
         if (!c) { g.dragQ = null; return; }
         dq.ativo = true;
-        setCongelado({ andar: c.andar, ox: dq.ox, oy: dq.oy, off: { ...layRef.current.off }, vb: layRef.current.vb, andares: layRef.current.andares });
+        setCongelado({ andar: c.andar, ox: dq.ox, oy: dq.oy, off: { ...layRef.current.off }, vb: layRef.current.vb, foco: layRef.current.foco, andares: layRef.current.andares });
         setJuntaQ(dq.id);
         atualizar((x) => { x.arrastando = true; x.selComodo = dq.id; x.comodo = dq.id; x.folha = false; });
       }
@@ -409,8 +556,9 @@ export default function Planta() {
       let a = Math.min(Math.max(0, f.u - de.du), f.L - f.w);
       if (s.imaOn) { if (a < 6) a = 0; if (f.L - f.w - a < 6) a = f.L - f.w; }
       a = Math.round(a);
-      // pela parede do vizinho, a porta corre por ela inteira (se sair da parede dividida, passa a ser dele)
-      if (a !== Math.round(f.a)) { de.moveu = true; salvarElVisto(de.id, f.pelaVia ? de.via : null, { inicio: a }); }
+      // pela parede do vizinho, a porta corre por ela inteira (se sair da parede dividida, passa a ser dele); o corte
+      // da parede só anda dentro do trecho que os dois dividem
+      if (a !== Math.round(f.a)) { de.moveu = true; if (estadoAtual().dados.els[de.id]?.semParede) moverCorte(de.id, a); else salvarElVisto(de.id, f.pelaVia ? de.via : null, { inicio: a }); }
       return;
     }
     const d = g.drag; if (!d || e.pointerId !== d.pid) return;
@@ -443,6 +591,54 @@ export default function Planta() {
     const q = d.comodos[e.comodo], gg = geoEl(q, e), viz = via && via !== e.comodo ? d.comodos[via] : null, lv = viz ? localDe(viz.id, pt) : null;
     const l = viz && lv ? { x: lv.x + viz.x - q.x, y: lv.y + viz.y - q.y } : localDe(q.id, pt);
     return { u: uDaParede(e.parede, l), a: gg.a, L: gg.L, w: gg.b - gg.a, pelaVia: false };
+  }
+
+  /** A parede reta perto do ponto (no andar onde ele caiu), com os cômodos dos dois lados. */
+  function paredeRetaNoPonto(p: Pt): { l: LinhaParede; andar: string; ox: number; oy: number } | null {
+    const A = andarNoPonto(p); if (!A.andar) return null;
+    const l = paredeNoPontoDaCasa(comodosDoAndar(estadoAtual().dados, A.andar), { x: p.x - A.ox, y: p.y - A.oy }, Math.max(T / 2 + 2, 11 / escalaTela()));
+    return l ? { l, andar: A.andar, ox: A.ox, oy: A.oy } : null;
+  }
+  /** O ponto está dentro de um cômodo ou em cima de uma parede dele (para começar a riscar uma parede nova). */
+  function paredeOuDentro(p: Pt): boolean {
+    const d = estadoAtual().dados;
+    return layRef.current.ids.some((id) => { const c = d.comodos[id], o = offDe(id); return !!c && p.x >= o.x - T - 2 && p.x <= o.x + c.w + T + 2 && p.y >= o.y - T - 2 && p.y <= o.y + c.h + T + 2; });
+  }
+  /** A parede que a tesoura está cortando: o cômodo "A", o trecho que ele divide com "B" e onde ele está na tela. */
+  function paredeDoCorte(): { A: Comodo; B: Comodo; pd: { parede: Parede; u1: number; u2: number }; o: Pt } | null {
+    const s = estadoAtual(), c = s.corte; if (!c) return null;
+    const A = s.dados.comodos[c.a], B = s.dados.comodos[c.b], o = layRef.current.off[c.a];
+    if (!A || !B || !o) return null;
+    const pd = paredeDividida(A, B);
+    return pd ? { A, B, pd, o } : null;
+  }
+  /** Ponta do corte: de 5 em 5 cm, e gruda nas "pontas" (as do trecho dividido) quando chega a uns 12 px delas. */
+  function imantarCorte(u: number, pontas: number[]): number {
+    const lim = 12 / escalaTela();
+    for (const p of pontas) if (Math.abs(u - p) <= lim) return p;
+    return Math.round(u / 5) * 5;
+  }
+  /** Começa a arrastar a parede reta "l" (o nome do passo fica pronto para quando ela mexer). */
+  function pegarParede(e: RPointerEvent<SVGSVGElement>, l: LinhaParede, andar: string, ox: number, oy: number, qid: string) {
+    const d = estadoAtual().dados, nome = (id?: string) => (id && d.comodos[id] ? d.comodos[id].nome : '');
+    const rotulo = l.antes.length && l.depois.length
+      ? tx(`Moveu a parede entre ${nome(l.antes[0])} e ${nome(l.depois[0])}`, `Moved the wall between ${nome(l.antes[0])} and ${nome(l.depois[0])}`)
+      : tx(`Moveu a parede de ${nome(l.antes[0] || l.depois[0])}`, `Moved ${nome(l.antes[0] || l.depois[0])}’s wall`);
+    const p = ptSvg(e.clientX, e.clientY);
+    g.parede = { pid: e.pointerId, l, andar, ox, oy, p0: l.eixo === 'x' ? p.x - ox : p.y - oy, moveu: false, cx: e.clientX, cy: e.clientY, rotulo, qid };
+    try { svgRef.current?.setPointerCapture(e.pointerId); } catch { /* ok */ }
+  }
+  /** A parede nova do risco de "p0" até "p": deitada (risco na horizontal) ou em pé, no cômodo onde fica o meio do
+   *  risco, começando na altura (ou no lado) onde o dedo encostou; gruda de 5 em 5 cm e na linha das outras paredes. */
+  function paredeNova(p0: Pt, p: Pt): { qid: string; eixo: 'x' | 'y'; u: number } | null {
+    const d = estadoAtual().dados, meio = { x: (p0.x + p.x) / 2, y: (p0.y + p.y) / 2 };
+    const qid = salaNoPonto(meio, true) || salaNoPonto(p0, true) || salaNoPonto(meio, false); if (!qid) return null;
+    const c = d.comodos[qid], o = offDe(qid); if (!c) return null;
+    const eixo: 'x' | 'y' = Math.abs(p.x - p0.x) >= Math.abs(p.y - p0.y) ? 'y' : 'x';
+    const L = eixo === 'x' ? c.w : c.h; if (L - T < 2 * LIM_COMODO.min) return null;
+    const local = eixo === 'y' ? p0.y - o.y : p0.x - o.x, ini = eixo === 'x' ? c.x : c.y;
+    const v = imaBorda(ini + local - T / 2, eixo, comodosDoAndar(d, c.andar).filter((x) => x.id !== qid), 14 / escalaTela(), 'fim');
+    return { qid, eixo, u: Math.round(Math.min(Math.max(v - ini, LIM_COMODO.min), L - T - LIM_COMODO.min)) };
   }
 
   /** Ferramenta de parede: a parede mais perto do toque, no cômodo do lado em que o dedo caiu (a metade da espessura
@@ -530,18 +726,62 @@ export default function Planta() {
       toast(tx(`${novo.nome} desenhado (${med}).${lig} Desenhe o próximo ou toque em Pronto.`, `${novo.nome} drawn (${med}).${lig} Draw the next one or tap Done.`));
       return;
     }
-    const es = g.estica;
-    if (es && e.pointerId === es.pid) {
-      g.estica = null; solta(es.pid);
-      avisarLigacoes(es.id, fimEsticar(es.id));
-      setCongelado(null); setJuntaQ(null);
-      if (es.moveu) manterVista(es.id, es.ox, es.oy);
+    const ct = g.corta;
+    if (ct && e.pointerId === ct.pid) {
+      g.corta = null; solta(ct.pid); setMarca(null);
+      const pc = paredeDoCorte();
+      if (cancelou || !pc) return;
+      let u1 = Math.min(ct.u0, ct.u), u2 = Math.max(ct.u0, ct.u);
+      if (!ct.moveu || u2 - u1 < 20) {
+        // um toque corta 1 m ali (ou o trecho todo, se ele for menor)
+        const w = Math.min(100, pc.pd.u2 - pc.pd.u1);
+        u1 = Math.min(Math.max(ct.u0 - w / 2, pc.pd.u1), pc.pd.u2 - w); u2 = u1 + w;
+      }
+      const r = cortarParede(pc.A.id, pc.B.id, u1, u2);
+      if (r) toast((r.saiu.length
+        ? tx(`Cortou ${fmtM(r.largura)} m da parede (saiu junto: ${r.saiu.join(', ')}).`, `Cut ${fmtM(r.largura)} m out of the wall (also removed: ${r.saiu.join(', ')}).`)
+        : tx(`Cortou ${fmtM(r.largura)} m da parede.`, `Cut ${fmtM(r.largura)} m out of the wall.`)) + tx(' Arraste as pontas azuis para acertar.', ' Drag the blue ends to adjust.'), '', 'desfazer');
+      return;
+    }
+    const pt = g.ponta;
+    if (pt && e.pointerId === pt.pid) {
+      g.ponta = null; solta(pt.pid);
+      if (pt.moveu) setTimeout(esquecerPasso, 40);
+      return;
+    }
+    const pw = g.parede;
+    if (pw && e.pointerId === pw.pid) {
+      g.parede = null; solta(pw.pid); setLinhaViva(null);
+      if (pw.moveu) {
+        avisarLigacoes(pw.qid, fimMoverParede(pw.l));
+        setCongelado(null);
+        manterVista(pw.qid, pw.ox, pw.oy);
+        // (se a parede não chegou a mudar, o nome anotado para o passo não fica para o próximo)
+        setTimeout(esquecerPasso, 40);
+      } else if (!cancelou) {
+        const qid = salaNoPonto(ptSvg(e.clientX, e.clientY), false);
+        if (qid) selecionarComodo(qid, false);
+      }
+      return;
+    }
+    const dv = g.divide;
+    if (dv && e.pointerId === dv.pid) {
+      g.divide = null; solta(dv.pid); setDivisao(null);
+      if (cancelou) return;
+      if (!dv.moveu) { const qid = salaNoPonto(dv.p0, true) || salaNoPonto(dv.p0, false); if (qid) selecionarComodo(qid, false); return; }
+      const u = dv.ultimo; if (!u) return;
+      const nome = estadoAtual().dados.comodos[u.qid]?.nome || '';
+      const nid = dividirComodoEm(u.qid, u.eixo, u.u);
+      if (nid) {
+        const d1 = estadoAtual().dados, a = d1.comodos[u.qid], b = d1.comodos[nid];
+        toast(tx(`${nome} dividido: ${a?.nome} e ${b?.nome}. Toque em cada um para dizer o que é.`, `${nome} split: ${a?.nome} and ${b?.nome}. Tap each one to say what it is.`), '', 'desfazer');
+      }
       return;
     }
     const pan = g.pan;
     if (pan && e.pointerId === pan.pid) {
       g.pan = null; solta(pan.pid);
-      if (!pan.moveu && !cancelou) { if (pan.por) colocarPeca(pan.por); else if (!pan.so) toqueVazio(pan); }
+      if (!pan.moveu && !cancelou) { if (pan.sairCorte) cancelarCorte(); else if (pan.por) colocarPeca(pan.por); else if (!pan.so) toqueVazio(pan); }
       return;
     }
     const dq = g.dragQ;
@@ -622,13 +862,21 @@ export default function Planta() {
 
   // alças, botões e o retângulo do desenho têm tamanho fixo na tela: "upx" é quanto vale um pixel no desenho
   const upx = Math.max(vb[2] / Math.max(1, tela.w), vb[3] / Math.max(1, tela.h));
+  // (a imagem salva tem a escala dela: os textos voltam ao tamanho de perto enquanto ela é montada)
+  const upxT = kFixo ? 0.8 : upx;
+  // nomes de portas, janelas e pontos: um pouco maiores quando a planta está longe, para dar para ler
+  const kRot = Math.min(1.6, Math.max(1, (7.5 * upxT) / 8.5));
+  // cotas e textos do terreno: do mesmo tamanho na tela, longe ou perto
+  const kCota = Math.max(1, upxT * 0.85);
+  // a etiqueta de cada cômodo e o título do andar também (a etiqueta, até onde couber no cômodo)
+  const kSala = Math.round(Math.max(1, upxT * 0.8) * 20) / 20, kAndar = Math.max(0.5, upxT * 0.5);
   const f3 = (v: number) => Math.round(v * 1000) / 1000;
   const origem = (() => {
     const ref = comodo && lay.off[comodo] ? comodo : lay.ids[0], c = ref ? dados.comodos[ref] : null;
     return c && ref && lay.off[ref] ? { x: lay.off[ref].x - c.x, y: lay.off[ref].y - c.y } : { x: 0, y: 0 };
   })();
   const alcas = (() => {
-    if (vista !== 'casa' || !selComodo || verCen || medir) return null;
+    if (vista !== 'casa' || !selComodo || verCen || medir || corte) return null;
     const c = dados.comodos[selComodo], o = lay.off[selComodo];
     if (!c || !o) return null;
     const th = Math.max(T, 14 * upx), lh = Math.min(c.h * 0.6, 48 * upx), lw = Math.min(c.w * 0.6, 48 * upx);
@@ -646,7 +894,7 @@ export default function Planta() {
   })();
   // botões nas paredes que o cômodo selecionado divide com os vizinhos: tesoura tira a parede, tijolos põem de volta
   const paredeBtns = (() => {
-    if (vista !== 'casa' || !selComodo || verCen || arrastando || medir) return null;
+    if (vista !== 'casa' || !selComodo || verCen || arrastando || medir || corte) return null;
     const c = dados.comodos[selComodo], o = lay.off[selComodo];
     if (!c || !o) return null;
     const vs = vizinhosDeParede(dados, selComodo), qc = cq(dados, selComodo);
@@ -669,7 +917,7 @@ export default function Planta() {
             if (!achou) dv = T / 2 + r + 8 * upx;
           }
           const pt = naParede(c, v.parede, u, dv);
-          const rot = v.tirada ? tx(`Pôr de volta a parede entre ${c.nome} e ${v.viz.nome}`, `Put back the wall between ${c.nome} and ${v.viz.nome}`) : tx(`Tirar a parede entre ${c.nome} e ${v.viz.nome}`, `Remove the wall between ${c.nome} and ${v.viz.nome}`);
+          const rot = v.tirada ? tx(`Pôr de volta a parede entre ${c.nome} e ${v.viz.nome}`, `Put back the wall between ${c.nome} and ${v.viz.nome}`) : tx(`Cortar a parede entre ${c.nome} e ${v.viz.nome} (marque de onde até onde)`, `Cut the wall between ${c.nome} and ${v.viz.nome} (mark from where to where)`);
           return (
             <g key={v.viz.id} className={`parede-btn${v.tirada ? ' tirada' : ''}`} data-parede-viz={v.viz.id} role="button" aria-label={rot} transform={`translate(${n1(pt.x)} ${n1(pt.y)})`}>
               <title>{rot}</title>
@@ -678,6 +926,43 @@ export default function Planta() {
             </g>
           );
         })}
+      </g>
+    );
+  })();
+  // tesoura: a parede que dá para cortar fica marcada e, enquanto o dedo arrasta, o trecho que vai sair (com a medida)
+  const corteG = (() => {
+    if (!corte || vista !== 'casa') return null;
+    const A = dados.comodos[corte.a], B = dados.comodos[corte.b], o = lay.off[corte.a];
+    if (!A || !B || !o) return null;
+    const pd = paredeDividida(A, B); if (!pd) return null;
+    const m = marca && marca.u2 - marca.u1 >= 1 ? marca : null, hz = horizontal(pd.parede);
+    // a medida fica do lado de dentro de "A", acompanhando a parede
+    const em = pd.parede === 'cima' || pd.parede === 'esquerda' ? 26 * upx : (hz ? A.h : A.w) - 26 * upx;
+    return (
+      <g className="corte-g" aria-hidden="true" transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
+        <rect className="corte-faixa" {...retNaParede(A, pd.parede, pd.u1, pd.u2, -T - 3 * upx, 3 * upx)} />
+        {m && <rect className="corte-marca" {...retNaParede(A, pd.parede, m.u1, m.u2, -T - 4 * upx, 4 * upx)} />}
+        {m && <Cota a={m.u1} b={m.u2} em={em} eixo={hz ? 'x' : 'y'} texto={`${fmtM(m.u2 - m.u1)} m`} k={kCota} cls="cota-previa" />}
+      </g>
+    );
+  })();
+  // o corte selecionado: o contorno, a medida e as duas pontas para arrastar
+  const corteSel = (() => {
+    if (vista !== 'casa' || !selEl || verCen || medir || corte) return null;
+    const el = dados.els[selEl], A = el ? dados.comodos[el.comodo] : null, o = el ? lay.off[el.comodo] : null;
+    if (!el || !el.semParede || !A || !o) return null;
+    const gg = geoEl(A, el), hz = horizontal(el.parede), tw = 11 * upx, th = Math.max(T + 12 * upx, 30 * upx);
+    const em = el.parede === 'cima' || el.parede === 'esquerda' ? 26 * upx : (hz ? A.h : A.w) - 26 * upx;
+    const B = el.liga ? dados.comodos[el.liga] : null;
+    const ponta = (u: number, qual: 'a' | 'b') => (
+      <rect key={qual} className="corte-alca" data-corte-ponta={qual} rx={n1(tw / 2)} {...retNaParede(A, el.parede, u - tw / 2, u + tw / 2, -T / 2 - th / 2, -T / 2 + th / 2)}
+        role="button" aria-label={qual === 'a' ? tx(`Arraste para mudar onde o corte da parede com ${B?.nome || ''} começa`, `Drag to change where the cut in the wall with ${B?.nome || ''} starts`) : tx(`Arraste para mudar onde o corte da parede com ${B?.nome || ''} termina`, `Drag to change where the cut in the wall with ${B?.nome || ''} ends`)} />
+    );
+    return (
+      <g className="corte-sel" transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
+        <rect className="corte-borda" aria-hidden="true" {...retNaParede(A, el.parede, gg.a, gg.b, -T - 2 * upx, 2 * upx)} />
+        {!arrastando || g.ponta ? <Cota a={gg.a} b={gg.b} em={em} eixo={hz ? 'x' : 'y'} texto={`${fmtM(gg.b - gg.a)} m`} k={kCota} cls="cota-previa" /> : null}
+        {ponta(gg.a, 'a')}{ponta(gg.b, 'b')}
       </g>
     );
   })();
@@ -709,6 +994,27 @@ export default function Planta() {
           <text className="trena-t" fontSize={f3(fs)} textAnchor="middle" dy=".36em">{txt}</text>
           {diag && <text className="trena-sub" y={f3(ph * 0.95)} fontSize={f3(fs * 0.82)} textAnchor="middle" dy=".36em">↔ {fmtM(Math.abs(dx))} · ↕ {fmtM(Math.abs(dy))}</text>}
         </g>
+      </g>
+    );
+  })();
+  // os cômodos e os itens de parede de cada andar (para o terreno, a sombra da casa e as cotas gerais)
+  const porAndar = useMemo(() => {
+    const m: Record<string, { cs: Comodo[]; els: ElParede[] }> = {};
+    for (const a of Object.values(dados.andares)) { const cs = comodosDoAndar(dados, a.id), ids = new Set(cs.map((c) => c.id)); m[a.id] = { cs, els: Object.values(dados.els).filter((e) => ids.has(e.comodo)) }; }
+    return m;
+  }, [dados]);
+  const andarBase = dados.terreno && dados.andares[dados.terreno.andar] ? dados.terreno.andar : Object.values(dados.andares).sort((a, b) => a.ordem - b.ordem)[0]?.id;
+  // a parede nova que vai dividir o cômodo, com as medidas dos dois lados
+  const divisaoG = (() => {
+    if (!divisao) return null;
+    const c = dados.comodos[divisao.qid], o = lay.off[divisao.qid]; if (!c || !o) return null;
+    const { eixo, u } = divisao, resto = (eixo === 'x' ? c.w : c.h) - u - T, k = Math.max(1, Math.max(vb[2] / Math.max(1, tela.w), vb[3] / Math.max(1, tela.h)) * 0.85);
+    return (
+      <g className="divisao" aria-hidden="true" transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
+        {eixo === 'x' ? <rect className="divisao-p" x={u} y={0} width={T} height={c.h} /> : <rect className="divisao-p" x={0} y={u} width={c.w} height={T} />}
+        {eixo === 'x'
+          ? <><Cota a={0} b={u} em={c.h / 2} eixo="x" texto={`${fmtM(u)} m`} k={k} cls="cota-previa" /><Cota a={u + T} b={c.w} em={c.h / 2} eixo="x" texto={`${fmtM(resto)} m`} k={k} cls="cota-previa" /></>
+          : <><Cota a={0} b={u} em={c.w / 2} eixo="y" texto={`${fmtM(u)} m`} k={k} cls="cota-previa" /><Cota a={u + T} b={c.h} em={c.w / 2} eixo="y" texto={`${fmtM(resto)} m`} k={k} cls="cota-previa" /></>}
       </g>
     );
   })();
@@ -749,34 +1055,35 @@ export default function Planta() {
 
   // camadas escondidas (móveis, portas e janelas, ar, pontos, nomes, grade) viram classes da planta
   const semCamadas = (Object.keys(camadas) as (keyof typeof camadas)[]).filter((k) => !camadas[k]).map((k) => ' sem-' + k).join('');
-  // nomes de portas, janelas e pontos: um pouco maiores quando a planta está longe, para dar para ler
-  const kRot = Math.min(1.6, Math.max(1, (7.5 * upx) / 8.5));
   const b0 = ids.length ? dados.comodos[ids[0]] : null;
   const rotulo = !b0 ? tx('Planta vazia', 'Empty floor plan') : vista === 'casa' ? tx('Planta da casa', 'Home floor plan') : ids.length > 1 ? tx('Todos os cômodos lado a lado', 'All rooms side by side') : tx(`Planta de ${b0.nome}, ${fmtM(b0.w)} por ${fmtM(b0.h)} metros`, `Floor plan of ${b0.nome}, ${fmtM(b0.w)} by ${fmtM(b0.h)} meters`);
   return (<>
     <svg id="planta" ref={svgRef} xmlns="http://www.w3.org/2000/svg" role="group" aria-label={rotulo} viewBox={vb.map(n1).join(' ')}
-      className={`${arrastando ? 'arrastando' : ''} vista-${vista}${desenho.ativo ? ' desenhando' : ''}${desenho.ativo && desenho.item ? ' ferr-parede' : ''}${medir ? ' medindo' : ''}${semCamadas}`}
+      className={`${arrastando ? 'arrastando' : ''} vista-${vista}${desenho.ativo ? ' desenhando' : ''}${desenho.ativo && desenho.item ? ' ferr-parede' : ''}${desenho.ativo && desenho.dividir && !desenho.item ? ' com-dividir' : ''}${corte ? ' cortando' : ''}${medir ? ' medindo' : ''}${semCamadas}`}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(e) => fim(e, false)} onPointerCancel={(e) => fim(e, true)}
-      onLostPointerCapture={(e) => { if (g.ptrs.has(e.pointerId) && !g.drag && !g.dragEl && !g.dragQ && !g.pan) g.ptrs.delete(e.pointerId); }}
+      onLostPointerCapture={(e) => { if (g.ptrs.has(e.pointerId) && !g.drag && !g.dragEl && !g.dragQ && !g.pan && !g.parede && !g.divide && !g.corta && !g.ponta) g.ptrs.delete(e.pointerId); }}
       onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
       <defs>
         <DefsPlanta />
+        <DefsJardim />
         <pattern id="hach" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect className="hach-bg" width="6" height="6" /><line className="hach-l" x1="0" y1="0" x2="0" y2="6" /></pattern>
         {desenho.ativo && <pattern id="grade-desenho" patternUnits="userSpaceOnUse" width="100" height="100" patternTransform={`translate(${n1(origem.x)} ${n1(origem.y)})`}><path className="gd-m" d="M50 0V100M0 50H100" /><path className="gd-g" d="M100 0H0V100" /></pattern>}
       </defs>
       {desenho.ativo && <rect className="grade-desenho" x={n1(vb[0])} y={n1(vb[1])} width={n1(vb[2])} height={n1(vb[3])} fill="url(#grade-desenho)" />}
-      {lay.andares.map((a) => (
-        <g key={a.id} className="andar" aria-hidden="true">
-          <text className="andar-t" x={a.x} y={a.ty}>{a.nome}<tspan className="andar-area" dx={10}>{fmtArea(areaDoAndar(dados, a.id))}</tspan></text>
-        </g>
-      ))}
+      {/* o terreno (ou a prévia dele) e a sombra da casa, embaixo dos cômodos */}
+      {previa?.terreno && layP && <g transform={`translate(${n1(layP.offPrevia.x)} ${n1(layP.offPrevia.y)})`}><TerrenoDesenho t={previa.terreno} cs={(andarBase && porAndar[andarBase]?.cs) || []} els={(andarBase && porAndar[andarBase]?.els) || []} k={kCota} previa /></g>}
+      {vista === 'casa' && lay.andares.map((a) => {
+        const pa = porAndar[a.id], cs = pa ? pa.cs : [], t = dados.terreno && dados.terreno.andar === a.id && !previa?.terreno ? dados.terreno : null;
+        if (!t && !cs.length) return null;
+        return <g key={'ch' + a.id} transform={`translate(${n1(a.ox)} ${n1(a.oy)})`}>{t && <TerrenoDesenho t={t} cs={cs} els={pa ? pa.els : []} k={kCota} />}{cs.length > 0 && <SombraCasa cs={cs} />}</g>;
+      })}
       {lay.ids.map((id) => {
         const q = cq(dados, id), av = avaliacao(dados, verCen, id); if (!q || !av) return null;
         const o = lay.off[id] || { x: 0, y: 0 };
         return (
           <g key={id} className={`sala${selComodo === id ? ' sel-q' : ''}`} data-q={id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
             <Sala q={q} lista={listaAtiva(dados, verCen, id)} av={av} sel={sel} selEl={selEl} foco={id === comodo && ids.length > 1} vista={vista as Vista}
-              ty={lay.ex[id]?.ty ?? null} setasTodos={modo === 'avancado' && setasTodos} selComodo={selComodo === id} bloqueadas={bloqueadas} />
+              ty={lay.ex[id]?.ty ?? null} setasTodos={modo === 'avancado' && setasTodos} selComodo={selComodo === id} bloqueadas={bloqueadas} kq={kSala} />
           </g>
         );
       })}
@@ -792,9 +1099,34 @@ export default function Planta() {
         const o = lay.off[id] || { x: 0, y: 0 };
         return <g key={'r' + id} transform={`translate(${n1(o.x)} ${n1(o.y)})`}><RotulosSala q={q} vista={vista as Vista} k={kRot} /></g>;
       })}
+      {/* o título de cada andar, em cima da casa à esquerda, acima das cotas gerais (o andar sem cômodo não tem); por cima do terreno */}
+      {lay.andares.map((a) => {
+        if (a.vazio || !a.casa) return null;
+        const y = Math.min(a.ty, a.casa.y1 + COTA_CASA - 30 - 16 * kCota - 8 * kAndar);
+        return (
+          <g key={a.id} className="andar" aria-hidden="true">
+            <text className="andar-t" x={n1(a.casa.x1 + 20)} y={n1(y)} style={{ fontSize: n1(24 * kAndar), strokeWidth: n1(5 * kAndar) }}>{a.nome}<tspan className="andar-area" dx={n1(9 * kAndar)} style={{ fontSize: n1(17 * kAndar) }}>{fmtArea(areaDoAndar(dados, a.id))}</tspan></text>
+          </g>
+        );
+      })}
+      {/* as medidas de fora a fora de cada andar */}
+      {vista === 'casa' && lay.andares.map((a) => { const cs = porAndar[a.id]?.cs || []; return cs.length ? <g key={'cc' + a.id} transform={`translate(${n1(a.ox)} ${n1(a.oy)})`}><CotasCasa cs={cs} k={kCota} /></g> : null; })}
+      {/* prévia do passo a passo: o contorno da casa no terreno ou o cômodo, enquanto as medidas são digitadas */}
+      {layP && previa?.casa && <g transform={`translate(${n1(layP.offPrevia.x)} ${n1(layP.offPrevia.y)})`}><PreviaCasa c={previa.casa} t={dados.terreno || null} k={kCota} /></g>}
+      {layP && previa?.comodo && <g transform={`translate(${n1(layP.offPrevia.x)} ${n1(layP.offPrevia.y)})`}><PreviaComodo w={previa.comodo.w} h={previa.comodo.h} k={kCota} /></g>}
       {juntas}
+      {linhaViva && (
+        <g className="linha-viva" aria-hidden="true" transform={`translate(${n1(linhaViva.ox)} ${n1(linhaViva.oy)})`}>
+          {linhaViva.l.eixo === 'x'
+            ? <rect x={n1(linhaViva.l.v)} y={n1(linhaViva.l.de)} width={T} height={n1(linhaViva.l.ate - linhaViva.l.de)} />
+            : <rect x={n1(linhaViva.l.de)} y={n1(linhaViva.l.v)} width={n1(linhaViva.l.ate - linhaViva.l.de)} height={T} />}
+        </g>
+      )}
+      {divisaoG}
       {alcas}
       {paredeBtns}
+      {corteG}
+      {corteSel}
       {risco && risco.w > 0 && risco.h > 0 && (
         <g className="risco-g" aria-hidden="true">
           <rect className="risco-parede" x={n1(risco.ox + risco.x - T)} y={n1(risco.oy + risco.y - T)} width={n1(risco.w + 2 * T)} height={n1(risco.h + 2 * T)} />

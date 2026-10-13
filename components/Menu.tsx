@@ -8,8 +8,8 @@ import type { JeitoPorta } from '@/lib/tipos';
 import { paraArquivo } from '@/lib/dados';
 import { imagemDaPlanta } from '@/lib/exportar';
 import {
-  abrirDialogo, alternar, alternarCamada, alternarParede, atualizar, avisarLigacoes, colar, copiar, duplicar, duplicarComodo, editarItem, fecharMenu, focarComodo, girar, iniciarAdd, levar,
-  mostrarTudo, mudarIdioma, mudarJeitoPorta, mudarModo, mudarTema, mudarVista, pedirRemover, girarComodo, sairCenario, selecionarComodo, temCopia, toast, travar, useApp, usarCenario, virarAbertura, virarDobradica, type Camada, type InfoMenu
+  abrirDialogo, abrirPassos, alternar, alternarCamada, alternarParede, atualizar, avisarLigacoes, colar, copiar, cortarParedeToda, duplicar, duplicarComodo, editarItem, fecharMenu, focarComodo, girar, iniciarAdd, iniciarCorte, levar,
+  mostrarTudo, mudarIdioma, mudarJeitoPorta, mudarModo, mudarTema, mudarVista, pedirRemover, girarComodo, porParede, sairCenario, selecionarComodo, temCopia, toast, travar, useApp, usarCenario, virarAbertura, virarDobradica, type Camada, type InfoMenu
 } from '@/lib/store';
 import { tx } from '@/lib/i18n';
 import { clamp } from '@/lib/util';
@@ -44,6 +44,14 @@ function blocos(m: InfoMenu): Bloco[] {
       const mv = d.moveis[m.id];
       return [{ titulo: mv.nome, itens: [{ a: 'editar', t: tx('Editar…', 'Edit…') }, { a: 'girar', t: tx('Girar 90°', 'Rotate 90°') }, { a: 'duplicar', t: tx('Duplicar', 'Duplicate') }, { a: 'copiar', t: tx('Copiar (para colar em outro lugar)', 'Copy (to paste somewhere else)') }, ...(varios ? [{ a: 'levar', t: tx('Levar para outro cômodo…', 'Move to another room…') }] : []), { a: 'travar', t: mv.fixo ? tx('Destravar', 'Unlock') : tx('Travar no lugar', 'Lock in place') }] },
         { itens: [{ a: 'remover', t: tx('Remover…', 'Remove…'), perigo: true }] }];
+    }
+    if (m.eid && d.els[m.eid]?.semParede) {
+      // o corte da parede: o tamanho se acerta pelas pontas na planta
+      const e = d.els[m.eid], viz = e.liga ? d.comodos[e.liga] : null;
+      return [{ titulo: tx('Parede cortada', 'Wall cut'), itens: [
+        ...(e.parcial ? [{ a: 'corte-toda', t: tx('Tirar a parede toda', 'Remove the whole wall') }] : []),
+        { a: 'por-parede', t: viz ? tx(`Pôr de volta a parede com ${viz.nome}`, `Put back the wall with ${viz.nome}`) : tx('Pôr a parede de volta', 'Put the wall back') }
+      ] }];
     }
     if (m.eid && d.els[m.eid]) {
       const e = d.els[m.eid], its: Item[] = [{ a: 'editar', t: tx('Editar…', 'Edit…') }], extra: Bloco[] = [];
@@ -116,6 +124,7 @@ function blocos(m: InfoMenu): Bloco[] {
     }
     const temCasa = Object.keys(d.comodos).length > 0;
     out.push({ titulo: tx('Casa', 'Home'), itens: [
+      { a: 'passos', t: tx('Montar passo a passo (terreno, casa, cômodos…)', 'Build step by step (plot, house, rooms…)') },
       { a: 'historico', t: tx('Histórico e pontos de restauração', 'History and restore points') },
       ...(temCasa ? [{ a: 'resumo', t: tx('Resumo e lista de móveis', 'Summary and furniture list') }, { a: 'imagem', t: tx('Salvar a planta como imagem', 'Save the plan as an image') }] : [])
     ] });
@@ -134,7 +143,9 @@ function blocoParedes(id: string): Bloco | null {
   if (!vs.length) return null;
   return {
     titulo: tx('Paredes com os vizinhos', 'Walls shared with neighbors'),
-    itens: vs.map((v) => ({ a: 'parede:' + v.viz.id, t: v.tirada ? tx(`Pôr de volta a parede com ${v.viz.nome}`, `Put back the wall with ${v.viz.nome}`) : tx(`Tirar a parede com ${v.viz.nome} (vira um espaço só)`, `Remove the wall with ${v.viz.nome} (one space)`) }))
+    itens: vs.flatMap((v) => v.tirada
+      ? [{ a: 'parede:' + v.viz.id, t: tx(`Pôr de volta a parede com ${v.viz.nome}`, `Put back the wall with ${v.viz.nome}`) }]
+      : [{ a: 'cortar:' + v.viz.id, t: tx(`Cortar um trecho da parede com ${v.viz.nome}…`, `Cut part of the wall with ${v.viz.nome}…`) }, { a: 'parede:' + v.viz.id, t: tx(`Tirar a parede toda com ${v.viz.nome} (vira um espaço só)`, `Remove the whole wall with ${v.viz.nome} (one space)`) }])
   };
 }
 
@@ -147,6 +158,15 @@ function executar(a: string, m: InfoMenu) {
   fecharMenu();
   if (a.startsWith('jeito:')) { if (s.selEl) mudarJeitoPorta(s.selEl, a.slice(6) as JeitoPorta); return; }
   if (a.startsWith('parede:')) { const q = m.comodo || s.selComodo || s.comodo; if (q) alternarParede(q, a.slice(7)); return; }
+  if (a.startsWith('cortar:')) {
+    const q = m.comodo || s.selComodo || s.comodo, b = a.slice(7);
+    if (q && d.comodos[q] && d.comodos[b]) {
+      if (s.vista !== 'casa') mudarVista('casa');
+      iniciarCorte(q, b);
+      toast(tx(`Tesoura: arraste ao longo da parede entre ${d.comodos[q].nome} e ${d.comodos[b].nome}, de onde até onde cortar. Um toque nela corta 1 m ali.`, `Scissors: drag along the wall between ${d.comodos[q].nome} and ${d.comodos[b].nome}, from where to where to cut. A tap on it cuts 1 m there.`));
+    }
+    return;
+  }
   if (a === 'add:movel') { const q = (m.comodo && d.comodos[m.comodo]) || (s.comodo && d.comodos[s.comodo]); if (q) iniciarAdd('movel', m.px != null && m.py != null ? { comodo: q.id, x: Math.round(clamp(m.px, 0, q.w)), y: Math.round(clamp(m.py, 0, q.h)) } : { comodo: q.id }); return; }
   if (a.startsWith('add:')) {
     const tipo = a.slice(4), q = (m.comodo && d.comodos[m.comodo]) || (s.comodo && d.comodos[s.comodo]); if (!q) return;
@@ -162,6 +182,8 @@ function executar(a: string, m: InfoMenu) {
     case 'travar': travar(); break;
     case 'remover': pedirRemover(); break;
     case 'dob': if (s.selEl) virarDobradica(s.selEl); break;
+    case 'corte-toda': if (s.selEl) cortarParedeToda(s.selEl); break;
+    case 'por-parede': { const e = s.selEl ? d.els[s.selEl] : null; if (e && e.liga) porParede(e.comodo, e.liga); break; }
     case 'abre': if (s.selEl) virarAbertura(s.selEl); break;
     case 'jan': alternar('jan'); break;
     case 'q-editar': abrirDialogo('comodo', { id: qid }); break;
@@ -176,6 +198,7 @@ function executar(a: string, m: InfoMenu) {
     case 'copiar': copiar(); break;
     case 'colar': colar(m.comodo ? { comodo: m.comodo, x: m.px != null ? Math.round(m.px) : undefined, y: m.py != null ? Math.round(m.py) : undefined } : null); break;
     case 'cam-tudo': mostrarTudo(); break;
+    case 'passos': abrirPassos('casa'); break;
     case 'historico': abrirDialogo('historico'); break;
     case 'resumo': abrirDialogo('resumo'); break;
     case 'imagem': void imagemDaPlanta(); break;

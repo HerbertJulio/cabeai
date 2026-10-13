@@ -6,7 +6,7 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { rotuloVirar, vizinhosDeParede } from '@/lib/consultas';
 import { jeitoDaPorta, temGiro } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
-import { abrirDialogo, atualizar, duplicar, editarItem, girar, useApp, virarAbertura, virarDobradica } from '@/lib/store';
+import { abrirDialogo, atualizar, cancelarCorte, cortarParedeToda, duplicar, editarItem, girar, porParede, tirarParede, useApp, virarAbertura, virarDobradica } from '@/lib/store';
 import { Icone } from './icones';
 import { abrirMenuEmBotao } from './Topo';
 
@@ -17,6 +17,7 @@ const ALTURA = 46;
 
 export default function BarraContexto({ alvo, tela, girarComodo, docada = false }: { alvo: AlvoTela; tela: { w: number; h: number }; girarComodo: (id: string) => void; docada?: boolean }) {
   const dados = useApp((s) => s.dados);
+  const corte = useApp((s) => s.corte);
   const ref = useRef<HTMLDivElement>(null);
   const cx = (alvo.x1 + alvo.x2) / 2;
   // acima do item; sem espaço ali, embaixo dele
@@ -44,6 +45,12 @@ export default function BarraContexto({ alvo, tela, girarComodo, docada = false 
     nome = m.nome;
     botoes.push(bt('girar', 'girar', tx('Girar', 'Rotate'), () => girar(), { 'data-girar-m': m.id }, tx(`Girar ${m.nome} 90°`, `Rotate ${m.nome} 90°`)),
       bt('duplicar', 'duplicar', tx('Duplicar', 'Duplicate'), () => duplicar()), bt('editar', 'lapis', tx('Editar', 'Edit'), () => editarItem()));
+  } else if (alvo.tipo === 'el' && dados.els[alvo.id]?.semParede) {
+    // o corte da parede: tirar a parede toda ou pôr ela de volta (as pontas, na planta, acertam o tamanho)
+    const e = dados.els[alvo.id], viz = e.liga ? dados.comodos[e.liga] : null, dono = dados.comodos[e.comodo];
+    nome = tx('Parede cortada', 'Wall cut');
+    if (e.parcial && viz && dono) botoes.push(bt('corte-toda', 'tesoura', tx('Parede toda', 'Whole wall'), () => cortarParedeToda(e.id), {}, tx(`Tirar a parede toda entre ${dono.nome} e ${viz.nome}`, `Remove the whole wall between ${dono.nome} and ${viz.nome}`)));
+    if (viz && dono) botoes.push(bt('por-parede', 'parede', tx('Pôr parede', 'Put wall'), () => porParede(dono.id, viz.id), {}, tx(`Pôr de volta a parede entre ${dono.nome} e ${viz.nome}`, `Put back the wall between ${dono.nome} and ${viz.nome}`)));
   } else if (alvo.tipo === 'el') {
     const e = dados.els[alvo.id]; if (!e) return null;
     nome = e.nome;
@@ -56,6 +63,19 @@ export default function BarraContexto({ alvo, tela, girarComodo, docada = false 
     }
     if (e.tipo !== 'porta' || jeitoDaPorta(e) === 'vao') botoes.push(bt('duplicar', 'duplicar', tx('Duplicar', 'Duplicate'), () => duplicar()));
     botoes.push(bt('editar', 'lapis', tx('Editar', 'Edit'), () => editarItem()));
+  } else if (corte && corte.a === alvo.id && dados.comodos[corte.a] && dados.comodos[corte.b]) {
+    // tesoura na mão: marcar o trecho na planta, tirar a parede toda ou desistir
+    const a = dados.comodos[corte.a], b = dados.comodos[corte.b];
+    nome = tx(`Cortar a parede com ${b.nome}`, `Cut the wall with ${b.nome}`);
+    botoes.push(bt('corte-toda', 'tesoura', tx('Parede toda', 'Whole wall'), () => { cancelarCorte(); tirarParede(a.id, b.id); }, {}, tx(`Tirar a parede toda entre ${a.nome} e ${b.nome}`, `Remove the whole wall between ${a.nome} and ${b.nome}`)),
+      bt('corte-cancelar', 'x', tx('Cancelar', 'Cancel'), () => cancelarCorte(), {}, tx('Guardar a tesoura sem cortar', 'Put the scissors away without cutting')));
+    return (
+      <div ref={ref} className={`ctx${docada ? ' doca' : emCima ? '' : ' embaixo'}${curto ? ' curta' : ''}`} id="ctx" role="toolbar" aria-label={nome}
+        style={docada ? undefined : { left: Math.round(cx), top: Math.round(top) }}>
+        <span className="ctx-nome">{nome}</span>
+        {botoes}
+      </div>
+    );
   } else {
     const c = dados.comodos[alvo.id]; if (!c) return null;
     nome = c.nome;

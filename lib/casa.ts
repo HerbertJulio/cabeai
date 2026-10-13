@@ -137,6 +137,68 @@ export function retDesenhado(p0: { x: number; y: number }, p1: { x: number; y: n
   return { x: x1, y: y1, w: Math.max(0, x2 - x1), h: Math.max(0, y2 - y1) };
 }
 
+/* ---------- a parede reta da planta (para mover de uma vez, com os cômodos dos dois lados) ---------- */
+export interface LinhaParede {
+  /** x: parede em pé (anda para os lados); y: parede deitada (anda para cima e para baixo). */
+  eixo: 'x' | 'y';
+  /** Onde termina, por dentro, quem fica antes da parede (x + w ou y + h); quem fica depois começa em v + T. */
+  v: number;
+  antes: string[];
+  depois: string[];
+  /** Trecho da parede ao longo dela (de uma ponta à outra, com as paredes das pontas). */
+  de: number;
+  ate: number;
+}
+type PosId = Pos & { id: string };
+const fimDe = (c: Pos, eixo: 'x' | 'y') => (eixo === 'x' ? c.x + c.w : c.y + c.h);
+const iniDe = (c: Pos, eixo: 'x' | 'y') => (eixo === 'x' ? c.x : c.y);
+const trechoDe = (c: Pos, eixo: 'x' | 'y'): [number, number] => (eixo === 'x' ? [c.y, c.y + c.h] : [c.x, c.x + c.w]);
+
+/** A parede reta em "v" (veja LinhaParede) que passa por "ponto" (ao longo dela): os cômodos que encostam nela dos
+ *  dois lados e seguem em linha, um depois do outro (só com uma parede no meio). Uma parede de fora vale pela fachada
+ *  inteira daquele lado. */
+export function linhaDaParede(cs: PosId[], eixo: 'x' | 'y', v: number, ponto: number): LinhaParede {
+  const antes = cs.filter((c) => Math.abs(fimDe(c, eixo) - v) < 1), depois = cs.filter((c) => Math.abs(iniDe(c, eixo) - (v + T)) < 1);
+  const dentro = new Set<string>();
+  let lo = ponto, hi = ponto, mudou = true;
+  while (mudou) {
+    mudou = false;
+    for (const c of [...antes, ...depois]) {
+      if (dentro.has(c.id)) continue;
+      const [a, b] = trechoDe(c, eixo);
+      if (b >= lo - T - 1 && a <= hi + T + 1) { dentro.add(c.id); lo = Math.min(lo, a); hi = Math.max(hi, b); mudou = true; }
+    }
+  }
+  return { eixo, v, antes: antes.filter((c) => dentro.has(c.id)).map((c) => c.id), depois: depois.filter((c) => dentro.has(c.id)).map((c) => c.id), de: lo - T, ate: hi + T };
+}
+
+/** A parede (de qualquer cômodo do andar) mais perto do ponto, a até "tol" do meio dela, como LinhaParede; null longe. */
+export function paredeNoPontoDaCasa(cs: PosId[], p: { x: number; y: number }, tol: number): LinhaParede | null {
+  let melhor: { eixo: 'x' | 'y'; v: number; d: number; ao: number } | null = null;
+  for (const c of cs) {
+    const ps: { eixo: 'x' | 'y'; meio: number; v: number; a: number; b: number }[] = [
+      { eixo: 'x', meio: c.x + c.w + T / 2, v: c.x + c.w, a: c.y - T, b: c.y + c.h + T },
+      { eixo: 'x', meio: c.x - T / 2, v: c.x - T, a: c.y - T, b: c.y + c.h + T },
+      { eixo: 'y', meio: c.y + c.h + T / 2, v: c.y + c.h, a: c.x - T, b: c.x + c.w + T },
+      { eixo: 'y', meio: c.y - T / 2, v: c.y - T, a: c.x - T, b: c.x + c.w + T }
+    ];
+    for (const k of ps) {
+      const ao = k.eixo === 'x' ? p.y : p.x, d = Math.abs((k.eixo === 'x' ? p.x : p.y) - k.meio);
+      if (ao < k.a || ao > k.b || d > tol) continue;
+      if (!melhor || d < melhor.d - 0.01) melhor = { eixo: k.eixo, v: k.v, d, ao };
+    }
+  }
+  return melhor ? linhaDaParede(cs, melhor.eixo, melhor.v, melhor.ao) : null;
+}
+
+/** Até onde a parede reta pode ir sem deixar nenhum cômodo dos dois lados menor que "min" (por dentro). */
+export function limitesDaLinha(cs: Record<string, Pos>, l: LinhaParede, min: number): { de: number; ate: number } {
+  let de = -Infinity, ate = Infinity;
+  for (const id of l.antes) { const c = cs[id]; if (c) de = Math.max(de, iniDe(c, l.eixo) + min); }
+  for (const id of l.depois) { const c = cs[id]; if (c) ate = Math.min(ate, fimDe(c, l.eixo) - T - min); }
+  return { de, ate };
+}
+
 /** Trecho da parede de "a" que ele divide com "b" (cm ao longo da parede de "a", como o "inicio" das portas), ou null. */
 export function paredeDividida(a: Pos, b: Pos): { parede: Parede; u1: number; u2: number } | null {
   const perto = (p: number, q: number) => Math.abs(p - q) < 1;

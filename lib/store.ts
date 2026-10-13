@@ -2,18 +2,19 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import { COMODO_NOME, GRUPOS_DO_COMODO, JEITO_VIROU, LIM_COMODO, MOVEL_DO_COMODO, PONTO_BASE, T, TIPOS, TIPOS_PAREDE, ehParede, horizontal, nomePadraoPonto, pontoDe, tipoDoComodo, tipoMovel } from './catalogo';
-import { invade, nomeAndarNovo, paredeDividida, planoCorredor, portaVistaDe, posicaoAoLado, posicaoNova, type Alinhar, type Lado4 } from './casa';
+import { caixaDe, invade, limitesDaLinha, nomeAndarNovo, paredeDividida, planoCorredor, portaVistaDe, posicaoAoLado, posicaoNova, type Alinhar, type Lado4, type LinhaParede } from './casa';
 import { alvoSel, andaresOrdem, cenariosLista, comodosDoAndar, comodosOrdem, cq, elVisto, idsVisiveis, ladosDaPorta } from './consultas';
 import { exemplo, moveisDo } from './dados';
-import { acomodar, esticarComodo, girarComodo90, janelaNaParede, ladoDaDobradica, ladoDeCorrer, lugarNaParede, paredeTirada, portaDeEntrada, portaEntre, portaLigacao, revisarLigacoes, semParedeEntre, type Borda } from './edicao';
+import { acomodar, corteNaParede, dividirComodo, esticarComodo, girarComodo90, janelaNaParede, ladoDaDobradica, ladoDeCorrer, limitesDoCorte, lugarNaParede, paredeTirada, portaDeEntrada, portaEntre, portaLigacao, revisarLigacoes, semParedeEntre, type Borda } from './edicao';
+import { MODELO_NOME, aberturasDoAndar, contornoNoTerreno, cortarModelo, dentroDoContorno, nomesDosTipos, terrenoEmVolta, type ItemKit, type MedidasCasa, type Modelo } from './montar';
 import { Historico, aparar, lerPontos, novoPonto, CHAVE_PONTOS, type InfoPasso, type InfoPonto, type PontoRestauracao } from './historico';
 import { lerPlanta, type PlantaIA } from './planta';
 import { centrar, geoEl, jeitoDaPorta, lugarLivre, normRot, posNoPonto, posValida, prender, temGiro } from './geometria';
 import { sugerirCasa, sugerirComodo, type Opcao } from './motor';
-import type { Andar, Cenario, Comodo, Dados, ElParede, Escopo, JeitoPorta, Modo, Movel, Parede, Ponto, TipoComodo, TipoMovel, TipoParede, Vista } from './tipos';
+import type { Andar, Cenario, Comodo, Dados, ElParede, Escopo, JeitoPorta, Modo, Movel, Parede, Ponto, Terreno, TipoComodo, TipoMovel, TipoParede, Vista } from './tipos';
 import { vazio } from './tipos';
 import { definirIdioma, idioma, tx, type Idioma } from './i18n';
-import { novoId, pl } from './util';
+import { fmtM, novoId, pl } from './util';
 
 export interface CtxAdd { comodo?: string; x?: number; y?: number; parede?: Parede; u?: number }
 export interface Dialogo { tipo: string; dados: Record<string, unknown> }
@@ -25,6 +26,28 @@ export type Tema = 'auto' | 'claro' | 'escuro';
 export const CAMADAS_TODAS: Camadas = { moveis: true, portas: true, ar: true, pontos: true, nomes: true, grade: true, piso: true };
 /** O que o modo de desenhar põe na parede tocada. */
 export type PecaParede = 'porta' | 'correr' | 'vao' | 'janela';
+
+/** As etapas do passo a passo: a casa toda (terreno, contorno, cômodos, portas e janelas, móveis) ou só um cômodo. */
+export type Etapa = 'terreno' | 'casa' | 'comodos' | 'aberturas' | 'moveis' | 'comodo';
+export type Rota = 'casa' | 'comodo';
+export const ETAPAS: Record<Rota, Etapa[]> = { casa: ['terreno', 'casa', 'comodos', 'aberturas', 'moveis'], comodo: ['comodo', 'aberturas', 'moveis'] };
+/** O que a planta mostra enquanto a pessoa ainda digita as medidas (antes de "Continuar"). */
+export interface PreviaPassos { terreno?: Omit<Terreno, 'andar'> | null; casa?: { x: number; y: number; w: number; h: number } | null; comodo?: { w: number; h: number } | null }
+export interface Passos {
+  ativo: boolean;
+  rota: Rota;
+  etapa: Etapa;
+  feitas: Etapa[];
+  puladas: Etapa[];
+  previa: PreviaPassos | null;
+  /** O espaço que o painel ocupa (embaixo, no celular; à esquerda, no computador), para a planta se enquadrar. */
+  alto: number;
+  esq: number;
+  recolhido: boolean;
+  /** Fazendo algo demorado (arrumando os móveis): o texto do que está fazendo. */
+  ocupado: string;
+}
+export const PASSOS_FECHADO: Passos = { ativo: false, rota: 'casa', etapa: 'terreno', feitas: [], puladas: [], previa: null, alto: 0, esq: 0, recolhido: false, ocupado: '' };
 
 export interface Estado {
   dados: Dados;
@@ -66,10 +89,15 @@ export interface Estado {
   toast: { msg: string; tipo: '' | 'erro'; n: number; acao?: 'desfazer'; marca?: number } | null;
   arrastando: boolean;
   /** Desenhar cômodos arrastando na planta da casa, e o tipo do próximo. Com "item", tocar numa parede põe ali uma
-   *  porta, uma porta de correr, uma passagem ou uma janela (em vez de desenhar cômodo). */
-  desenho: { ativo: boolean; tipo: TipoComodo; item: PecaParede | null };
+   *  porta, uma porta de correr, uma passagem ou uma janela (em vez de desenhar cômodo); com "dividir", arrastar
+   *  dentro de um cômodo põe uma parede nova, dividindo ele em dois. */
+  desenho: { ativo: boolean; tipo: TipoComodo; item: PecaParede | null; dividir: boolean };
+  /** Montar a casa passo a passo (terreno, casa, cômodos, portas e janelas, móveis). */
+  passo: Passos;
   /** Trena: arrastar na planta mede a distância entre dois pontos. */
   medir: boolean;
+  /** Marcando na parede entre "a" e "b" de onde até onde cortar (a tesoura da planta da casa). */
+  corte: { a: string; b: string } | null;
   camadas: Camadas;
   tema: Tema;
   /** Dá para desfazer ou refazer agora; "v" muda a cada passo novo (a lista do histórico se atualiza). */
@@ -92,7 +120,7 @@ const inicial = (): Estado => ({
   verCen: null, cenBase: null, idioma: 'pt', folha: false, folhaModo: 'acoes', dlg: null, avisosAbertos: false,
   add: { tipo: 'guarda-roupa', ctx: null, rascunho: {} },
   sug: { busy: false, msg: '' }, ia: { busy: false, msg: '' }, iaCtl: null, planta: { busy: false, msg: '' }, plantaCtl: null,
-  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto', item: null }, medir: false, camadas: { ...CAMADAS_TODAS }, tema: 'auto',
+  menu: null, toast: null, arrastando: false, desenho: { ativo: false, tipo: 'quarto', item: null, dividir: false }, passo: { ...PASSOS_FECHADO }, medir: false, corte: null, camadas: { ...CAMADAS_TODAS }, tema: 'auto',
   hist: { desfazer: false, refazer: false, v: 0 }, pontos: [], estreito: false
 });
 
@@ -129,6 +157,9 @@ function comRotulo<R>(rotulo: string, fn: () => R): R {
 }
 /** Fecha a mudança pendente (para o próximo passo começar limpo). */
 export function confirmarHistorico() { hist.confirmar(); }
+/** O próximo passo (um arraste que vai começar) terá este nome; se nada mudar, "esquecerPasso" tira o nome. */
+export function anotarPasso(rotulo: string) { hist.anotar(rotulo); }
+export function esquecerPasso() { hist.esquecerRotulo(); }
 export const listaHistorico = (): { feitos: InfoPasso[]; desfeitos: InfoPasso[] } => hist.lista();
 
 /** Troca os dados sem virar passo do histórico (desfazer, refazer); a seleção que apontava para o que sumiu sai. */
@@ -140,6 +171,7 @@ function aplicarDados(d: Dados) {
       if (s.sel && !d.moveis[s.sel]) s.sel = null;
       if (s.selEl && !d.els[s.selEl]) s.selEl = null;
       if (s.selComodo && !d.comodos[s.selComodo]) s.selComodo = null;
+      if (s.corte && (!d.comodos[s.corte.a] || !d.comodos[s.corte.b])) s.corte = null;
       if (s.verCen && !d.cenarios[s.verCen]) s.verCen = null;
       if (s.cenBase && !d.cenarios[s.cenBase]) s.cenBase = null;
       if (!s.sel && !s.selEl && !s.selComodo) { s.folha = false; s.folhaModo = 'acoes'; }
@@ -240,7 +272,7 @@ export function garantirComodo() {
   set((e) => { e.comodo = ids.length ? ids[0].id : null; });
 }
 
-export function limparSel() { set((s) => { s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.folhaModo = 'acoes'; }); }
+export function limparSel() { set((s) => { s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.folhaModo = 'acoes'; s.corte = null; }); }
 
 /** Seleciona um móvel ({id}) ou item de parede ({eid}); o cômodo em foco passa a ser o dele. Uma porta da parede
  *  dividida tocada pelo lado do vizinho ("via") deixa o foco no vizinho: é a mesma porta, vista de lá. */
@@ -253,6 +285,7 @@ export function selecionar(alvo: { id?: string; eid?: string }, o: { abrir?: boo
     else if (alvo.eid) { const e = s.dados.els[alvo.eid]; if (!e) return; s.selEl = alvo.eid; s.sel = null; s.comodo = via || e.comodo; }
     s.selComodo = null;
     s.verCen = null;
+    s.corte = null;
     if (mudou) s.folhaModo = 'acoes';
     if (s.modo === 'avancado') { s.folha = false; if (o.painel !== false && !estreito()) s.inspetor = true; }
     else s.folha = !!o.abrir;
@@ -263,6 +296,7 @@ export function selecionar(alvo: { id?: string; eid?: string }, o: { abrir?: boo
 export function selecionarComodo(id: string, abrir = false) {
   set((s) => {
     if (!s.dados.comodos[id]) return;
+    if (s.corte && s.corte.a !== id) s.corte = null;
     s.selComodo = id; s.comodo = id; s.sel = null; s.selEl = null; s.folhaModo = 'acoes';
     s.folha = s.modo === 'simples' && abrir;
     if (s.modo === 'avancado' && !estreito()) s.inspetor = true;
@@ -363,6 +397,11 @@ export function removerAndar(id: string) {
   set((s) => {
     delete s.dados.andares[id];
     if (!Object.keys(s.dados.andares).length && Object.keys(s.dados.comodos).length) s.dados.andares.terreo = { id: 'terreo', nome: tx('Térreo', 'Ground floor'), ordem: 0, criado: Date.now() };
+    // o terreno fica com o andar de baixo que sobrou (sem andar nenhum, sai)
+    if (s.dados.terreno && s.dados.terreno.andar === id) {
+      const resto = andaresOrdem(s.dados);
+      if (resto.length) s.dados.terreno.andar = resto[0].id; else delete s.dados.terreno;
+    }
   });
 }
 function andarPadrao(): string {
@@ -481,6 +520,85 @@ export function porParede(a: string, b: string): boolean {
 }
 export function alternarParede(a: string, b: string): boolean {
   return semParedeEntre(a, b, Object.values(get().dados.els)) ? porParede(a, b) : tirarParede(a, b);
+}
+
+/* ---------- parede cortada num trecho (a tesoura) ---------- */
+/** A tesoura: a parede entre "a" e "b" fica esperando a pessoa marcar de onde até onde cortar. */
+export function iniciarCorte(a: string, b: string) {
+  set((s) => {
+    if (!s.dados.comodos[a] || !s.dados.comodos[b]) return;
+    s.corte = { a, b }; s.selComodo = a; s.comodo = a; s.sel = null; s.selEl = null; s.folha = false; s.menu = null;
+  });
+}
+export function cancelarCorte() { if (get().corte) set((s) => { s.corte = null; }); }
+
+/** Corta a parede entre "a" e "b" de "u1" a "u2" (medidos na parede de "a"): o trecho vira vão e o que estava nele
+ *  sai junto. Um corte que já havia entre os dois dá lugar a este. O corte fica selecionado (com as pontas para
+ *  ajustar). */
+export function cortarParede(a: string, b: string, u1: number, u2: number): { eid: string; largura: number; saiu: string[] } | null {
+  const d0 = get().dados, A = d0.comodos[a], B = d0.comodos[b];
+  if (!A || !B) return null;
+  const velho = semParedeEntre(a, b, Object.values(d0.els));
+  const r = corteNaParede(A, B, u1, u2, Object.values(d0.els), velho?.id);
+  if (!r) return null;
+  const eid = novoId('e');
+  comRotulo(tx(`Cortou ${fmtM(r.el.largura)} m da parede entre ${A.nome} e ${B.nome}`, `Cut ${fmtM(r.el.largura)} m out of the wall between ${A.nome} and ${B.nome}`), () => set((s) => {
+    if (velho) delete s.dados.els[velho.id];
+    for (const e of r.remover) delete s.dados.els[e.id];
+    s.dados.els[eid] = { ...r.el, id: eid, criado: Date.now() };
+    s.corte = null; s.selEl = eid; s.sel = null; s.selComodo = null; s.comodo = a; s.folha = false; s.folhaModo = 'acoes';
+  }));
+  return { eid, largura: r.el.largura, saiu: r.remover.map((e) => e.nome) };
+}
+
+/** Muda as pontas do corte (arrastando as alças dele): fica no trecho dividido, sem passar por cima de outra porta
+ *  ou janela, com pelo menos 20 cm. Devolve onde ele ficou. */
+export function ajustarCorte(eid: string, ini: number, fim: number): { ini: number; fim: number } | null {
+  const d = get().dados, e = d.els[eid];
+  if (!e || !e.semParede) return null;
+  const lim = limitesDoCorte(d.comodos, e, Object.values(d.els));
+  if (!lim) return null;
+  const g = geoEl(d.comodos[e.comodo], e);
+  let a = Math.round(ini), b = Math.round(fim);
+  if (a !== Math.round(g.a)) a = Math.min(Math.max(a, lim.min), b - 20);
+  if (b !== Math.round(g.b)) b = Math.max(Math.min(b, lim.max), a + 20);
+  a = Math.max(a, lim.min); b = Math.min(b, lim.max);
+  if (b - a < 10) return { ini: g.a, fim: g.b };
+  const inteira = a <= lim.u1 + 0.5 && b >= lim.u2 - 0.5;
+  if (a !== g.a || b !== g.b || !!e.parcial === inteira) {
+    set((s) => { const x = s.dados.els[eid]; if (!x) return; x.inicio = a; x.largura = b - a; if (inteira) delete x.parcial; else x.parcial = true; });
+  }
+  return { ini: a, fim: b };
+}
+/** Leva o corte inteiro pela parede (do mesmo tamanho), até onde der. */
+export function moverCorte(eid: string, inicio: number): void {
+  const d = get().dados, e = d.els[eid];
+  if (!e || !e.semParede) return;
+  const lim = limitesDoCorte(d.comodos, e, Object.values(d.els));
+  if (!lim) return;
+  const g = geoEl(d.comodos[e.comodo], e), w = g.b - g.a;
+  const a = Math.round(Math.min(Math.max(inicio, lim.min), lim.max - w));
+  if (a === Math.round(g.a) || lim.max - lim.min < w) return;
+  set((s) => { const x = s.dados.els[eid]; if (x) x.inicio = a; });
+}
+/** O corte passa a ser a parede dividida inteira (o que mais houver nela sai junto). */
+export function cortarParedeToda(eid: string): boolean {
+  const d0 = get().dados, e = d0.els[eid];
+  if (!e || !e.semParede || !e.liga) return false;
+  const A = d0.comodos[e.comodo], B = d0.comodos[e.liga];
+  if (!A || !B) return false;
+  const r = paredeTirada(A, B, Object.values(d0.els).filter((x) => x.id !== eid));
+  if (!r) return false;
+  comRotulo(tx(`Tirou a parede toda entre ${A.nome} e ${B.nome}`, `Removed the whole wall between ${A.nome} and ${B.nome}`), () => set((s) => {
+    for (const x of r.remover) delete s.dados.els[x.id];
+    const x = s.dados.els[eid]; if (!x) return;
+    x.inicio = r.el.inicio; x.largura = r.el.largura; delete x.parcial;
+  }));
+  const saiu = r.remover.map((x) => x.nome);
+  toast(saiu.length
+    ? tx(`Parede toda tirada: ${A.nome} e ${B.nome} viraram um espaço só. Saíram junto: ${saiu.join(', ')}.`, `Whole wall removed: ${A.nome} and ${B.nome} are now one space. Also removed: ${saiu.join(', ')}.`)
+    : tx(`Parede toda tirada: ${A.nome} e ${B.nome} viraram um espaço só.`, `Whole wall removed: ${A.nome} and ${B.nome} are now one space.`), '', 'desfazer');
+  return true;
 }
 
 /** Cópia do cômodo, com os móveis e os itens de parede, ao lado dele. */
@@ -626,15 +744,20 @@ export function modoDesenho(ativo: boolean, tipo?: TipoComodo) {
   set((s) => {
     const entrou = ativo && !s.desenho.ativo, saiu = !ativo && s.desenho.ativo;
     // escolher um tipo de cômodo volta a desenhar cômodos (larga a ferramenta de porta ou janela)
-    s.desenho = { ativo, tipo: tipo || s.desenho.tipo, item: entrou || tipo ? null : s.desenho.item };
+    s.desenho = { ativo, tipo: tipo || s.desenho.tipo, item: entrou || tipo ? null : s.desenho.item, dividir: entrou || tipo ? false : s.desenho.dividir };
+    if (entrou || saiu) s.corte = null;
     if (entrou) { s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.verCen = null; s.menu = null; s.latAberta = false; s.medir = false; }
     // no Pronto, o último cômodo desenhado deixa de estar selecionado (um toque nele volta a selecionar)
-    if (saiu) { s.selComodo = null; s.selEl = null; s.folha = false; s.desenho.item = null; }
+    if (saiu) { s.selComodo = null; s.selEl = null; s.folha = false; s.desenho.item = null; s.desenho.dividir = false; }
   });
 }
 /** No modo de desenhar: tocar numa parede põe ali uma porta, porta de correr, passagem ou janela. */
 export function ferramentaDesenho(item: PecaParede | null) {
-  set((s) => { s.desenho.item = item; s.selComodo = null; s.folha = false; if (!item) s.selEl = null; });
+  set((s) => { s.desenho.item = item; s.desenho.dividir = false; s.selComodo = null; s.folha = false; if (!item) s.selEl = null; });
+}
+/** No modo de desenhar: arrastar dentro de um cômodo põe uma parede nova (divide em dois). */
+export function ferramentaDividir() {
+  set((s) => { s.desenho.item = null; s.desenho.dividir = true; s.selEl = null; s.folha = false; });
 }
 
 /** Porta, porta de correr, passagem ou janela posta na parede tocada (no ponto "u" dela), abrindo para o cômodo tocado
@@ -695,16 +818,21 @@ export function desenharComodo(v: { andar: string | null; x: number; y: number; 
 }
 export function moverComodo(id: string, x: number, y: number) { set((s) => { const c = s.dados.comodos[id]; if (c) { c.x = Math.round(x); c.y = Math.round(y); } }); }
 
+/** Tira o cômodo dos dados, com os móveis, os itens de parede e o que os cenários tinham dele. */
+function tirarComodoDe(d: Dados, id: string) {
+  for (const m of Object.values(d.moveis)) if (m.comodo === id) delete d.moveis[m.id];
+  for (const e of Object.values(d.els)) if (e.comodo === id) delete d.els[e.id];
+  for (const c of Object.values(d.cenarios)) {
+    if (c.escopo === 'comodo') { if (c.comodo === id) delete d.cenarios[c.id]; continue; }
+    for (const [k, p] of Object.entries(c.itens)) if (p.comodo === id) delete c.itens[k];
+  }
+  delete d.comodos[id];
+}
+
 export function removerComodo(id: string) {
   set((s) => {
     const d = s.dados;
-    for (const m of Object.values(d.moveis)) if (m.comodo === id) delete d.moveis[m.id];
-    for (const e of Object.values(d.els)) if (e.comodo === id) delete d.els[e.id];
-    for (const c of Object.values(d.cenarios)) {
-      if (c.escopo === 'comodo') { if (c.comodo === id) delete d.cenarios[c.id]; continue; }
-      for (const [k, p] of Object.entries(c.itens)) if (p.comodo === id) delete c.itens[k];
-    }
-    delete d.comodos[id];
+    tirarComodoDe(d, id);
     revisar(d);
     if (s.comodo === id) s.comodo = null;
     s.sel = null; s.selEl = null; s.selComodo = null; s.verCen = null; s.folha = false;
@@ -1085,7 +1213,7 @@ export function colar(ctx: CtxAdd | null = null): boolean {
 /* ---------- o que aparece na planta, trena e tema ---------- */
 export function alternarCamada(k: Camada) { set((s) => { s.camadas[k] = !s.camadas[k]; }); }
 export function mostrarTudo() { set((s) => { s.camadas = { ...CAMADAS_TODAS }; }); }
-export function modoMedir(ativo: boolean) { set((s) => { s.medir = ativo; if (ativo) { s.desenho.ativo = false; s.menu = null; } }); }
+export function modoMedir(ativo: boolean) { set((s) => { s.medir = ativo; if (ativo) { s.desenho.ativo = false; s.menu = null; s.corte = null; } }); }
 export function aplicarTema(t: Tema) {
   try {
     const el = document.documentElement;
@@ -1126,6 +1254,257 @@ export function editarItem() {
   }
 }
 export function pedirRemover() { const s = get(); if (alvoSel(s.dados, s.sel, s.selEl)) abrirDialogo('remover-item'); }
+
+/* ---------- paredes: dividir um cômodo e mover a parede reta com os dois lados ---------- */
+/** Divide o cômodo com uma parede nova (veja dividirComodo). O espaço que ainda não tinha tipo (a casa inteira,
+ *  logo depois do contorno) vira "Cômodo 1" e "Cômodo 2"; os dois ficam para a pessoa dizer o que são. */
+export function dividirComodoEm(id: string, eixo: 'x' | 'y', u: number): string | null {
+  const c0 = get().dados.comodos[id]; if (!c0) return null;
+  const L = eixo === 'x' ? c0.w : c0.h, uu = Math.round(u);
+  if (uu < LIM_COMODO.min || L - uu - T < LIM_COMODO.min) return null;
+  const nid = novoId('c');
+  comRotulo(tx(`Dividiu ${c0.nome}`, `Split ${c0.nome}`), () => set((s) => {
+    const d = s.dados, c = d.comodos[id];
+    const outros = Object.values(d.comodos).filter((o) => o.id !== id).map((o) => o.nome);
+    const generico = tipoDoComodo(c) === 'outro' && !c.tipo;
+    const novo: Comodo = { id: nid, nome: '', w: 0, h: 0, x: 0, y: 0, andar: c.andar, criado: Date.now() };
+    const o = doComodo(d, id);
+    dividirComodo(c, novo, eixo, uu, o.moveis, o.els, o.itens);
+    if (generico) { const [a, b] = nomesDosTipos(['outro', 'outro'], outros); c.nome = a; novo.nome = b; }
+    else novo.nome = nomesDosTipos(['outro'], outros.concat(c.nome))[0];
+    d.comodos[nid] = novo;
+    // cenário só deste cômodo: o que foi para o outro lado sai dele
+    for (const cen of Object.values(d.cenarios)) if (cen.escopo === 'comodo' && cen.comodo === id) for (const [k, it] of Object.entries(cen.itens)) if (it.comodo === nid) delete cen.itens[k];
+    for (const x of [c, novo]) acomodar(x, Object.values(d.moveis).filter((m) => m.comodo === x.id), Object.values(d.els).filter((e) => e.comodo === x.id));
+    revisar(d);
+    s.sel = null; s.selEl = null; s.selComodo = null; s.comodo = id; s.folha = false;
+  }));
+  return nid;
+}
+
+/** Arrastando a parede reta (veja paredeNoPontoDaCasa): ela vai para "v" levando junto os cômodos dos dois lados,
+ *  sem nenhum ficar menor que o mínimo. Devolve onde ela ficou. */
+export function moverParedeReta(l: LinhaParede, v: number): number {
+  let ficou = l.v;
+  set((s) => {
+    const d = s.dados, lim = limitesDaLinha(d.comodos, l, LIM_COMODO.min);
+    if (lim.de > lim.ate) return;
+    ficou = Math.round(Math.min(Math.max(v, lim.de), lim.ate));
+    for (const id of l.antes) { const c = d.comodos[id]; if (!c) continue; const o = doComodo(d, id); esticarComodo(c, l.eixo === 'x' ? 'dir' : 'baixo', ficou, LIM_COMODO.min, o.moveis, o.els, o.itens.map((x) => x.item)); }
+    for (const id of l.depois) { const c = d.comodos[id]; if (!c) continue; const o = doComodo(d, id); esticarComodo(c, l.eixo === 'x' ? 'esq' : 'cima', ficou + T, LIM_COMODO.min, o.moveis, o.els, o.itens.map((x) => x.item)); }
+  });
+  return ficou;
+}
+/** Soltou a parede: o que ficou fora volta para dentro e as ligações se refazem. */
+export function fimMoverParede(l: LinhaParede): string[] {
+  let novos: string[] = [];
+  set((s) => {
+    const d = s.dados;
+    for (const id of [...l.antes, ...l.depois]) { const c = d.comodos[id]; if (!c) continue; const o = doComodo(d, id); acomodar(c, o.moveis, o.els); }
+    revisar(d);
+    for (const id of [...l.antes, ...l.depois]) { const c = d.comodos[id]; if (c) novos = novos.concat(ligar(d, c)); }
+  });
+  return [...new Set(novos)];
+}
+
+/* ---------- passo a passo: terreno, casa, cômodos, portas e janelas, móveis ---------- */
+const nomeCasa = () => tx('Casa', 'House');
+/** O nome ainda é o que o app deu sozinho para esse tipo ("Cômodo 2", "Quarto 1", "Sala", "Casa")? */
+function nomeAutomatico(c: Comodo, d: Dados): boolean {
+  const n = c.nome.trim(), t = tipoDoComodo(c), base = t === 'outro' ? tx('Cômodo', 'Room') : COMODO_NOME[t];
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return n === nomeCasa() || n === d.andares[c.andar]?.nome || /^(c[oô]modo|room)\s*\d*$/i.test(n) || new RegExp(`^${esc(base)}( \\d+)?$`, 'i').test(n);
+}
+/** Diz o que o cômodo é. Com o nome ainda automático, ele acompanha ("Cômodo 2" vira "Quarto 2"). */
+export function mudarTipoComodo(id: string, tipo: TipoComodo): string {
+  const d = get().dados, c = d.comodos[id]; if (!c) return '';
+  if (tipoDoComodo(c) === tipo && c.tipo === tipo) return c.nome;
+  const outros = Object.values(d.comodos).filter((o) => o.id !== id).map((o) => o.nome);
+  const nome = nomeAutomatico(c, d) ? nomesDosTipos([tipo], outros)[0] : c.nome;
+  comRotulo(nome !== c.nome ? tx(`${c.nome} virou ${nome}`, `${c.nome} is now ${nome}`) : tx(`${c.nome} é ${COMODO_NOME[tipo].toLowerCase()}`, `${c.nome} is a ${COMODO_NOME[tipo].toLowerCase()}`), () => salvarComodo(id, { tipo, nome }));
+  return nome;
+}
+/** O contorno de fora dos cômodos do andar (null sem cômodos). */
+function contornoDoAndar(d: Dados, andar: string): { x: number; y: number; w: number; h: number } | null {
+  const b = caixaDe(comodosDoAndar(d, andar));
+  return b ? { x: b.x1, y: b.y1, w: b.x2 - b.x1, h: b.y2 - b.y1 } : null;
+}
+/** O andar de baixo (onde fica o terreno). */
+const andarDeBaixo = (d: Dados): string | null => (d.terreno && d.andares[d.terreno.andar] ? d.terreno.andar : andaresOrdem(d)[0]?.id ?? null);
+
+export function abrirPassos(rota: Rota) {
+  const d = get().dados, temCasa = Object.keys(d.comodos).length > 0;
+  const etapa: Etapa = rota === 'comodo' ? 'comodo' : !temCasa && d.terreno ? 'casa' : 'terreno';
+  set((s) => {
+    s.passo = { ...PASSOS_FECHADO, ativo: true, rota, etapa, feitas: !temCasa && d.terreno && rota === 'casa' ? ['terreno'] : [] };
+    s.vista = 'casa'; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.verCen = null; s.menu = null; s.latAberta = false; s.medir = false; s.dlg = null;
+  });
+  aplicarEtapa(etapa);
+  enquadrar();
+}
+/** Cada etapa usa a planta de um jeito: dividir a casa (ou desenhar cômodos, sem contorno), pôr portas e janelas
+ *  tocando nas paredes, arrastar os móveis; no terreno e na casa, a planta só mostra a prévia. */
+function aplicarEtapa(e: Etapa) {
+  set((s) => {
+    const temCasa = Object.keys(s.dados.comodos).length > 0;
+    s.passo.etapa = e; s.passo.previa = null; s.passo.recolhido = false;
+    if (e === 'comodos') s.desenho = { ativo: true, tipo: s.desenho.tipo, item: null, dividir: temCasa };
+    else if (e === 'aberturas') s.desenho = { ativo: true, tipo: s.desenho.tipo, item: 'porta', dividir: false };
+    else s.desenho = { ativo: false, tipo: s.desenho.tipo, item: null, dividir: false };
+    s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false; s.menu = null;
+  });
+}
+export function irParaEtapa(e: Etapa) { aplicarEtapa(e); enquadrar(); }
+/** Continuar (ou pular) para a próxima etapa; depois da última, o passo a passo fecha. */
+export function seguirPassos(pulou: boolean) {
+  const p = get().passo, lista = ETAPAS[p.rota], k = lista.indexOf(p.etapa);
+  set((s) => {
+    const e = s.passo.etapa;
+    s.passo.feitas = s.passo.feitas.filter((x) => x !== e); s.passo.puladas = s.passo.puladas.filter((x) => x !== e);
+    (pulou ? s.passo.puladas : s.passo.feitas).push(e);
+  });
+  if (k >= 0 && k + 1 < lista.length) irParaEtapa(lista[k + 1]);
+  else fecharPassos(true);
+}
+export function voltarPassos() {
+  const p = get().passo, lista = ETAPAS[p.rota], k = lista.indexOf(p.etapa);
+  if (k > 0) irParaEtapa(lista[k - 1]);
+}
+export function fecharPassos(concluiu = false) {
+  set((s) => {
+    s.passo = { ...s.passo, ativo: false, previa: null, alto: 0, esq: 0, ocupado: '' };
+    s.desenho = { ativo: false, tipo: s.desenho.tipo, item: null, dividir: false };
+    s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false;
+  });
+  enquadrar();
+  if (concluiu && Object.keys(get().dados.comodos).length) toast(tx('Planta pronta. Arraste os móveis, toque nas portas para virar ou em ✦ Sugestões para outras arrumações.', 'Your floor plan is ready. Drag the furniture, tap a door to flip it or tap ✦ Suggestions for other layouts.'));
+}
+export function previaPassos(p: PreviaPassos | null) {
+  if (JSON.stringify(get().passo.previa) === JSON.stringify(p)) return;
+  set((s) => { s.passo.previa = p; });
+}
+export function tamanhoPassos(alto: number, esq: number) {
+  const p = get().passo;
+  if (p.alto !== alto || p.esq !== esq) set((s) => { s.passo.alto = alto; s.passo.esq = esq; });
+}
+export function recolherPassos(v: boolean) { set((s) => { s.passo.recolhido = v; }); }
+
+/** Terreno com a frente e o fundo (cm) e o lado da rua: em volta da casa que já existe ou no canto da planta. */
+export function salvarTerreno(frente: number, fundo: number, rua: Parede) {
+  comRotulo(tx(`Terreno de ${fmtM(frente)} × ${fmtM(fundo)} m`, `${fmtM(frente)} × ${fmtM(fundo)} m plot`), () => {
+    const andar = andarDeBaixo(get().dados) || criarAndar(tx('Térreo', 'Ground floor'));
+    set((s) => { s.dados.terreno = { ...terrenoEmVolta(contornoDoAndar(s.dados, andar), frente, fundo, rua), andar }; });
+  });
+}
+export function removerTerreno() { if (get().dados.terreno) comRotulo(tx('Tirou o terreno', 'Removed the plot'), () => set((s) => { delete s.dados.terreno; })); }
+
+/** O contorno da casa (por fora), no terreno com os recuos pedidos, em cada andar: um espaço só, para dividir em
+ *  cômodos no passo seguinte. Só para casa sem cômodos. */
+export function criarCasa(m: MedidasCasa & { andares: number }): { erro: string } | { ids: string[] } {
+  const d = get().dados;
+  if (Object.keys(d.comodos).length) return { erro: tx('A casa já tem cômodos.', 'The house already has rooms.') };
+  const r = contornoNoTerreno(d.terreno || null, m);
+  if ('erro' in r) return r;
+  const dentro = dentroDoContorno(r.caixa), ids: string[] = [];
+  comRotulo(tx(`Casa de ${fmtM(m.frente)} × ${fmtM(m.fundo)} m`, `${fmtM(m.frente)} × ${fmtM(m.fundo)} m house`), () => {
+    const base = andarDeBaixo(get().dados) || criarAndar(tx('Térreo', 'Ground floor'));
+    const andares = [base, ...andaresOrdem(get().dados).map((a) => a.id).filter((a) => a !== base)];
+    while (andares.length < m.andares) andares.push(criarAndar());
+    set((s) => {
+      for (let k = 0; k < Math.max(1, m.andares); k++) {
+        const id = novoId('c');
+        ids.push(id);
+        s.dados.comodos[id] = { id, nome: k ? s.dados.andares[andares[k]]?.nome || nomeCasa() : nomeCasa(), ...dentro, andar: andares[k], criado: Date.now() + k };
+      }
+      s.comodo = ids[0]; s.sel = null; s.selEl = null; s.selComodo = null;
+    });
+  });
+  return { ids };
+}
+
+/** Troca os cômodos do andar pelos do modelo, no mesmo contorno (dá para desfazer). */
+export function aplicarModelo(andar: string, modelo: Modelo): string[] {
+  const d0 = get().dados, cs = comodosDoAndar(d0, andar), caixa = contornoDoAndar(d0, andar);
+  if (!cs.length || !caixa) return [];
+  const partes = cortarModelo(dentroDoContorno(caixa), modelo, d0.terreno?.rua ?? 'baixo'), ids: string[] = [];
+  comRotulo(tx(`Dividiu ${d0.andares[andar]?.nome || ''} em ${MODELO_NOME[modelo]()}`, `Split ${d0.andares[andar]?.nome || ''} into ${MODELO_NOME[modelo]()}`), () => set((s) => {
+    const d = s.dados;
+    for (const c of cs) tirarComodoDe(d, c.id);
+    revisar(d);
+    const nomes = nomesDosTipos(partes.map((p) => p.tipo), Object.values(d.comodos).map((c) => c.nome)), agora = Date.now();
+    partes.forEach((p, k) => {
+      const id = novoId('c');
+      ids.push(id);
+      d.comodos[id] = { id, nome: nomes[k], x: p.x, y: p.y, w: p.w, h: p.h, andar, criado: agora + k, tipo: p.tipo, ...(p.tipo === 'corredor' ? { corredor: true } : {}) };
+    });
+    // o corredor já sai ligado aos vizinhos (como quando se desenha)
+    for (const id of ids) ligar(d, d.comodos[id]);
+    s.comodo = ids[0] || null; s.sel = null; s.selEl = null; s.selComodo = null; s.folha = false;
+  }));
+  return ids;
+}
+
+/** As portas (uma ligação boa para cada cômodo, a porta da rua no andar de baixo) e uma janela em cada cômodo que
+ *  tem parede de fora, em todos os andares. Não repete onde já tem. */
+export function porAberturas(soComodo?: string): { portas: number; janelas: number } {
+  const d0 = get().dados, base = andarDeBaixo(d0);
+  const as = andaresOrdem(d0).filter((a) => comodosDoAndar(d0, a.id).length && (!soComodo || d0.comodos[soComodo]?.andar === a.id));
+  let portas = 0, janelas = 0;
+  comRotulo(tx('Pôs portas e janelas', 'Added doors and windows'), () => set((s) => {
+    const d = s.dados, rua = d.terreno?.rua ?? 'baixo';
+    for (const a of as) {
+      const cs = comodosDoAndar(d, a.id).filter((c) => !soComodo || c.id === soComodo);
+      const r = aberturasDoAndar(cs, Object.values(d.els), { rua, entrada: a.id === base });
+      r.novos.forEach((e, i) => {
+        if (e.tipo === 'porta') {
+          // um cômodo sozinho: é só a porta dele (perto do canto), não a "Entrada" da casa
+          const p = soComodo && e.nome === tx('Entrada', 'Entrance') ? { ...e, nome: TIPOS_PAREDE.porta.rot, inicio: 10, dobradica: 'a' as const } : e;
+          guardarPorta(d, p, i);
+        } else { const eid = novoId('e'); d.els[eid] = { ...e, id: eid, nome: proximoNomeEl(d, e.comodo, 'janela'), criado: Date.now() + i }; }
+      });
+      portas += r.portas; janelas += r.janelas;
+    }
+    s.sel = null; s.selEl = null; s.selComodo = null;
+  }));
+  return { portas, janelas };
+}
+
+/** Os móveis escolhidos em cada cômodo: entram e se arrumam (o motor das sugestões acha o melhor lugar, em volta do
+ *  que já estava lá, que fica no lugar). Tudo num passo só do histórico. */
+export async function mobiliar(escolhas: { comodo: string; itens: ItemKit[] }[]): Promise<number> {
+  const d0 = get().dados, novos: Movel[] = [], agora = Date.now();
+  for (const e of escolhas) {
+    const q = cq(d0, e.comodo); if (!q) continue;
+    const lista = moveisDo(d0, q.id).slice();
+    for (const it of e.itens) for (let k = 0; k < Math.max(1, it.qtd || 1); k++) {
+      const t = TIPOS[it.tipo];
+      const m: Movel = {
+        id: novoId('m'), tipo: it.tipo, nome: nomeLivre(lista, it.nome), larg: it.larg, prof: it.prof, alto: t.alto, comodo: q.id, x: 0, y: 0, rot: 0, criado: agora + novos.length,
+        fixo: false, abertura: t.ab ? t.ab[0] : 'nenhuma', nPortas: 0, frente: null, cadeiras: 0, ladoCadeiras: 'frente', cadLarg: 45, cadProf: 50,
+        bauCab: 0, bauCabLarg: it.larg, bauCabAl: 'centro', bauCabDx: 0, bauPe: 0, bauPeLarg: it.larg, bauPeAl: 'centro', bauPeDx: 0, ...(it.extra || {})
+      };
+      Object.assign(m, lugarLivre(q, m, lista));
+      lista.push(m); novos.push(m);
+    }
+  }
+  if (!novos.length) return 0;
+  set((s) => { s.passo.ocupado = tx('Arrumando os móveis…', 'Arranging the furniture…'); });
+  try {
+    // cada cômodo: o que já estava fica onde está; os novos vão para a melhor arrumação que o motor achar
+    for (const e of escolhas) {
+      const q = cq(d0, e.comodo); if (!q) continue;
+      const meus = novos.filter((m) => m.comodo === q.id); if (!meus.length) continue;
+      set((s) => { s.passo.ocupado = tx(`Arrumando ${q.nome}…`, `Arranging ${q.nome}…`); });
+      const ops = await sugerirComodo(q, [...moveisDo(d0, q.id).map((m) => ({ ...m, fixo: true })), ...meus], undefined, 450);
+      if (ops.length) for (const m of meus) { const it = ops[0].itens[m.id]; if (it) { m.x = it.x; m.y = it.y; m.rot = it.rot; } }
+    }
+    comRotulo(tx(`Pôs ${pl(novos.length, 'móvel', 'móveis')}`, `Added ${pl(novos.length, 'piece of furniture', 'pieces of furniture')}`), () => set((s) => {
+      for (const m of novos) if (s.dados.comodos[m.comodo]) s.dados.moveis[m.id] = m;
+      s.sel = null; s.selEl = null; s.selComodo = null;
+    }));
+  } finally { set((s) => { s.passo.ocupado = ''; }); }
+  return novos.length;
+}
 
 /* ---------- planta pela foto do desenho em papel ---------- */
 /** Cria os cômodos que a IA leu do desenho, com portas, passagens, a entrada e as janelas. Se a casa já tem

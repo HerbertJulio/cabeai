@@ -17,7 +17,7 @@ export function descEl(d: Dados, e: ElParede): string {
   const g = geoEl(q, e), w = fmtM(g.b - g.a), par = tx('parede ' + NOME_PAREDE[e.parede], NOME_PAREDE[e.parede] + ' wall');
   if (e.tipo === 'porta') {
     const l = ladosDaPorta(d, e), onde = l.viz ? `${q.nome} ↔ ${l.viz.nome}` : tx(`${par} de ${q.nome}`, `${q.nome}’s ${par}`);
-    if (e.semParede) return `${w} m · ${onde} · ${tx('sem parede', 'no wall')}`;
+    if (e.semParede) return `${w} m · ${onde} · ${e.parcial ? tx('um trecho da parede', 'part of the wall') : tx('a parede toda', 'the whole wall')}`;
     const j = jeitoDaPorta(e);
     const para = e.abre === 'fora' ? (l.viz ? tx(`abre para ${l.viz.nome}`, `opens into ${l.viz.nome}`) : tx('abre para fora', 'opens outward')) : tx(`abre para ${q.nome}`, `opens into ${q.nome}`);
     const como = j === 'vao' ? tx('passagem sem porta', 'opening, no door') : j === 'correr' ? tx('de correr', 'sliding') : j === 'dupla' ? tx(`dupla, ${para}`, `double, ${para}`) : para;
@@ -39,6 +39,7 @@ export default function Faixa() {
   const selComodo = useApp((s) => s.selComodo);
   const verCen = useApp((s) => s.verCen);
   const cenBase = useApp((s) => s.cenBase);
+  const passos = useApp((s) => s.passo.ativo);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!verCen) return;
@@ -46,6 +47,8 @@ export default function Faixa() {
     b?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }, [verCen]);
 
+  // no passo a passo, o painel dele diz o que fazer (e a planta ganha a altura da faixa)
+  if (passos) return null;
   if (!Object.keys(dados.comodos).length) return <div className="faixa" id="faixa"><p className="nota">{tx('Crie um cômodo para começar.', 'Create a room to get started.')}</p></div>;
   const alvo = verCen ? null : alvoSel(dados, sel, selEl);
   if (alvo) {
@@ -54,7 +57,7 @@ export default function Faixa() {
     const med = alvo.tipo === 'movel' ? `${fmtM(alvo.obj.larg)} × ${fmtM(alvo.obj.prof)} m` : descEl(dados, alvo.obj);
     return (
       <div className="faixa" id="faixa">
-        <div className="barra-txt"><span className="barra-nome">{o.nome}</span> <span className="barra-med">{med}</span></div>
+        <div className="barra-txt"><span className="barra-nome">{alvo.tipo !== 'movel' && alvo.obj.semParede ? tx('Parede cortada', 'Wall cut') : o.nome}</span> <span className="barra-med">{med}</span></div>
         <div className="acoes">
           <button className="ico-btn" type="button" id="b-item-mais" data-acao="item-mais" aria-label={tx('Mais opções do item', 'More options for this item')} aria-haspopup="menu"
             onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'item', alvo.tipo === 'movel' ? { id: o.id } : { eid: o.id })}><Icone n="mais" /></button>

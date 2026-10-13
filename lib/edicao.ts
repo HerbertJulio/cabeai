@@ -1,7 +1,7 @@
 // Edição da planta da casa: girar e esticar cômodos levando junto o que está dentro, e as portas automáticas
 // quando um cômodo desenhado encosta num corredor ou numa varanda. Funções puras: mudam só os objetos recebidos.
 import { paredeDividida } from './casa';
-import { tipoDoComodo } from './catalogo';
+import { T, tipoDoComodo } from './catalogo';
 import { geoEl, normRot, prender, ret } from './geometria';
 import { tx } from './i18n';
 import type { Comodo, ComodoCompleto, ElParede, ItemCenario, Movel, Parede, TipoComodo } from './tipos';
@@ -47,6 +47,34 @@ export function esticarComodo(c: Comodo, borda: Borda, v: number, min: number, m
   for (const m of moveis) m.y += d;
   for (const it of itens) it.y += d;
   for (const e of els) if (e.parede === 'esquerda' || e.parede === 'direita') e.inicio += d;
+}
+
+/** Divide o cômodo com uma parede nova. "eixo" x = parede em pé (de cima a baixo), y = parede deitada; "u" é onde a
+ *  parede começa, medido por dentro a partir da esquerda (x) ou de cima (y), e ela tem T de espessura. "c" fica com a
+ *  primeira parte e "novo" (que já vem com id, nome e tipo) com a segunda. Móveis, portas, janelas e pontos vão para
+ *  o lado onde fica o meio deles (os cenários acompanham os móveis); depois, "acomodar" põe tudo para dentro. */
+export function dividirComodo(c: Comodo, novo: Comodo, eixo: 'x' | 'y', u: number, moveis: Movel[], els: ElParede[], itens: { item: ItemCenario; m: Movel }[]): void {
+  const W = c.w, H = c.h, vert = eixo === 'x', L = vert ? W : H, desloc = u + T;
+  novo.andar = c.andar;
+  if (vert) { novo.x = c.x + desloc; novo.y = c.y; novo.w = L - desloc; novo.h = H; c.w = u; }
+  else { novo.x = c.x; novo.y = c.y + desloc; novo.w = W; novo.h = L - desloc; c.h = u; }
+  const doOutroLado = (meio: number) => meio > u + T / 2;
+  for (const m of moveis) {
+    const r = ret(m);
+    if (doOutroLado(vert ? (r.x1 + r.x2) / 2 : (r.y1 + r.y2) / 2)) { m.comodo = novo.id; if (vert) m.x -= desloc; else m.y -= desloc; }
+  }
+  for (const { item, m } of itens) {
+    const r = ret({ ...m, x: item.x, y: item.y, rot: item.rot });
+    if (doOutroLado(vert ? (r.x1 + r.x2) / 2 : (r.y1 + r.y2) / 2)) { item.comodo = novo.id; if (vert) item.x -= desloc; else item.y -= desloc; }
+  }
+  for (const e of els) {
+    const aoLongo = vert ? e.parede === 'cima' || e.parede === 'baixo' : e.parede === 'esquerda' || e.parede === 'direita';
+    // as paredes que correm junto com a nova: a do fundo vai para a segunda parte
+    if (!aoLongo) { if (e.parede === (vert ? 'direita' : 'baixo')) e.comodo = novo.id; continue; }
+    const g = geoEl({ w: W, h: H }, e);
+    if (doOutroLado((g.a + g.b) / 2)) { e.comodo = novo.id; e.inicio = Math.round(g.a - desloc); }
+    else e.inicio = Math.round(g.a);
+  }
 }
 
 /** Depois de mexer no tamanho: móveis voltam para dentro e portas e janelas cabem na parede. */
@@ -134,8 +162,12 @@ export function revisarLigacoes(comodos: Record<string, Comodo>, els: ElParede[]
     if (!pd || pd.parede !== e.parede) { remover.push(e.id); continue; }
     const vao = pd.u2 - pd.u1;
     if (e.semParede) {
-      if (vao < 10) remover.push(e.id);
-      else if (e.inicio !== pd.u1 || e.largura !== vao) mudar.push({ id: e.id, inicio: pd.u1, largura: vao });
+      if (vao < 10) { remover.push(e.id); continue; }
+      if (!e.parcial) { if (e.inicio !== pd.u1 || e.largura !== vao) mudar.push({ id: e.id, inicio: pd.u1, largura: vao }); continue; }
+      // cortada num trecho: o corte fica onde está, dentro do que sobrou da parede dividida
+      const ini = Math.max(pd.u1, Math.min(e.inicio, pd.u2 - 10)), fim = Math.min(pd.u2, Math.max(ini + 10, e.inicio + e.largura));
+      if (fim - ini < 10) remover.push(e.id);
+      else if (ini !== e.inicio || fim - ini !== e.largura) mudar.push({ id: e.id, inicio: ini, largura: fim - ini });
       continue;
     }
     if (e.inicio >= pd.u1 - 0.5 && e.inicio + e.largura <= pd.u2 + 0.5) continue;
@@ -166,6 +198,51 @@ export function paredeTirada(a: Comodo, b: Comodo, els: ElParede[]): { el: Omit<
     el: { tipo: 'porta', nome: tx('Sem parede', 'No wall'), comodo: a.id, parede: pa.parede, inicio: pa.u1, largura: pa.u2 - pa.u1, dobradica: 'a', abre: 'vao', semParede: true, liga: b.id },
     remover
   };
+}
+
+/** Cortar só um trecho da parede entre "a" e "b": de "u1" a "u2", medidos na parede de "a" (ficam dentro do trecho
+ *  que os dois dividem). Vira um vão; portas, janelas e pontos que caem no trecho saem junto, dos dois lados (menos o
+ *  corte "fora", que este substitui). Pegando a parede dividida toda, é o mesmo que tirar a parede. */
+export function corteNaParede(a: Comodo, b: Comodo, u1: number, u2: number, els: ElParede[], fora?: string): { el: Omit<ElParede, 'id' | 'criado'>; remover: ElParede[] } | null {
+  if (a.andar !== b.andar) return null;
+  const pa = paredeDividida(a, b), pb = paredeDividida(b, a);
+  if (!pa || !pb || pa.u2 - pa.u1 < 10) return null;
+  const ini = Math.round(Math.max(pa.u1, Math.min(u1, u2))), fim = Math.round(Math.min(pa.u2, Math.max(u1, u2)));
+  if (fim - ini < 10) return null;
+  // o mesmo trecho na parede de "b" (as duas paredes correm no mesmo sentido)
+  const desl = pb.u1 - pa.u1;
+  const cai = (e: ElParede, c: Comodo, parede: Parede, x1: number, x2: number) => {
+    if (e.comodo !== c.id || e.parede !== parede) return false;
+    const g = geoEl(c, e);
+    return g.a < x2 - 0.5 && g.b > x1 + 0.5;
+  };
+  const remover = els.filter((e) => e.id !== fora && !e.herdada && (cai(e, a, pa.parede, ini, fim) || cai(e, b, pb.parede, ini + desl, fim + desl)));
+  const inteira = ini <= pa.u1 + 0.5 && fim >= pa.u2 - 0.5;
+  return {
+    el: { tipo: 'porta', nome: tx('Sem parede', 'No wall'), comodo: a.id, parede: pa.parede, inicio: ini, largura: fim - ini, dobradica: 'a', abre: 'vao', semParede: true, liga: b.id, ...(inteira ? {} : { parcial: true }) },
+    remover
+  };
+}
+
+/** Até onde o corte "e" pode ir na parede dele, sem passar por cima de outra porta, janela ou ponto daquela parede
+ *  (dos dois lados) nem sair do trecho dividido: "min" e "max", medidos na parede do dono do corte. */
+export function limitesDoCorte(comodos: Record<string, Comodo>, e: ElParede, els: ElParede[]): { min: number; max: number; u1: number; u2: number } | null {
+  const a = e.liga ? comodos[e.comodo] : null, b = e.liga ? comodos[e.liga] : null;
+  if (!a || !b) return null;
+  const pa = paredeDividida(a, b), pb = paredeDividida(b, a);
+  if (!pa || !pb) return null;
+  const desl = pb.u1 - pa.u1, g0 = geoEl(a, e);
+  let min = pa.u1, max = pa.u2;
+  for (const o of els) {
+    if (o.id === e.id || o.herdada) continue;
+    const doA = o.comodo === a.id && o.parede === pa.parede, doB = o.comodo === b.id && o.parede === pb.parede;
+    if (!doA && !doB) continue;
+    const g = geoEl(doA ? a : b, o), oa = g.a - (doA ? 0 : desl), ob = g.b - (doA ? 0 : desl);
+    if (ob <= pa.u1 || oa >= pa.u2) continue;
+    if (ob <= g0.a + 0.5) min = Math.max(min, ob);
+    else if (oa >= g0.b - 0.5) max = Math.min(max, oa);
+  }
+  return { min, max, u1: pa.u1, u2: pa.u2 };
 }
 
 /** A parede tirada entre "a" e "b" (de qualquer um dos lados), se houver. */

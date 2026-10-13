@@ -4,15 +4,21 @@ import { PAREDE_OPOSTA } from './casa';
 import { normalizarDados } from './dados';
 import { tx } from './i18n';
 import type { Dados, ElParede, Movel } from './tipos';
-import { minuscula, novoId, pl } from './util';
+import { fmtM, minuscula, novoId, pl } from './util';
 
 /* ---------- o nome de cada mudança ---------- */
-const nomeEl = (e: ElParede) => e.nome;
+const nomeEl = (e: ElParede) => (e.semParede ? tx('o corte da parede', 'the wall cut') : e.nome);
 
 /** Descreve o que mudou de "a" para "b" numa frase curta ("Moveu Cama", "Tirou a parede…", "Moveu Sala e mais 2"). */
 export function descreverMudanca(a: Dados, b: Dados): string {
   const casa: string[] = [], itens: string[] = [], cenarios: string[] = [];
   const mexidos = new Set<string>(); // cômodos que mudaram inteiros (o que está dentro deles não conta à parte)
+  const ta = a.terreno, tb = b.terreno;
+  if (ta !== tb) {
+    if (!ta && tb) casa.push(tx(`Terreno de ${fmtM(tb.w)} × ${fmtM(tb.h)} m`, `${fmtM(tb.w)} × ${fmtM(tb.h)} m plot`));
+    else if (ta && !tb) casa.push(tx('Tirou o terreno', 'Removed the plot'));
+    else if (ta && tb && JSON.stringify(ta) !== JSON.stringify(tb)) casa.push(tx('Mudou o terreno', 'Changed the plot'));
+  }
   for (const id in b.andares) { const x = a.andares[id], y = b.andares[id]; if (!x) casa.push(tx(`Novo andar: ${y.nome}`, `New floor: ${y.nome}`)); else if (x !== y && x.nome !== y.nome) casa.push(tx(`Renomeou ${x.nome} para ${y.nome}`, `Renamed ${x.nome} to ${y.nome}`)); }
   for (const id in a.andares) if (!b.andares[id]) casa.push(tx(`Removeu ${a.andares[id].nome}`, `Removed ${a.andares[id].nome}`));
   const mesmoComodo = (x: Dados['comodos'][string], y: Dados['comodos'][string]) =>

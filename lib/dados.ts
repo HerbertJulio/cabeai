@@ -1,9 +1,9 @@
 // Dados: normalização, arquivo (exportar/importar), leitura do formato antigo (versão 1) e o exemplo.
-import { LIM_BAU, LIM_CADEIRA, LIM_COMODO, LIM_MOVEL, MAX_CADEIRAS, PAREDES, TIPOS, TIPOS_PAREDE, ehTipoComodo, pontoDe, tipoMovel } from './catalogo';
+import { LIM_BAU, LIM_CADEIRA, LIM_COMODO, LIM_MOVEL, LIM_TERRENO, MAX_CADEIRAS, PAREDES, TIPOS, TIPOS_PAREDE, ehTipoComodo, pontoDe, tipoMovel } from './catalogo';
 import { ordenarAndares, portasVizinhas, posicaoNova } from './casa';
 import { normRot } from './geometria';
 import { tx } from './i18n';
-import type { AlinhaBau, Andar, Cenario, Comodo, ComodoCompleto, Dados, ElParede, ItemCenario, LadoCadeiras, Movel, TipoParede } from './tipos';
+import type { AlinhaBau, Andar, Cenario, Comodo, ComodoCompleto, Dados, ElParede, ItemCenario, LadoCadeiras, Movel, Terreno, TipoParede } from './tipos';
 import { vazio } from './tipos';
 import { clamp, num } from './util';
 
@@ -66,7 +66,7 @@ export function normalizarEl(tipo: TipoParede, id: string, v: Record<string, unk
     e.dobradica = v.dobradica === 'b' ? 'b' : 'a'; e.abre = semParede ? 'vao' : v.abre === 'fora' || v.abre === 'vao' ? v.abre : 'dentro';
     if (e.abre !== 'vao' && (v.estilo === 'dupla' || v.estilo === 'correr')) e.estilo = v.estilo;
     if (typeof v.liga === 'string' && ID_OK.test(v.liga)) e.liga = v.liga;
-    if (semParede) e.semParede = true; else if (v.auto && e.liga) e.auto = true;
+    if (semParede) { e.semParede = true; if (v.parcial) e.parcial = true; } else if (v.auto && e.liga) e.auto = true;
   }
   if (tipo === 'janela') { e.abertura = v.abertura === 'abrir' ? 'abrir' : 'correr'; e.folhas = num(v.folhas, 2) === 1 ? 1 : 2; }
   if (tipo === 'ar') e.folga = clamp(num(v.folga, 30), 0, 200);
@@ -108,6 +108,17 @@ export function normalizarDados(bruto: unknown): Dados {
     const c = normalizarComodo(id, v, '');
     if (!c.andar || !d.andares[c.andar]) c.andar = primeiro();
     d.comodos[id] = c;
+  }
+  const t = bruto.terreno;
+  if (obj(t)) {
+    const w = Math.round(num(t.w, 0)), h = Math.round(num(t.h, 0));
+    if (w >= LIM_TERRENO.min && h >= LIM_TERRENO.min) {
+      const andar = typeof t.andar === 'string' && d.andares[t.andar] ? t.andar : primeiro();
+      d.terreno = {
+        andar, x: Math.round(num(t.x, 0)), y: Math.round(num(t.y, 0)), w: Math.min(w, LIM_TERRENO.max), h: Math.min(h, LIM_TERRENO.max),
+        rua: PAREDES.includes(t.rua as never) ? (t.rua as Terreno['rua']) : 'baixo'
+      };
+    }
   }
   for (const [id, v] of Object.entries(pega('moveis'))) {
     if (!ID_OK.test(id) || !obj(v)) continue;
@@ -261,6 +272,8 @@ export function exemplo(): Dados {
       'm-berco': { tipo: 'berco', nome: tx('Berço', 'Crib'), larg: 70, prof: 130, comodo: 'q2', x: 230, y: 220, rot: 0, criado: 20 },
       'm-mesa2': { tipo: 'mesa', nome: tx('Escrivaninha', 'Desk'), larg: 100, prof: 50, comodo: 'q2', x: 0, y: 210, rot: 270, criado: 21, cadeiras: 1, ladoCadeiras: 'frente', cadLarg: 45, cadProf: 50 }
     },
-    cenarios: {}
+    cenarios: {},
+    // terreno de 10 × 9 m com a rua embaixo: a casa no meio, 3,50 m de recuo na frente
+    terreno: { andar: 'terreo', x: -142, y: -155, w: 1000, h: 900, rua: 'baixo' }
   });
 }

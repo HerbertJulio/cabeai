@@ -6,7 +6,7 @@ import { moveisDo } from '@/lib/dados';
 import { valsMovel, valsParede, validarMovel, validarParede } from '@/lib/formularios';
 import { centrar } from '@/lib/geometria';
 import {
-  abrirDialogo, abrirMenu, alternar, atualizar, avisarLigacoes, duplicar, duplicarComodo, editarItem, focarComodo, girar, girarComodo, iniciarAdd, levar, pedirRemover, salvarElVisto, salvarMovel, toast, travar, useApp
+  abrirDialogo, abrirMenu, alternar, atualizar, avisarLigacoes, cortarParedeToda, duplicar, duplicarComodo, editarItem, focarComodo, girar, girarComodo, iniciarAdd, levar, pedirRemover, porParede, salvarElVisto, salvarMovel, toast, travar, useApp
 } from '@/lib/store';
 import { vizinhosDeParede } from '@/lib/consultas';
 import { areaLivre, areaM2, fmtArea } from '@/lib/resumo';
@@ -114,6 +114,17 @@ export default function Folha() {
         <p className="nota">{tx('Arraste na planta para mudar de lugar. Dois toques no móvel abrem a edição.', 'Drag it on the floor plan to move it. Double-tap the item to edit it.')}{m.fixo ? tx(' Travado: as sugestões não mexem nele.', ' Locked: suggestions won’t move it.') : ''}</p>
       </>}
     </>;
+  } else if (alvo?.tipo === 'parede' && alvo.obj.semParede) {
+    // o corte da parede: o tamanho se acerta pelas pontas, na planta
+    const e = alvo.obj, dono = dados.comodos[e.comodo], viz = e.liga ? dados.comodos[e.liga] : null;
+    corpo = <>
+      <Topo t={tx('Parede cortada', 'Wall cut')} sub={descEl(dados, e)} />
+      <div className="grade-acoes">
+        {e.parcial && dono && viz && <button className="btn" type="button" data-f="corte-toda" onClick={() => cortarParedeToda(e.id)}><Icone n="tesoura" />{tx('Tirar a parede toda', 'Remove the whole wall')}</button>}
+        {dono && viz && <button className="btn prim" type="button" data-f="por-parede" onClick={() => porParede(dono.id, viz.id)}><Icone n="parede" />{tx('Pôr a parede de volta', 'Put the wall back')}</button>}
+      </div>
+      <p className="nota">{tx('Arraste as pontas azuis na planta para acertar de onde até onde a parede fica cortada, ou o corte inteiro para levar pela parede.', 'Drag the blue ends on the plan to set where the cut starts and ends, or drag the whole cut to move it along the wall.')}</p>
+    </>;
   } else if (alvo?.tipo === 'parede') {
     const e = alvo.obj, vis = elVisto(dados, e.id, comodo), q = vis ? vis.q : dados.comodos[e.comodo];
     corpo = <>
@@ -148,7 +159,7 @@ export default function Folha() {
         {as.length > 1 && <button className="btn" type="button" data-f="q-andar" onClick={() => abrirDialogo('andar-comodo', { id: c.id })}>{tx('Mudar de andar…', 'Move to another floor…')}</button>}
         <button className="btn perigo" type="button" data-f="q-remover" onClick={() => abrirDialogo('remover-comodo', { id: c.id })}>{tx('Remover cômodo', 'Remove room')}</button>
       </div>
-      <p className="nota">{tx('Arraste o cômodo pelo piso ou pelo nome para mudar o lugar dele, e as alças azuis das paredes para esticar. Perto de outro cômodo, as paredes grudam; a tesoura na parede junta os dois num espaço só.', 'Drag the room by its floor or its name to move it, and the blue handles on the walls to stretch it. Near another room, the walls snap together; the scissors on a wall join both into one space.')}</p>
+      <p className="nota">{tx('Arraste o cômodo pelo piso ou pelo nome para mudar o lugar dele, e as alças azuis das paredes para esticar. Perto de outro cômodo, as paredes grudam; a tesoura na parede corta o trecho que você marcar (ou a parede toda).', 'Drag the room by its floor or its name to move it, and the blue handles on the walls to stretch it. Near another room, the walls snap together; the scissors on a wall cut the stretch you mark (or the whole wall).')}</p>
     </>;
   } else return null;
   return (

@@ -37,6 +37,12 @@ const P: Record<string, ReactNode> = {
   passagem: <><path d="M2 12h6M16 12h6" strokeWidth={3.2} /><path d="M9.5 12h5" strokeDasharray="1.6 2" /></>,
   janela: <><rect x="3" y="8" width="18" height="8" rx="1" /><path d="M3 12h18" /></>,
   ok: <path d="M5 12.5l4.5 4.5L19 7" />,
+  subir: <path d="M6 15l6-6 6 6" />,
+  descer: <path d="M6 9l6 6 6-6" />,
+  casa: <><path d="M3 11.5 12 4l9 7.5" /><path d="M5.5 10v10h13V10" /><path d="M10 20v-5.5h4V20" /></>,
+  comodo: <><rect x="4" y="4" width="16" height="16" rx="1.5" /><path d="M4 14h7M11 14v6" /></>,
+  terreno: <><path d="M3 20h18" /><path d="M6 20V9l6-4 6 4v11" strokeDasharray="2.5 2.2" /><path d="M9 20v-6h6v6" /></>,
+  cubo: <><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z" /><path d="M4 7.5 12 12l8-4.5M12 12v9" /></>,
   porta: <><path d="M2 20h5M19 20h3" /><path d="M7 20V8" /><path d="M7 8a12 12 0 0 1 12 12" strokeDasharray="2.5 2.5" /></>
 };
 
