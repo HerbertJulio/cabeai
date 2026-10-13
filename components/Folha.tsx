@@ -92,7 +92,7 @@ export default function Folha() {
   const arrastando = useApp((s) => s.arrastando);
   const comodo = useApp((s) => s.comodo);
   const desenhando = useApp((s) => s.desenho.ativo);
-  // (no modo de desenhar, só quando a pessoa pede para editar: as opções ficam nos botões da planta e no menu ⋯)
+  // (no modo de desenhar, só quando a pessoa pede para editar: as opções ficam na barra de ações e no menu ⋯)
   if (!folha || verCen || arrastando || modo !== 'simples' || (desenhando && folhaModo !== 'editar')) return null;
   const alvo = alvoSel(dados, sel, selEl);
   const varios = comodosOrdem(dados).length > 1;
@@ -128,7 +128,7 @@ export default function Folha() {
           <button className="btn perigo" type="button" data-f="remover" onClick={pedirRemover}>{tx('Remover', 'Remove')}</button>
         </div>
         <p className="nota">{e.tipo === 'porta' && !e.semParede
-          ? tx('A porta é da parede: dá para tocar nela pelos dois cômodos. Arraste pela parede para mudar de lugar; os botões ao lado dela na planta viram a porta.', 'The door belongs to the wall: you can tap it from either room. Drag it along the wall to move it; the buttons next to it on the plan flip it.')
+          ? tx('A porta é da parede: dá para tocar nela pelos dois cômodos. Arraste pela parede para mudar de lugar.', 'The door belongs to the wall: you can tap it from either room. Drag it along the wall to move it.')
           : tx('Para mudar de lugar, arraste pela parede. Dois toques abrem a edição.', 'To move it, drag it along the wall. Double-tap to edit it.')}</p>
       </>}
     </>;

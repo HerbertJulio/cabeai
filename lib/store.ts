@@ -19,10 +19,10 @@ export interface CtxAdd { comodo?: string; x?: number; y?: number; parede?: Pare
 export interface Dialogo { tipo: string; dados: Record<string, unknown> }
 export interface InfoMenu { x: number; y: number; tipo: string; id?: string; eid?: string; comodo?: string; andar?: string; cen?: string; px?: number; py?: number; parede?: Parede; u?: number; btn?: string; teclado?: boolean }
 /** O que aparece na planta (dá para esconder os móveis para mexer nos pontos, e vice-versa). */
-export interface Camadas { moveis: boolean; portas: boolean; ar: boolean; pontos: boolean; nomes: boolean; grade: boolean }
+export interface Camadas { moveis: boolean; portas: boolean; ar: boolean; pontos: boolean; nomes: boolean; grade: boolean; piso: boolean }
 export type Camada = keyof Camadas;
 export type Tema = 'auto' | 'claro' | 'escuro';
-export const CAMADAS_TODAS: Camadas = { moveis: true, portas: true, ar: true, pontos: true, nomes: true, grade: true };
+export const CAMADAS_TODAS: Camadas = { moveis: true, portas: true, ar: true, pontos: true, nomes: true, grade: true, piso: true };
 /** O que o modo de desenhar põe na parede tocada. */
 export type PecaParede = 'porta' | 'correr' | 'vao' | 'janela';
 
@@ -768,8 +768,8 @@ const nomePorta = (e: ElParede) => e.nome;
 export function abrirPortaPara(eid: string, lado: 'dentro' | 'fora') {
   const d = get().dados, e = d.els[eid];
   if (!e || e.tipo !== 'porta' || !temGiro(e) || e.abre === lado) return;
-  const para = lado === 'dentro' ? d.comodos[e.comodo]?.nome : ladosDaPorta(d, e).fora;
-  comRotulo(tx(`${nomePorta(e)} abre para ${para}`, `${nomePorta(e)} opens into ${para}`), () => salvarEl(eid, { abre: lado }));
+  const l = ladosDaPorta(d, e), para = lado === 'dentro' ? l.dentro : l.viz ? l.viz.nome : null;
+  comRotulo(para ? tx(`${nomePorta(e)} abre para ${para}`, `${nomePorta(e)} opens into ${para}`) : tx(`${nomePorta(e)} abre para fora`, `${nomePorta(e)} opens outward`), () => salvarEl(eid, { abre: lado }));
 }
 /** Abre para o outro lado da parede. */
 export const virarAbertura = (eid: string) => { const e = get().dados.els[eid]; if (e) abrirPortaPara(eid, e.abre === 'fora' ? 'dentro' : 'fora'); };

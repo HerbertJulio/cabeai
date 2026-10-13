@@ -91,44 +91,39 @@ export function Botoes() {
   const desenhando = useApp((s) => s.desenho.ativo);
   if (!n || desenhando) return null;
   return (
-    <div className="flut flut-be">
-      <button type="button" className="fab prim" id="b-add" onClick={() => { const s = useApp.getState(); iniciarAdd(s.add.tipo || 'guarda-roupa', { comodo: s.comodo || undefined }); }}><Icone n="add" /><span>{tx('Adicionar', 'Add')}</span></button>
-      <button type="button" className="fab" id="b-sug" onClick={() => abrirDialogo('sugestoes', { escopo: vista !== 'um' && n > 1 ? 'casa' : 'comodo' })}><Icone n="estrela" /><span>{tx('Sugestões', 'Suggestions')}</span></button>
-      <button type="button" className="fab" id="b-desenhar" aria-label={tx('Desenhar cômodos na planta', 'Draw rooms on the plan')} onClick={() => modoDesenho(true)}><Icone n="lapis" /><span>{tx('Desenhar', 'Draw')}</span></button>
+    <div className="flut dock" id="dock" role="toolbar" aria-label={tx('Ações da planta', 'Plan actions')}>
+      <button type="button" className="dock-b prim" id="b-add" onClick={() => { const s = useApp.getState(); iniciarAdd(s.add.tipo || 'guarda-roupa', { comodo: s.comodo || undefined }); }}><Icone n="add" /><span>{tx('Adicionar', 'Add')}</span></button>
+      <button type="button" className="dock-b" id="b-desenhar" aria-label={tx('Desenhar cômodos, portas e janelas na planta', 'Draw rooms, doors and windows on the plan')} onClick={() => modoDesenho(true)}><Icone n="lapis" /><span>{tx('Desenhar', 'Draw')}</span></button>
+      <button type="button" className="dock-b" id="b-sug" aria-label={tx('Sugestões de arrumação', 'Layout suggestions')} onClick={() => abrirDialogo('sugestoes', { escopo: vista !== 'um' && n > 1 ? 'casa' : 'comodo' })}><Icone n="estrela" /><span>{tx('Sugestões', 'Suggestions')}</span></button>
     </div>
   );
 }
 
-const PECAS = (): [PecaParede, string][] => [['porta', tx('Porta', 'Door')], ['correr', tx('Porta de correr', 'Sliding door')], ['vao', tx('Passagem', 'Opening')], ['janela', tx('Janela', 'Window')]];
+const PECAS = (): [PecaParede, string, string][] => [['porta', tx('Porta', 'Door'), 'porta'], ['correr', tx('De correr', 'Sliding'), 'correr'], ['vao', tx('Passagem', 'Opening'), 'passagem'], ['janela', tx('Janela', 'Window'), 'janela']];
 
-/** Barra do modo de desenhar: o tipo do próximo cômodo, a porta ou janela que um toque na parede põe, e o "Pronto". */
+/** Modo de desenhar: a dica do que fazer, os tipos de cômodo (para desenhar cômodo) e as ferramentas, num dock embaixo. */
 export function BarraDesenho() {
   const d = useApp((s) => s.desenho);
   if (!d.ativo) return null;
-  const peca = d.item ? PECAS().find(([k]) => k === d.item)?.[1] || '' : '';
+  const peca = d.item ? PECAS().find(([k]) => k === d.item) : null;
   return (
-    <div className="flut flut-desenho" id="barra-desenho" role="toolbar" aria-label={tx('Desenhar a planta', 'Draw the plan')}>
-      <div className="desenho-cab">
-        <p className="desenho-t" aria-live="polite"><Icone n={d.item ? 'porta' : 'lapis'} />{d.item
-          ? tx(`Toque numa parede para pôr ${d.item === 'janela' ? 'a janela' : d.item === 'vao' ? 'a passagem' : 'a porta'}`, `Tap a wall to add the ${peca.toLowerCase()}`)
-          : tx('Arraste o dedo ou o mouse na planta para desenhar', 'Drag your finger or the mouse on the plan to draw')}</p>
-        <button type="button" className="btn prim peq" data-acao="desenho-pronto" onClick={() => modoDesenho(false)}>{tx('Pronto', 'Done')}</button>
-      </div>
-      <div className="desenho-grupo">
-        <span className="desenho-rot" id="rot-desenho-comodo">{tx('Cômodo', 'Room')}</span>
-        <div className="tipos tipos-desenho" role="group" aria-labelledby="rot-desenho-comodo">
-          {TIPOS_COMODO.map((t) => <button key={t} type="button" className="tipo" data-tipo-comodo={t} aria-pressed={!d.item && d.tipo === t} onClick={() => modoDesenho(true, t)}>{COMODO_NOME[t]}</button>)}
+    <div className="flut flut-desenho" id="barra-desenho" role="group" aria-label={tx('Desenhar a planta', 'Draw the plan')}>
+      {/* a barra de ações do que está selecionado entra aqui (a planta põe), no lugar da dica */}
+      <div id="ctx-doca" className="ctx-doca" />
+      <p className="desenho-t" aria-live="polite"><Icone n={peca ? peca[2] : 'lapis'} />{d.item
+        ? tx(`Toque numa parede para pôr ${d.item === 'janela' ? 'a janela' : d.item === 'vao' ? 'a passagem' : 'a porta'}`, `Tap a wall to add the ${d.item === 'janela' ? 'window' : d.item === 'vao' ? 'opening' : 'door'}`)
+        : tx(`Arraste na planta para desenhar: ${COMODO_NOME[d.tipo]}`, `Drag on the plan to draw: ${COMODO_NOME[d.tipo]}`)}</p>
+      {!d.item && (
+        <div className="tipos tipos-desenho" role="group" aria-label={tx('Que cômodo desenhar', 'Which room to draw')}>
+          {TIPOS_COMODO.map((t) => <button key={t} type="button" className="tipo" data-tipo-comodo={t} aria-pressed={d.tipo === t} onClick={() => modoDesenho(true, t)}>{COMODO_NOME[t]}</button>)}
         </div>
+      )}
+      <div className="dock dock-desenho" role="toolbar" aria-label={tx('Ferramentas de desenho', 'Drawing tools')}>
+        <button type="button" className="dock-b" data-ferramenta="comodo" aria-pressed={!d.item} title={tx('Desenhar cômodo', 'Draw a room')} onClick={() => ferramentaDesenho(null)}><Icone n="lapis" /><span>{tx('Cômodo', 'Room')}</span></button>
+        {PECAS().map(([k, rot, ico]) => <button key={k} type="button" className="dock-b" data-peca={k} aria-pressed={d.item === k} title={rot} onClick={() => ferramentaDesenho(d.item === k ? null : k)}><Icone n={ico} /><span>{rot}</span></button>)}
+        <span className="dock-sep" aria-hidden="true" />
+        <button type="button" className="dock-b prim" data-acao="desenho-pronto" onClick={() => modoDesenho(false)}><Icone n="ok" /><span>{tx('Pronto', 'Done')}</span></button>
       </div>
-      <div className="desenho-grupo">
-        <span className="desenho-rot" id="rot-desenho-parede">{tx('Na parede', 'On a wall')}</span>
-        <div className="tipos tipos-desenho" role="group" aria-labelledby="rot-desenho-parede">
-          {PECAS().map(([k, rot]) => <button key={k} type="button" className="tipo peca" data-peca={k} aria-pressed={d.item === k} onClick={() => ferramentaDesenho(d.item === k ? null : k)}>{rot}</button>)}
-        </div>
-      </div>
-      <p className="nota">{d.item
-        ? tx('Entra onde você tocou, abrindo para o cômodo desse lado da parede, com a dobradiça do lado do canto mais perto. Toque numa porta para virar ou arrastar pela parede.', 'It goes where you tapped, opening into the room on that side of the wall, with the hinge toward the nearest corner. Tap a door to flip it or drag it along the wall.')
-        : tx('Arraste num espaço vazio para desenhar e arraste um cômodo para mudar de lugar; perto de outro, as paredes grudam e corredor e varanda já ganham porta. Dois dedos (ou o espaço do teclado) movem a planta.', 'Drag on an empty spot to draw and drag a room to move it; near another one the walls snap and hallways and porches get a door. Two fingers (or the space bar) move the plan.')}</p>
     </div>
   );
 }

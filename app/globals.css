@@ -11,6 +11,7 @@
   --ok-soft:#E5F3EA; --bad-soft:#FBE9E9; --sug:#7C3AED; --sug-soft:#F1EAFE;
   --glass:#0E7490; --glass-soft:rgba(14,116,144,.10); --sinal:#6D28D9;
   --piso-varanda:#F1F6EC; --piso-agua:#EEF5F8; --piso-cozinha:#FAF5EC; --piso-garagem:#F1F2F3;
+  --piso-madeira:#F2E8D8; --piso-madeira-l:#E2D1B6; --piso-porc:#FBFBF9; --piso-porc-l:#E7E7E1; --piso-coz-l:#EBE0CC; --piso-ceram-l:#D6E2E9; --piso-deck:#ECDFC8; --piso-deck-l:#D6C2A1;
   --shadow:0 1px 2px rgba(20,24,30,.06),0 6px 20px rgba(20,24,30,.08);
   --sheet-shadow:0 -6px 30px rgba(20,24,30,.18);
   --f-display:var(--fonte-titulo),'Barlow Condensed','Arial Narrow',sans-serif;
@@ -29,6 +30,7 @@
   --ok-soft:#14261B; --bad-soft:#2E1618; --sug:#C4B5FD; --sug-soft:#251D3A;
   --glass:#5CC8DC; --glass-soft:rgba(92,200,220,.14); --sinal:#C4B5FD;
   --piso-varanda:#18201A; --piso-agua:#152026; --piso-cozinha:#221E18; --piso-garagem:#1C1F23;
+  --piso-madeira:#28231C; --piso-madeira-l:#3A3228; --piso-porc:#181C21; --piso-porc-l:#252B33; --piso-coz-l:#30291F; --piso-ceram-l:#203039; --piso-deck:#2A231A; --piso-deck-l:#3B3124;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
   --sheet-shadow:0 -6px 30px rgba(0,0,0,.55);
   color-scheme:dark;
@@ -45,6 +47,7 @@
   --ok-soft:#14261B; --bad-soft:#2E1618; --sug:#C4B5FD; --sug-soft:#251D3A;
   --glass:#5CC8DC; --glass-soft:rgba(92,200,220,.14); --sinal:#C4B5FD;
   --piso-varanda:#18201A; --piso-agua:#152026; --piso-cozinha:#221E18; --piso-garagem:#1C1F23;
+  --piso-madeira:#28231C; --piso-madeira-l:#3A3228; --piso-porc:#181C21; --piso-porc-l:#252B33; --piso-coz-l:#30291F; --piso-ceram-l:#203039; --piso-deck:#2A231A; --piso-deck-l:#3B3124;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);
   --sheet-shadow:0 -6px 30px rgba(0,0,0,.55);
   color-scheme:dark;
@@ -141,22 +144,29 @@ button,input,select{font:inherit;color:inherit}
 .foto-escolha.com-foto{border-style:solid;background:var(--paper)}
 .foto-escolha img{display:block;max-width:100%;max-height:300px;object-fit:contain;pointer-events:none}
 
-.flut-desenho{left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom,0px));width:min(680px,calc(100% - 20px));background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
-.desenho-cab{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.desenho-t{margin:0;font:700 15px var(--f-display);letter-spacing:.02em;display:flex;align-items:center;gap:8px}
-.desenho-t svg{width:18px;height:18px;flex:none;color:var(--accent)}
-.tipos.tipos-desenho{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;scrollbar-width:thin;-webkit-overflow-scrolling:touch}
-.tipos-desenho .tipo{flex:none}
-.desenho-grupo{display:flex;align-items:center;gap:8px;min-width:0}
-.desenho-rot{flex:none;font:700 12px var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);width:74px}
-.desenho-grupo .tipos-desenho{flex:1;min-width:0}
-.tipo.peca{border-style:dashed}
-.tipo.peca[aria-pressed="true"]{border-style:solid;background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-@media (max-width:520px){.desenho-rot{width:auto;writing-mode:vertical-rl;transform:rotate(180deg);font-size:10.5px}}
+.flut-desenho{left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));width:max-content;max-width:calc(100% - 20px);display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.flut-desenho > *{pointer-events:auto}
+.desenho-t{margin:0;padding:6px 12px;border-radius:999px;background:var(--paper);border:1px solid var(--line);box-shadow:var(--shadow);font:700 13.5px var(--f-display);letter-spacing:.02em;display:flex;align-items:center;gap:7px;max-width:100%}
+.desenho-t svg{width:16px;height:16px;flex:none;color:var(--accent)}
+.tipos.tipos-desenho{flex-wrap:nowrap;overflow-x:auto;max-width:100%;padding:5px;background:var(--paper);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);scrollbar-width:thin;-webkit-overflow-scrolling:touch}
+.tipos-desenho .tipo{flex:none;min-height:36px;padding:5px 12px;font-size:13.5px}
 /* desenhando, a barra do desenho fica embaixo: o aviso rápido vai para cima */
 .app.desenhando ~ .toast{bottom:auto;top:calc(var(--topo-h) + var(--faixa-h) + 12px)}
-.flut-desenho .nota{margin:0}
-@media (max-width:899px){.app.desenhando .flut-bd{display:none}.flut-desenho .nota{display:none}}
+@media (max-width:899px){.app.desenhando .flut-bd{display:none}}
+/* dock: as ações principais num bloco escuro embaixo da planta (desenhando, as ferramentas) */
+.dock{left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:3px;padding:5px;background:var(--ink);color:var(--paper);border-radius:16px;box-shadow:0 10px 30px rgba(16,20,26,.28)}
+.flut-desenho .dock{position:static;transform:none}
+.dock-b{min-height:44px;padding:8px 14px;border:0;border-radius:12px;background:transparent;color:inherit;font:700 15px var(--f-display);letter-spacing:.03em;display:inline-flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap}
+.dock-b:hover{background:color-mix(in srgb,var(--paper) 14%,transparent)}
+.dock-b svg{width:19px;height:19px;flex:none}
+.dock-b.prim{background:var(--accent);color:var(--accent-ink)}
+.dock-b.prim:hover{background:color-mix(in srgb,var(--accent) 86%,var(--paper))}
+.dock-b[aria-pressed="true"]{background:var(--paper);color:var(--ink)}
+.dock-b#b-sug svg{color:color-mix(in srgb,var(--sug) 55%,var(--paper))}
+.dock-sep{width:1px;height:26px;background:color-mix(in srgb,var(--paper) 22%,transparent);margin:0 3px}
+@media (max-width:899px){.dock:not(.dock-desenho){left:10px;transform:none}}
+@media (max-width:640px){.dock-desenho .dock-b{padding:0;width:44px;justify-content:center}.dock-desenho .dock-b span{display:none}.dock-desenho .dock-b.prim{width:auto;padding:0 14px}.dock-desenho .dock-b.prim span{display:inline}}
+@media (max-width:520px){.dock:not(.dock-desenho) .dock-b:not(.prim) span{display:none}.dock:not(.dock-desenho) .dock-b:not(.prim){padding:0;width:44px;justify-content:center}}
 @media (max-width:520px){.flut-be .fab:not(.prim) span{display:none}.flut-be .fab:not(.prim){padding:0;width:46px;justify-content:center}}
 .ctrl-grupo{display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden}
 .ctrl-grupo button{width:46px;height:44px;border:0;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -209,6 +219,23 @@ button,input,select{font:inherit;color:inherit}
 .seg button{min-height:38px;padding:6px 12px;border:0;background:var(--paper);font:600 14px var(--f-body);cursor:pointer}
 .seg button+button{border-left:1px solid var(--line)}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+/* barra de ações ao lado do que está selecionado na planta */
+.ctx{position:absolute;z-index:7;transform:translate(-50%,-100%);display:flex;align-items:center;gap:2px;padding:4px;background:var(--ink);color:var(--paper);border-radius:14px;box-shadow:0 8px 28px rgba(16,20,26,.28);white-space:nowrap}
+.ctx.embaixo{transform:translate(-50%,0)}
+.ctx button{min-height:38px;padding:6px 11px;border:0;border-radius:10px;background:transparent;color:inherit;font:600 13.5px var(--f-body);display:inline-flex;align-items:center;gap:6px;cursor:pointer;max-width:210px}
+.ctx button span{overflow:hidden;text-overflow:ellipsis}
+.ctx button:hover{background:color-mix(in srgb,var(--paper) 16%,transparent)}
+.ctx button svg{width:17px;height:17px;flex:none}
+.ctx button[data-ctx="mais"]{padding:6px 9px}
+.ctx.curta button{padding:6px 9px;font-size:13px}
+.ctx.curta button[data-ctx="duplicar"] span,.ctx.curta button[data-ctx="mais"] span{display:none}
+@media (prefers-reduced-motion:no-preference){.ctx{animation:ctx-entra .14s ease-out}}
+/* modo de desenhar: a barra fica no painel de baixo, no lugar da dica */
+.ctx-doca{display:contents}
+.ctx-doca:not(:empty) + .desenho-t{display:none}
+.ctx.doca{position:static;transform:none;max-width:100%;overflow-x:auto;scrollbar-width:none}
+.ctx-nome{padding:0 8px 0 10px;font:700 13px var(--f-display);letter-spacing:.03em;opacity:.72;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+@keyframes ctx-entra{from{opacity:0}to{opacity:1}}
 /* porta: o jeito dela, para que cômodo abre (pelo nome) e o lado da dobradiça */
 .porta-ctrl{display:flex;flex-direction:column;gap:10px}
 .porta-lado{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -285,7 +312,7 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0;width:100%}
 .menu-grade{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px}
 .menu-bloco,.menu-lista{display:flex;flex-direction:column;gap:2px}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:40;width:max-content;max-width:min(520px,calc(100vw - 24px));background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:var(--shadow)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:40;width:max-content;max-width:min(520px,calc(100vw - 24px));background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-size:14px;box-shadow:var(--shadow);pointer-events:none}
 .toast.erro{background:var(--bad);color:var(--on-status)}
 /* com o painel de baixo aberto, o aviso rápido sobe para não cobrir os botões */
 .folha ~ .toast{bottom:auto;top:calc(var(--topo-h) + var(--faixa-h) + 12px)}
@@ -294,6 +321,17 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .piso{fill:var(--paper)}
 .piso.corredor{fill:var(--paper-2)}
 .piso.q-varanda{fill:var(--piso-varanda)}.piso.q-banheiro,.piso.q-servico{fill:var(--piso-agua)}.piso.q-cozinha{fill:var(--piso-cozinha)}.piso.q-garagem{fill:var(--piso-garagem)}
+/* piso de cada cômodo (camada "piso"; sem ela, as cores lisas): madeira no quarto, porcelanato na sala, no corredor e
+   na cozinha, cerâmica no banheiro e na área de serviço, deck na varanda */
+#planta:not(.sem-piso) .piso.q-quarto{fill:url(#piso-madeira)}
+#planta:not(.sem-piso) .piso.q-sala,#planta:not(.sem-piso) .piso.q-corredor,#planta:not(.sem-piso) .piso.corredor{fill:url(#piso-porcelanato)}
+#planta:not(.sem-piso) .piso.q-cozinha{fill:url(#piso-cozinha)}
+#planta:not(.sem-piso) .piso.q-banheiro,#planta:not(.sem-piso) .piso.q-servico{fill:url(#piso-ceramica)}
+#planta:not(.sem-piso) .piso.q-varanda{fill:url(#piso-deck)}
+#planta:not(.sem-piso) .grade-l{stroke:var(--ink-3);stroke-opacity:.1}
+.pt-madeira{fill:var(--piso-madeira)}.pt-porc{fill:var(--piso-porc)}.pt-coz{fill:var(--piso-cozinha)}.pt-ceram{fill:var(--piso-agua)}.pt-deck{fill:var(--piso-deck)}
+.pt-madeira-l,.pt-porc-l,.pt-coz-l,.pt-ceram-l,.pt-deck-l{fill:none;stroke-width:.9}
+.pt-madeira-l{stroke:var(--piso-madeira-l)}.pt-porc-l{stroke:var(--piso-porc-l)}.pt-coz-l{stroke:var(--piso-coz-l)}.pt-ceram-l{stroke:var(--piso-ceram-l)}.pt-deck-l{stroke:var(--piso-deck-l);stroke-width:1.3}
 .grade-l{stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
 .parede{fill:var(--wall)}
 .sala-t{font:700 17px var(--f-display);fill:var(--ink);letter-spacing:.04em;cursor:pointer}
@@ -333,11 +371,6 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .porta-el.sel .correr-folha,.porta-el.correr:focus-visible .correr-folha{stroke:var(--accent);stroke-width:2.6}
 .correr-aberta{fill:none;stroke:var(--paper);stroke-width:1.3;stroke-dasharray:3 3;vector-effect:non-scaling-stroke;pointer-events:none}
 .correr-aberta.sel{stroke:var(--accent-soft);stroke-width:2}
-/* botões de virar a porta (para que lado abre e o lado da dobradiça), ao lado da porta selecionada */
-.porta-btn{cursor:pointer}
-.porta-btn circle{fill:var(--paper);stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
-.porta-btn path{fill:none;stroke:var(--accent);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
-.porta-btn:hover > circle{fill:var(--accent-soft)}
 #planta.desenhando{cursor:crosshair}
 .grade-desenho{pointer-events:none}
 .gd-m{fill:none;stroke:var(--grid);stroke-width:1;vector-effect:non-scaling-stroke}
@@ -349,9 +382,6 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .alca{fill:var(--paper);stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke;cursor:ew-resize}
 .alca-cima,.alca-baixo{cursor:ns-resize}
 .alca:hover{fill:var(--accent-soft)}
-.alca-girar{cursor:pointer}
-.alca-girar circle{fill:var(--accent);stroke:var(--paper);stroke-width:2;vector-effect:non-scaling-stroke}
-.alca-girar path{fill:none;stroke:var(--accent-ink);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
 .rotulos text{paint-order:stroke fill;stroke:var(--paper);stroke-width:2.4px;stroke-linejoin:round;pointer-events:none}
 .rotulos .porta-nome{font-size:calc(9px * var(--k,1))}.rotulos .jan-nome,.rotulos .anot{font-size:calc(8.5px * var(--k,1))}
 /* parede tirada: o piso continua de um cômodo para o outro */
@@ -521,7 +551,7 @@ kbd{font:600 12px var(--f-body);padding:1px 6px;border:1px solid var(--line);bor
 .link{all:unset;cursor:pointer;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
 .link:focus-visible{outline:2px solid var(--accent)}
 .toast.com-acao{display:flex;align-items:center;gap:12px;padding-right:8px}
-.toast-acao{flex:none;min-height:36px;padding:6px 12px;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit;font:700 14px var(--f-body);cursor:pointer}
+.toast-acao{pointer-events:auto;flex:none;min-height:36px;padding:6px 12px;border-radius:8px;border:1px solid currentColor;background:transparent;color:inherit;font:700 14px var(--f-body);cursor:pointer}
 .toast-acao:hover{background:rgba(255,255,255,.12)}
 /* histórico e pontos de restauração */
 .hist-lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;max-height:min(38vh,320px);overflow:auto;border:1px solid var(--line);border-radius:12px;padding:4px}

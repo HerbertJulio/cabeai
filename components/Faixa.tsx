@@ -1,10 +1,10 @@
 'use client';
 import { useEffect, useRef } from 'react';
 import { NOME_PAREDE } from '@/lib/catalogo';
-import { alvoSel, cenariosVisiveis, comodosDoCenario, espacoAberto, idsVisiveis, ladosDaPorta, nomeComodo, problemasDe, vizinhosDeParede } from '@/lib/consultas';
+import { alvoSel, cenariosVisiveis, comodosDoCenario, espacoAberto, idsVisiveis, ladosDaPorta, nomeComodo, problemasDe } from '@/lib/consultas';
 import { geoEl, jeitoDaPorta } from '@/lib/geometria';
 import { areaM2, fmtArea } from '@/lib/resumo';
-import { abrirCenario, abrirDialogo, avisarLigacoes, editarItem, girar, girarComodo, limparSel, sairCenario, useApp } from '@/lib/store';
+import { abrirCenario, abrirDialogo, avisarLigacoes, girarComodo, limparSel, sairCenario, useApp } from '@/lib/store';
 import type { Dados, ElParede } from '@/lib/tipos';
 import { tx } from '@/lib/i18n';
 import { fmtM, pl } from '@/lib/util';
@@ -49,14 +49,13 @@ export default function Faixa() {
   if (!Object.keys(dados.comodos).length) return <div className="faixa" id="faixa"><p className="nota">{tx('Crie um cômodo para começar.', 'Create a room to get started.')}</p></div>;
   const alvo = verCen ? null : alvoSel(dados, sel, selEl);
   if (alvo) {
+    // (girar, editar e virar a porta ficam na barra de ações, em cima do item na planta)
     const o = alvo.obj;
     const med = alvo.tipo === 'movel' ? `${fmtM(alvo.obj.larg)} × ${fmtM(alvo.obj.prof)} m` : descEl(dados, alvo.obj);
     return (
       <div className="faixa" id="faixa">
         <div className="barra-txt"><span className="barra-nome">{o.nome}</span> <span className="barra-med">{med}</span></div>
         <div className="acoes">
-          {alvo.tipo === 'movel' && <button className="btn prim" type="button" data-acao="girar" aria-label={tx('Girar 90 graus', 'Rotate 90 degrees')} onClick={girar}><Icone n="girar" /><span className="rot-longo">{tx('Girar', 'Rotate')}</span></button>}
-          <button className="btn" type="button" data-acao="editar" onClick={editarItem}>{tx('Editar', 'Edit')}</button>
           <button className="ico-btn" type="button" id="b-item-mais" data-acao="item-mais" aria-label={tx('Mais opções do item', 'More options for this item')} aria-haspopup="menu"
             onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'item', alvo.tipo === 'movel' ? { id: o.id } : { eid: o.id })}><Icone n="mais" /></button>
           <button className="ico-btn" type="button" data-acao="desmarcar" aria-label={tx('Tirar a seleção', 'Clear selection')} onClick={limparSel}><Icone n="x" /></button>
@@ -65,16 +64,17 @@ export default function Faixa() {
     );
   }
   if (selComodo && dados.comodos[selComodo] && !verCen) {
-    const c = dados.comodos[selComodo], a = dados.andares[c.andar], temViz = vista === 'casa' && vizinhosDeParede(dados, c.id).length > 0;
+    const c = dados.comodos[selComodo], a = dados.andares[c.andar];
     // sem parede com os vizinhos: a área do espaço todo (um L, por exemplo)
     const junto = espacoAberto(dados, c.id), aberto = junto.length > 1 ? ` · ${tx('espaço aberto', 'open space')} ${fmtArea(junto.reduce((t, id) => t + areaM2(dados.comodos[id]), 0))}` : '';
+    // na planta da casa, girar, paredes e editar ficam na barra de ações em cima do cômodo
+    const naBarra = vista === 'casa';
     return (
       <div className="faixa" id="faixa">
         <div className="barra-txt"><span className="barra-nome">{c.nome}</span> <span className="barra-med">{fmtM(c.w)} × {fmtM(c.h)} m · {fmtArea(areaM2(c))}{aberto}{a && Object.keys(dados.andares).length > 1 ? ` · ${a.nome}` : ''}</span></div>
         <div className="acoes">
-          <button className="btn" type="button" data-acao="q-girar" aria-label={tx(`Girar ${c.nome} 90 graus`, `Rotate ${c.nome} 90 degrees`)} onClick={() => avisarLigacoes(c.id, girarComodo(c.id))}><Icone n="girar" /><span className="rot-longo">{tx('Girar', 'Rotate')}</span></button>
-          {temViz && <button className="btn" type="button" id="b-paredes" data-acao="q-paredes" aria-haspopup="menu" aria-label={tx(`Paredes de ${c.nome} com os vizinhos`, `${c.nome}’s walls with its neighbors`)} onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'paredes', { comodo: c.id })}><Icone n="tesoura" /><span className="rot-longo">{tx('Paredes', 'Walls')}</span></button>}
-          <button className="btn" type="button" data-acao="q-editar" onClick={() => abrirDialogo('comodo', { id: c.id })}>{tx('Editar', 'Edit')}</button>
+          {!naBarra && <button className="btn" type="button" data-acao="q-girar" aria-label={tx(`Girar ${c.nome} 90 graus`, `Rotate ${c.nome} 90 degrees`)} onClick={() => avisarLigacoes(c.id, girarComodo(c.id))}><Icone n="girar" /><span className="rot-longo">{tx('Girar', 'Rotate')}</span></button>}
+          {!naBarra && <button className="btn" type="button" data-acao="q-editar" onClick={() => abrirDialogo('comodo', { id: c.id })}>{tx('Editar', 'Edit')}</button>}
           <button className="ico-btn" type="button" id="b-comodo-mais" aria-label={tx(`Mais opções de ${c.nome}`, `More options for ${c.nome}`)} aria-haspopup="menu" onClick={(e) => abrirMenuEmBotao(e.currentTarget, 'comodo', { comodo: c.id })}><Icone n="mais" /></button>
           <button className="ico-btn" type="button" data-acao="desmarcar" aria-label={tx('Tirar a seleção', 'Clear selection')} onClick={limparSel}><Icone n="x" /></button>
         </div>

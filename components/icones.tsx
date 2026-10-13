@@ -32,6 +32,11 @@ const P: Record<string, ReactNode> = {
   lista: <path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01" />,
   duplicar: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M4 16V6a2 2 0 0 1 2-2h10" /><path d="M14 11v6M11 14h6" /></>,
   virar: <path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4" />,
+  'abre-para': <path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4" />,
+  correr: <><path d="M3 9h11M10 15h11" /><path d="M17 6l3 3-3 3" /></>,
+  passagem: <><path d="M2 12h6M16 12h6" strokeWidth={3.2} /><path d="M9.5 12h5" strokeDasharray="1.6 2" /></>,
+  janela: <><rect x="3" y="8" width="18" height="8" rx="1" /><path d="M3 12h18" /></>,
+  ok: <path d="M5 12.5l4.5 4.5L19 7" />,
   porta: <><path d="M2 20h5M19 20h3" /><path d="M7 20V8" /><path d="M7 8a12 12 0 0 1 12 12" strokeDasharray="2.5 2.5" /></>
 };
 

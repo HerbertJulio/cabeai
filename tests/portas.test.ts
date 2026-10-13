@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { abreDoOutroLado, paredeDividida, portaVistaDe, portasVizinhas } from '../lib/casa';
-import { elVisto, ladosDaPorta, vizinhoDaPorta } from '../lib/consultas';
+import { elVisto, ladosDaPorta, rotuloVirar, vizinhoDaPorta } from '../lib/consultas';
 import { completoNaCasa, normalizarDados, normalizarEl } from '../lib/dados';
 import { lugarDaPorta, lugarNaParede, portaEntre } from '../lib/edicao';
 import { validarParede, valsParede } from '../lib/formularios';
@@ -118,6 +118,16 @@ describe('a porta é da parede: os dois lados veem a mesma porta', () => {
     expect(v).toMatchObject({ dono: false, e: { comodo: 'c', parede: 'esquerda', inicio: 210, abre: 'fora' } });
     expect(elVisto(d, 'p', 'a')!.dono).toBe(true);
     expect(elVisto(d, 'f', 'c')!.dono).toBe(true);
+  });
+
+  it('o botão de virar diz para onde a porta vai abrir, pelo nome (ou "para fora", na parede de fora)', () => {
+    const d = casa([quarto, cor], { p: { tipo: 'porta', comodo: 'a', parede: 'direita', inicio: 210, largura: 80, abre: 'dentro' }, f: { tipo: 'porta', comodo: 'a', parede: 'baixo', inicio: 10, largura: 80, abre: 'dentro' } });
+    expect(rotuloVirar(d, d.els.p)).toBe('Abrir para c');
+    expect(rotuloVirar(d, d.els.p, true)).toBe('Para c');
+    expect(rotuloVirar(d, { ...d.els.p, abre: 'fora' })).toBe('Abrir para a');
+    expect(rotuloVirar(d, d.els.f)).toBe('Abrir para fora');
+    expect(rotuloVirar(d, d.els.f, true)).toBe('Para fora');
+    expect(rotuloVirar(d, { ...d.els.f, abre: 'fora' })).toBe('Abrir para a');
   });
 
   it('mudar de lado não aparece como "levou para outro cômodo" no histórico', () => {

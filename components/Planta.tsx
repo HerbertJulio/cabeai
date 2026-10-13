@@ -1,23 +1,25 @@
 'use client';
 // A planta: desenho em escala + mouse, toque, pinça e teclado.
-import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { espacos, imaBorda, imaComodo, retDesenhado } from '@/lib/casa';
 import { COMODO_NOME, T, horizontal } from '@/lib/catalogo';
 import type { Borda } from '@/lib/edicao';
-import { comodosDoAndar, avaliacao, cq, elVisto, idsVisiveis, ladosDaPorta, listaAtiva, vizinhosDeParede, type ParedeVizinha } from '@/lib/consultas';
+import { comodosDoAndar, avaliacao, cq, elVisto, idsVisiveis, listaAtiva, vizinhosDeParede, type ParedeVizinha } from '@/lib/consultas';
 import { moveisDo } from '@/lib/dados';
-import { dims, geoEl, geoPorta, giraParaDentro, ima, jeitoDaPorta, paredePerto, prender, ret, temGiro, uDaParede, uv2xy } from '@/lib/geometria';
+import { dims, folhasPorta, geoEl, ima, paredePerto, prender, ret, temGiro, uDaParede, uv2xy } from '@/lib/geometria';
 import { tx } from '@/lib/i18n';
 import { registrarPlanta } from '@/lib/exportar';
 import { areaDoAndar, fmtArea } from '@/lib/resumo';
 import {
-  abrirMenu, alternarParede, atualizar, avisarLigacoes, conectarComodo, desenharComodo, editarItem, estadoAtual, esticar, estreito, fecharMenu, fimEsticar, focarComodo, girar, girarComodo,
-  limparSel, moverComodo, porNaParede, salvarElVisto, salvarMovel, selecionar, selecionarComodo, toast, useApp, virarAbertura, virarDobradica, zoomEm
+  abrirMenu, alternarParede, atualizar, avisarLigacoes, conectarComodo, desenharComodo, editarItem, estadoAtual, esticar, fecharMenu, fimEsticar, focarComodo, girarComodo,
+  limparSel, moverComodo, porNaParede, salvarElVisto, salvarMovel, selecionar, selecionarComodo, toast, useApp, zoomEm
 } from '@/lib/store';
 import type { Comodo, Dados, Parede, Vista } from '@/lib/tipos';
 import { fmtM, n1 } from '@/lib/util';
 import { layoutDe, vbAtual, vbBase, type Layout } from '@/lib/vista';
-import { PortasPorCima, RotulosSala, Sala, Seta } from './desenho/Sala';
+import BarraContexto, { type AlvoTela } from './Contexto';
+import { DefsPlanta, PortasPorCima, RotulosSala, Sala, Seta } from './desenho/Sala';
 
 const ALVOS = '.mv, .jan, .arel, .porta-el, .interr-el';
 type Pt = { x: number; y: number };
@@ -58,6 +60,7 @@ export default function Planta() {
   const desenho = useApp((s) => s.desenho);
   const medir = useApp((s) => s.medir);
   const camadas = useApp((s) => s.camadas);
+  const folha = useApp((s) => s.folha);
   const svgRef = useRef<SVGSVGElement>(null);
   const [tela, setTela] = useState({ w: 800, h: 600 });
   const [congelado, setCongelado] = useState<Congelado | null>(null);
@@ -66,6 +69,9 @@ export default function Planta() {
   /** Cômodo sendo arrastado ou esticado: as paredes que ele divide com os vizinhos ficam acesas ("grudou"). */
   const [juntaQ, setJuntaQ] = useState<string | null>(null);
   const espaco = useRef(false);
+  /** No modo de desenhar, a barra de ações vai para o painel de baixo (não cobre as paredes onde se toca). */
+  const [doca, setDoca] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => { setDoca(desenho.ativo ? document.getElementById('ctx-doca') : null); }, [desenho.ativo]);
   useEffect(() => { if (!medir) setTrena(null); }, [medir]);
   // espaço segurado: arrastar move a planta (como nos programas de desenho)
   useEffect(() => {
@@ -100,7 +106,7 @@ export default function Planta() {
     return { ...lay0, off, vb: congelado.vb, andares: congelado.andares };
   }, [lay0, congelado, dados, vista, desenho.ativo]);
   // desenhando, a barra do desenho fica embaixo: a planta se enquadra acima dela
-  const base = useMemo(() => vbBase(lay, tela.w, tela.h, tela.w < 900, desenho.ativo ? (tela.w < 900 ? 180 : 215) : 0), [lay, tela, desenho.ativo]);
+  const base = useMemo(() => vbBase(lay, tela.w, tela.h, tela.w < 900, desenho.ativo ? (desenho.item ? 125 : 175) : 0), [lay, tela, desenho.ativo, desenho.item]);
   const vb = vbAtual(base, cam);
   useEffect(() => { const s = estadoAtual(); if (s.camBase.cx !== base.cx || s.camBase.cy !== base.cy) atualizar((e) => { e.camBase = { cx: base.cx, cy: base.cy }; }); }, [base]);
 
@@ -273,17 +279,7 @@ export default function Planta() {
     if (ae && ae.closest && ae.closest('#p-prop') && (ae.tagName === 'INPUT' || ae.tagName === 'SELECT')) ae.blur();
     const s = estadoAtual(), target = e.target as Element, perto = (sel: string) => (target.closest ? target.closest(sel) : null);
     if (soPan) { e.preventDefault(); iniciarPan(e, null, true); return; }
-    // botões desenhados na planta: girar o cômodo ou o móvel, tirar ou pôr parede, e as alças para esticar as paredes
-    const gq = perto('[data-girar-q]');
-    if (gq) {
-      e.preventDefault();
-      const id = gq.getAttribute('data-girar-q')!, a0 = andarDe(id);
-      avisarLigacoes(id, girarComodo(id)); manterVista(id, a0.x, a0.y);
-      return;
-    }
-    if (perto('[data-girar-m]')) { e.preventDefault(); girar(); return; }
-    const vp = perto('[data-virar-porta]');
-    if (vp && s.selEl) { e.preventDefault(); if (vp.getAttribute('data-virar-porta') === 'abre') virarAbertura(s.selEl); else virarDobradica(s.selEl); return; }
+    // botões desenhados na planta: tirar ou pôr parede, e as alças para esticar as paredes (girar fica na barra de ações)
     const pv = perto('[data-parede-viz]');
     if (pv && s.selComodo) { e.preventDefault(); alternarParede(s.selComodo, pv.getAttribute('data-parede-viz')!); return; }
     const alca = perto('[data-alca]');
@@ -473,24 +469,19 @@ export default function Planta() {
     const r = porNaParede(item, w.qid, w.parede, w.u);
     if ('erro' in r) { toast(r.erro, 'erro'); return; }
     const q = estadoAtual().dados.comodos[w.qid];
-    toast(item === 'porta' || item === 'correr'
-      ? tx(`${r.nome} em ${q.nome}, abrindo para dentro dele. Os botões ao lado viram a porta; toque em outra parede para pôr mais.`, `${r.nome} added to ${q.nome}, opening into it. The buttons next to it flip the door; tap another wall to add more.`)
+    toast(item === 'porta'
+      ? tx(`${r.nome} em ${q.nome}, abrindo para dentro dele. A barra de baixo vira a porta; toque em outra parede para pôr mais.`, `${r.nome} added to ${q.nome}, opening into it. The bar at the bottom flips the door; tap another wall to add more.`)
+      : item === 'correr'
+      ? tx(`${r.nome} em ${q.nome}. A barra de baixo troca o lado para onde ela corre; toque em outra parede para pôr mais.`, `${r.nome} added to ${q.nome}. The bar at the bottom switches the side it slides to; tap another wall to add more.`)
       : tx(`${r.nome} em ${q.nome}. Arraste pela parede para ajustar; toque em outra parede para pôr mais.`, `${r.nome} added to ${q.nome}. Drag it along the wall to adjust; tap another wall to add more.`), '', 'desfazer');
   }
 
-  // Toque sem arrastar: abre as opções (simples); dois toques seguidos editam.
+  // Toque sem arrastar: seleciona (a barra de ações aparece ao lado); dois toques seguidos editam.
   function toque(chave: string) {
     const agora = Date.now(), duplo = g.toque && g.toque.chave === chave && agora - g.toque.t < 400;
     clearTimeout(g.toqueT);
     if (duplo) { g.toque = null; editarItem(); return; }
     g.toque = { chave, t: agora };
-    // (no modo de desenhar o painel de baixo não abre: a barra do desenho fica lá)
-    if (estadoAtual().modo === 'simples' && !estadoAtual().desenho.ativo) {
-      g.toqueT = window.setTimeout(() => {
-        const s = estadoAtual();
-        if (g.toque && g.toque.chave === chave && !g.drag && !g.dragEl && (s.sel === chave || s.selEl === chave) && !s.menu && !s.dlg) atualizar((x) => { x.folha = true; });
-      }, 320);
-    }
   }
   function toqueVazio(pan: NonNullable<typeof g.pan>) {
     const s = estadoAtual();
@@ -512,7 +503,7 @@ export default function Planta() {
     const agora = Date.now(), duplo = g.toqueTit && g.toqueTit.qid === id && agora - g.toqueTit.t < 420;
     g.toqueTit = duplo ? null : { qid: id, t: agora };
     if (duplo) { focarComodo(id, true); return; }
-    selecionarComodo(id, true);
+    selecionarComodo(id, false);
   }
   function fim(e: RPointerEvent<SVGSVGElement>, cancelou: boolean) {
     g.ptrs.delete(e.pointerId);
@@ -636,7 +627,6 @@ export default function Planta() {
     const ref = comodo && lay.off[comodo] ? comodo : lay.ids[0], c = ref ? dados.comodos[ref] : null;
     return c && ref && lay.off[ref] ? { x: lay.off[ref].x - c.x, y: lay.off[ref].y - c.y } : { x: 0, y: 0 };
   })();
-  const iconeGirar = (r: number) => <><circle r={f3(r)} /><g transform={`scale(${f3(r / 16)}) translate(-12 -12)`}><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></g></>;
   const alcas = (() => {
     if (vista !== 'casa' || !selComodo || verCen || medir) return null;
     const c = dados.comodos[selComodo], o = lay.off[selComodo];
@@ -647,12 +637,10 @@ export default function Planta() {
       cima: [o.x + c.w / 2 - lw / 2, o.y - T / 2 - th / 2, lw, th], baixo: [o.x + c.w / 2 - lw / 2, o.y + c.h + T / 2 - th / 2, lw, th]
     };
     const nomeBorda: Record<Borda, string> = { esq: tx('da esquerda', 'left'), dir: tx('da direita', 'right'), cima: tx('de cima', 'top'), baixo: tx('de baixo', 'bottom') };
-    const r = 14 * upx;
     return (
       <g className="alcas">
         {BORDAS.map((b) => <rect key={b} className={`alca alca-${b}`} data-alca={b} x={n1(al[b][0])} y={n1(al[b][1])} width={f3(al[b][2])} height={f3(al[b][3])} rx={f3(Math.min(al[b][2], al[b][3]) / 2)}
           role="button" aria-label={tx(`Arraste para esticar a parede ${nomeBorda[b]} de ${c.nome}`, `Drag to stretch the ${nomeBorda[b]} wall of ${c.nome}`)} />)}
-        <g className="alca-girar" data-girar-q={c.id} role="button" aria-label={tx(`Girar ${c.nome} 90 graus`, `Rotate ${c.nome} 90 degrees`)} transform={`translate(${n1(o.x + c.w + T + r + 4 * upx)} ${n1(o.y - T - r - 4 * upx)})`}>{iconeGirar(r)}</g>
       </g>
     );
   })();
@@ -724,51 +712,40 @@ export default function Planta() {
       </g>
     );
   })();
-  // botões de virar a porta selecionada: para que lado ela abre (seta atravessando a parede) e o lado da dobradiça
-  // (seta ao longo da parede). Ficam do lado da parede para onde a folha não abre, para não cobrir a porta.
-  const botoesPorta = (() => {
-    if (!selEl || verCen || arrastando || medir) return null;
-    const e0 = dados.els[selEl]; if (!e0 || e0.tipo !== 'porta' || e0.semParede) return null;
-    const jeito = jeitoDaPorta(e0); if (jeito === 'vao') return null;
-    // o cômodo onde a porta está desenhada: o dela, ou o vizinho que a mostra (vendo só ele)
-    const qid = lay.off[e0.comodo] ? e0.comodo : comodo && lay.off[comodo] ? comodo : null;
-    const q = qid ? cq(dados, qid) : null, p = q ? q.portas.find((x) => x.id === selEl) : null;
-    if (!qid || !q || !p) return null;
-    const o = lay.off[qid], gp = geoPorta(q, p), meio = (gp.a + gp.b) / 2, r = 12 * upx, hz = horizontal(p.parede);
-    const v = giraParaDentro(p) ? -(T + r + 6 * upx) : r + 6 * upx;
-    const lados = ladosDaPorta(dados, e0), outro = e0.abre === 'fora' ? lados.dentro : lados.fora;
-    const bts: { k: 'abre' | 'dob'; rot: string }[] = [];
-    if (temGiro(p)) bts.push({ k: 'abre', rot: tx(`Abrir para ${outro}`, `Open into ${outro}`) });
-    if (jeito === 'abrir' || jeito === 'correr') bts.push({ k: 'dob', rot: jeito === 'correr' ? tx('Correr para o outro lado', 'Slide to the other side') : tx('Virar a dobradiça para o outro lado', 'Flip the hinge to the other side') });
-    const passo = 2 * r + 6 * upx, VERT = 'M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4', HORIZ = 'M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4';
-    return (
-      <g className="portas-btns" transform={`translate(${n1(o.x)} ${n1(o.y)})`}>
-        {bts.map((b, i) => {
-          const c = uv2xy(q, p.parede, meio + (i - (bts.length - 1) / 2) * passo, v);
-          return (
-            <g key={b.k} className="porta-btn" data-virar-porta={b.k} role="button" aria-label={b.rot} transform={`translate(${n1(c[0])} ${n1(c[1])})`}>
-              <title>{b.rot}</title>
-              <circle r={f3(r)} />
-              <g transform={`scale(${f3(r / 15)}) translate(-12 -12)`}><path d={(b.k === 'abre') === hz ? VERT : HORIZ} /></g>
-            </g>
-          );
-        })}
-      </g>
-    );
-  })();
   // portas atrapalhadas em qualquer cômodo visível: a porta é dos dois lados da parede
   const bloqueadas = useMemo(() => {
     const b = new Set<string>();
     for (const id of lay.ids) { const av = avaliacao(dados, verCen, id); if (av) for (const x of av.portasBloq) b.add(x); }
     return b;
   }, [dados, verCen, lay.ids]);
-  const girarMovel = (() => {
-    if (!sel || verCen || arrastando || desenho.ativo || medir) return null;
-    const m = dados.moveis[sel], o = m ? lay.off[m.comodo] : null;
-    if (!m || !o) return null;
-    const rr = ret(m), r = 13 * upx;
-    return <g className="alca-girar" data-girar-m={m.id} role="button" aria-label={tx(`Girar ${m.nome} 90 graus`, `Rotate ${m.nome} 90 degrees`)} transform={`translate(${n1(o.x + rr.x2 + r * 0.7)} ${n1(o.y + rr.y1 - r * 0.7)})`}>{iconeGirar(r)}</g>;
+  // a barra de ações fica ao lado do que está selecionado: a caixa dele, em pixels da tela da planta
+  const docada = !!(desenho.ativo && doca && doca.isConnected);
+  const alvoTela = ((): AlvoTela | null => {
+    if (verCen || arrastando || medir || risco || trena || folha) return null;
+    const sc = Math.min(tela.w / vb[2], tela.h / vb[3]) || 1, ox = (tela.w - vb[2] * sc) / 2, oy = (tela.h - vb[3] * sc) / 2;
+    const caixa = (x1: number, y1: number, x2: number, y2: number) => ({ x1: ox + (x1 - vb[0]) * sc, y1: oy + (y1 - vb[1]) * sc, x2: ox + (x2 - vb[0]) * sc, y2: oy + (y2 - vb[1]) * sc });
+    let a: AlvoTela | null = null;
+    if (sel) {
+      const m = dados.moveis[sel], o = m ? lay.off[m.comodo] : null;
+      if (m && o) { const r = ret(m); a = { tipo: 'movel', id: sel, ...caixa(o.x + r.x1, o.y + r.y1, o.x + r.x2, o.y + r.y2) }; }
+    } else if (selEl) {
+      // o cômodo onde o item está desenhado: o dele, ou o vizinho que mostra a porta (vendo só ele)
+      const e0 = dados.els[selEl], qid = e0 ? (lay.off[e0.comodo] ? e0.comodo : comodo && lay.off[comodo] ? comodo : null) : null;
+      const q = qid ? cq(dados, qid) : null, p = q ? q.els.find((x) => x.id === selEl) : null;
+      if (qid && q && p) {
+        const o = lay.off[qid], gg = geoEl(q, p), ext = p.tipo === 'porta' && temGiro(p) ? Math.max(...folhasPorta(q, p).map((f) => f.r)) : 24;
+        const pa = uv2xy(q, p.parede, gg.a, -Math.max(T, ext)), pb = uv2xy(q, p.parede, gg.b, ext);
+        a = { tipo: 'el', id: selEl, ...caixa(o.x + Math.min(pa[0], pb[0]), o.y + Math.min(pa[1], pb[1]), o.x + Math.max(pa[0], pb[0]), o.y + Math.max(pa[1], pb[1])) };
+      }
+    } else if (selComodo && vista === 'casa') {
+      const c = dados.comodos[selComodo], o = lay.off[selComodo];
+      if (c && o) a = { tipo: 'comodo', id: selComodo, ...caixa(o.x - T, o.y - T, o.x + c.w + T, o.y + c.h + T) };
+    }
+    // fora da tela, sem barra (a do painel de baixo continua)
+    return a && (docada || (a.x2 > 0 && a.x1 < tela.w && a.y2 > 0 && a.y1 < tela.h)) ? a : null;
   })();
+  const girarQ = (id: string) => { const a0 = andarDe(id); avisarLigacoes(id, girarComodo(id)); manterVista(id, a0.x, a0.y); };
+  const barra = alvoTela && <BarraContexto alvo={alvoTela} tela={tela} girarComodo={girarQ} docada={docada} />;
 
   // camadas escondidas (móveis, portas e janelas, ar, pontos, nomes, grade) viram classes da planta
   const semCamadas = (Object.keys(camadas) as (keyof typeof camadas)[]).filter((k) => !camadas[k]).map((k) => ' sem-' + k).join('');
@@ -776,13 +753,14 @@ export default function Planta() {
   const kRot = Math.min(1.6, Math.max(1, (7.5 * upx) / 8.5));
   const b0 = ids.length ? dados.comodos[ids[0]] : null;
   const rotulo = !b0 ? tx('Planta vazia', 'Empty floor plan') : vista === 'casa' ? tx('Planta da casa', 'Home floor plan') : ids.length > 1 ? tx('Todos os cômodos lado a lado', 'All rooms side by side') : tx(`Planta de ${b0.nome}, ${fmtM(b0.w)} por ${fmtM(b0.h)} metros`, `Floor plan of ${b0.nome}, ${fmtM(b0.w)} by ${fmtM(b0.h)} meters`);
-  return (
+  return (<>
     <svg id="planta" ref={svgRef} xmlns="http://www.w3.org/2000/svg" role="group" aria-label={rotulo} viewBox={vb.map(n1).join(' ')}
       className={`${arrastando ? 'arrastando' : ''} vista-${vista}${desenho.ativo ? ' desenhando' : ''}${desenho.ativo && desenho.item ? ' ferr-parede' : ''}${medir ? ' medindo' : ''}${semCamadas}`}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={(e) => fim(e, false)} onPointerCancel={(e) => fim(e, true)}
       onLostPointerCapture={(e) => { if (g.ptrs.has(e.pointerId) && !g.drag && !g.dragEl && !g.dragQ && !g.pan) g.ptrs.delete(e.pointerId); }}
       onContextMenu={onContextMenu} onKeyDown={onKeyDown}>
       <defs>
+        <DefsPlanta />
         <pattern id="hach" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect className="hach-bg" width="6" height="6" /><line className="hach-l" x1="0" y1="0" x2="0" y2="6" /></pattern>
         {desenho.ativo && <pattern id="grade-desenho" patternUnits="userSpaceOnUse" width="100" height="100" patternTransform={`translate(${n1(origem.x)} ${n1(origem.y)})`}><path className="gd-m" d="M50 0V100M0 50H100" /><path className="gd-g" d="M100 0H0V100" /></pattern>}
       </defs>
@@ -817,8 +795,6 @@ export default function Planta() {
       {juntas}
       {alcas}
       {paredeBtns}
-      {botoesPorta}
-      {girarMovel}
       {risco && risco.w > 0 && risco.h > 0 && (
         <g className="risco-g" aria-hidden="true">
           <rect className="risco-parede" x={n1(risco.ox + risco.x - T)} y={n1(risco.oy + risco.y - T)} width={n1(risco.w + 2 * T)} height={n1(risco.h + 2 * T)} />
@@ -833,6 +809,8 @@ export default function Planta() {
       )}
       {trenaG}
     </svg>
+    {barra && (docada ? createPortal(barra, doca!) : barra)}
+    </>
   );
 }
 

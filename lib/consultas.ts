@@ -121,6 +121,14 @@ export function ladosDaPorta(d: Dados, e: Pick<ElParede, 'comodo' | 'parede' | '
   return { dentro: d.comodos[e.comodo]?.nome || tx('cômodo', 'room'), fora: viz ? viz.nome : tx('Lado de fora', 'Outside'), viz };
 }
 
+/** O botão de virar a porta para o outro lado: "Abrir para Corredor" (ou "Abrir para fora", na parede de fora). */
+export function rotuloVirar(d: Dados, e: ElParede, curto = false): string {
+  const l = ladosDaPorta(d, e);
+  if (e.abre === 'fora') return curto ? tx(`Para ${l.dentro}`, `Into ${l.dentro}`) : tx(`Abrir para ${l.dentro}`, `Open into ${l.dentro}`);
+  if (!l.viz) return curto ? tx('Para fora', 'Outward') : tx('Abrir para fora', 'Open outward');
+  return curto ? tx(`Para ${l.viz.nome}`, `Into ${l.viz.nome}`) : tx(`Abrir para ${l.viz.nome}`, `Open into ${l.viz.nome}`);
+}
+
 /** Para onde a porta abre, pelo nome do cômodo ("Quarto 1", "Corredor", "Lado de fora"). */
 export function abrePara(d: Dados, e: ElParede): string {
   const l = ladosDaPorta(d, e);

@@ -2,7 +2,7 @@
 // Menu de opções: botão direito, dedo segurado e os botões "⋯".
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { GRUPOS_DO_COMODO, JEITOS_PORTA, JEITO_NOME, NOME_PAREDE, ORDEM_PAREDE, ORDEM_TIPOS, TIPOS, TIPOS_PAREDE, ehParede, tipoDoComodo } from '@/lib/catalogo';
-import { andaresOrdem, comodosDoAndar, comodosOrdem, ladosDaPorta, vizinhosDeParede } from '@/lib/consultas';
+import { andaresOrdem, comodosDoAndar, comodosOrdem, rotuloVirar, vizinhosDeParede } from '@/lib/consultas';
 import { jeitoDaPorta, temGiro } from '@/lib/geometria';
 import type { JeitoPorta } from '@/lib/tipos';
 import { paraArquivo } from '@/lib/dados';
@@ -21,7 +21,7 @@ type Bloco = { titulo?: string; grade?: boolean; itens: Item[] };
 
 const CAMADAS_MENU = (): [Camada, string][] => [
   ['moveis', tx('Móveis', 'Furniture')], ['portas', tx('Portas e janelas', 'Doors and windows')], ['ar', tx('Ar-condicionado', 'Air conditioners')],
-  ['pontos', tx('Tomadas, interruptores e outros pontos', 'Outlets, switches and hookups')], ['nomes', tx('Nomes de portas, janelas e pontos', 'Names of doors, windows and hookups')], ['grade', tx('Grade de 50 cm', '50 cm grid')]
+  ['pontos', tx('Tomadas, interruptores e outros pontos', 'Outlets, switches and hookups')], ['nomes', tx('Nomes de portas, janelas e pontos', 'Names of doors, windows and hookups')], ['piso', tx('Piso de cada cômodo (madeira, cerâmica…)', 'Each room’s floor (wood, tiles…)')], ['grade', tx('Grade de 50 cm', '50 cm grid')]
 ];
 
 
@@ -49,8 +49,8 @@ function blocos(m: InfoMenu): Bloco[] {
       const e = d.els[m.eid], its: Item[] = [{ a: 'editar', t: tx('Editar…', 'Edit…') }], extra: Bloco[] = [];
       if (e.tipo === 'porta' && !e.semParede) {
         // a porta é da parede: para que lado abre, pelo nome do cômodo, e o jeito dela
-        const j = jeitoDaPorta(e), l = ladosDaPorta(d, e), outro = e.abre === 'fora' ? l.dentro : l.fora;
-        if (temGiro(e)) its.push({ a: 'abre', t: tx(`Abrir para ${outro}`, `Open into ${outro}`) });
+        const j = jeitoDaPorta(e);
+        if (temGiro(e)) its.push({ a: 'abre', t: rotuloVirar(d, e) });
         if (j === 'abrir' || j === 'correr') its.push({ a: 'dob', t: j === 'correr' ? tx('Correr para o outro lado', 'Slide the other way') : tx('Virar a dobradiça', 'Flip the hinge') });
         extra.push({ titulo: tx('Tipo de porta', 'Door type'), grade: true, itens: JEITOS_PORTA.map((k) => ({ a: 'jeito:' + k, t: JEITO_NOME[k], marcado: j === k })) });
       }
@@ -221,7 +221,11 @@ export default function Menu() {
     const r = ref.current.getBoundingClientRect(), vw = document.documentElement.clientWidth || window.innerWidth, vh = window.innerHeight;
     let x = menu.x + 4, y = menu.y + 4;
     if (x + r.width > vw - 8) x = Math.max(8, menu.x - r.width - 4);
-    if (y + r.height > vh - 8) y = Math.max(8, vh - 8 - r.height);
+    if (y + r.height > vh - 8) {
+      // sem lugar embaixo do botão (um botão no pé da tela): abre em cima dele
+      const b = menu.btn ? document.getElementById(menu.btn)?.getBoundingClientRect() : null;
+      y = b && b.top - 4 - r.height >= 8 ? b.top - 4 - r.height : Math.max(8, vh - 8 - r.height);
+    }
     setPos({ x: Math.round(x), y: Math.round(y) });
     if (menu.teclado) (ref.current.querySelector('button') as HTMLElement | null)?.focus({ preventScroll: true });
   }, [menu]);
@@ -244,7 +248,8 @@ export default function Menu() {
   const teclas = (e: React.KeyboardEvent) => {
     const btns = Array.from(ref.current?.querySelectorAll('button') || []) as HTMLElement[], i = btns.indexOf(document.activeElement as HTMLElement);
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); const n = btns.length; if (!n) return; btns[i < 0 ? 0 : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n].focus(); }
-    else if (e.key === 'Tab' || e.key === 'Escape') fecharMenu();
+    // (o Esc só fecha o menu: não chega no teclado do editor, que tiraria a seleção junto)
+    else if (e.key === 'Tab' || e.key === 'Escape') { if (e.key === 'Escape') e.stopPropagation(); fecharMenu(); }
   };
   return (
     <div className="menu" id="menu" role="menu" aria-label={tx('Opções', 'Options')} ref={ref} style={{ left: pos.x, top: pos.y }} onKeyDown={teclas}>

@@ -6,19 +6,20 @@
 
 *Leia em português: [README.pt-BR.md](README.pt-BR.md)*
 
-- **Draw the floor plan** with your finger or the mouse: pick living room, bedroom, bathroom, kitchen, hallway, porch… Drag a room by its floor or name to move it; near another room the walls snap together, and hallways and porches get a door or an opening to the rooms they touch (it goes away if they move apart). Under “On a wall”, tapping a wall adds a door, sliding door, opening or window there.
+- **Draw the floor plan** with your finger or the mouse: pick living room, bedroom, bathroom, kitchen, hallway, porch… Drag a room by its floor or name to move it; near another room the walls snap together, and hallways and porches get a door or an opening to the rooms they touch (it goes away if they move apart). In the drawing bar, pick Door, Sliding, Opening or Window and tap a wall to put it there.
 - **Remove the wall** between two rooms and they become one open space (an L-shaped room, for example); put it back whenever you want.
 - **Photo of a paper sketch**: take a picture of your sketch and the AI builds the rooms, hallways, doors and windows.
 - A home with **floors** and **rooms**: look at one room, all rooms **side by side**, or the **assembled home plan** (floors side by side; rooms you can drag, stretch by their walls and rotate, that snap wall to wall, with arrows showing the distance between them).
+- **A plan that reads like an architect's**: each room gets the floor of its type (wood in bedrooms, porcelain tiles in the living room and hallways, ceramic in bathrooms, decking on porches), furniture casts a soft shadow and room labels stay clear of the furniture. Tapping a piece of furniture, a door or a room shows an **action bar** right above it (rotate, duplicate, edit, flip the door, and More for the rest); while drawing it sits at the bottom, next to the tools, so it doesn't cover the walls.
 - **Doors, windows, air conditioners and hookups** on every wall: switch, outlet, wall light, TV, network, water, drain and gas. A door can be hinged, double, sliding or just an opening (no door).
-- **A door belongs to the wall**, not to a single room: you can tap it from either side, and the panel says which room it opens into, by name. With it selected, two buttons on the plan flip the door, one for the side it opens into and one for the hinge side. Automatic doors go near a corner, opening against the wall, the way builders do it.
+- **A door belongs to the wall**, not to a single room: you can tap it from either side, and the panel says which room it opens into, by name. With it selected, the action bar flips it: one button says which room it will open into, by name, and the other switches the hinge side (or, on a sliding door, the side it slides to). Automatic doors go near a corner, opening against the wall, the way builders do it.
 - Place a room **to the right, left, above or below** another one, add **hallways** that connect two rooms with the length you choose, and **straight or spiral stairs**.
 - **Furniture with real measurements**: bed (with a **storage chest** at the headboard, at the foot or both, wider than the bed, centered, left, right or offset), wardrobe, crib, dresser, nightstand, **table with chairs** (in front, on both sides or all around, including the space to pull them out), chair, sofa, armchair, TV stand, bookcase, fridge, stove, sink, washing machine, utility sink, cabinet, toilet, bathroom sink, shower, bathtub and more.
 - **Free space in front of each piece** is calculated from its doors and drawers, and you can change it for custom-made furniture.
 - **Warnings** when something doesn't fit: a door hitting furniture, a blocked window, a covered switch, outlet or hookup, chairs without room, overlapping rooms.
 - **Scenarios** to compare layouts of one room or the whole home (update the one in use or save a new one), plus **3 suggestions** made by the built-in engine or by **AI**, which put the TV stand at the TV outlet, the sink and washer at the water and drain, and the stove at the gas.
 - **Undo and redo** (↶ ↷ at the top, or Ctrl+Z and Ctrl+Shift+Z), a **history** of every change and **restore points** that keep the whole home in the browser (automatic and your own) to go back to later.
-- **Hide the furniture** (or doors and windows, air conditioners, hookups, names and the grid) to work on what is underneath, a **tape measure** for any distance, and the **area** of each room, floor and home, with the free floor area.
+- **Hide the furniture** (or doors and windows, air conditioners, hookups, names, floors and the grid) to work on what is underneath, a **tape measure** for any distance, and the **area** of each room, floor and home, with the free floor area.
 - **Duplicate a room** with everything inside, **copy and paste** furniture and wall items, see a **summary with the furniture list** to copy, and **save the plan as an image** (PNG, or share it on a phone).
 - Everything is **saved in your browser**; you can **export and import** a file. Light, dark or automatic theme.
 - Works on **phones** and **computers**, in **Simple** or **Advanced** mode (properties panel, exact positions, locked furniture), in **Portuguese** and **English**.
@@ -83,8 +84,8 @@ Diagnostics: `/api/ia` shows whether the online AI is configured (and which mode
 
 ```
 app/            pages (Next.js App Router), styles, fonts and the /api/ia and /api/planta routes
-components/     React UI (SVG floor plan, panels, dialogs, menus)
-  desenho/      to-scale drawing of rooms and furniture (1 unit = 1 cm)
+components/     React UI (SVG floor plan, action bar, dock, panels, dialogs, menus)
+  desenho/      to-scale drawing of rooms, floors and furniture (1 unit = 1 cm)
 lib/            logic without UI: geometry, warnings, home, suggestions, AI, data, i18n
 tests/          tests (Vitest)
 ```

@@ -6,19 +6,20 @@
 
 *Read in English: [README.md](README.md)*
 
-- **Desenhe a planta** arrastando o dedo ou o mouse: escolha sala, quarto, banheiro, cozinha, corredor, varanda… Arraste o cômodo pelo piso ou pelo nome para mudar de lugar; perto de outro cômodo as paredes grudam, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam (e ela sai se eles se separarem). Em “Na parede”, um toque numa parede põe ali uma porta, porta de correr, passagem ou janela.
+- **Desenhe a planta** arrastando o dedo ou o mouse: escolha sala, quarto, banheiro, cozinha, corredor, varanda… Arraste o cômodo pelo piso ou pelo nome para mudar de lugar; perto de outro cômodo as paredes grudam, e corredor e varanda já ganham porta ou passagem para os cômodos que tocam (e ela sai se eles se separarem). Na barra de desenhar, escolha Porta, De correr, Passagem ou Janela e toque numa parede para pôr ali.
 - **Tire a parede** entre dois cômodos e eles viram um espaço só (um cômodo em L, por exemplo); dá para pôr a parede de volta quando quiser.
 - **Foto do desenho em papel**: tire uma foto do rascunho e a IA monta os cômodos, os corredores, as portas e as janelas.
 - Casa com **andares** e **cômodos**: veja um cômodo, os cômodos **lado a lado** ou a **planta da casa montada** (andares lado a lado; cômodos que se arrastam, esticam pelas paredes e giram, com ímã que encosta as paredes e setas com a distância entre eles).
+- **Planta com cara de projeto de arquiteto**: cada cômodo ganha o piso do tipo dele (madeira no quarto, porcelanato na sala e no corredor, cerâmica no banheiro, deck na varanda), os móveis têm uma sombra leve e o nome do cômodo fica longe dos móveis. Tocar num móvel, numa porta ou num cômodo mostra uma **barra de ações** logo em cima dele (girar, duplicar, editar, virar a porta e Mais para o resto); no modo de desenhar ela fica embaixo, junto das ferramentas, para não cobrir as paredes.
 - **Portas, janelas, ar-condicionado e pontos** em cada parede: interruptor, tomada, arandela, TV, internet, água, esgoto e gás. A porta pode ser de abrir, dupla, de correr ou só a passagem (vão livre).
-- **A porta é da parede**, não de um cômodo só: dá para tocar nela pelos dois lados, e o painel diz para que cômodo ela abre, pelo nome. Com ela selecionada, dois botões na planta viram a porta, um para o lado em que ela abre e outro para o lado da dobradiça. As portas automáticas ficam perto do canto, abrindo encostadas na parede, como se faz na obra.
+- **A porta é da parede**, não de um cômodo só: dá para tocar nela pelos dois lados, e o painel diz para que cômodo ela abre, pelo nome. Com ela selecionada, a barra de ações vira a porta: um botão diz para que cômodo ela vai abrir, pelo nome, e o outro troca o lado da dobradiça (ou, na porta de correr, o lado para onde ela corre). As portas automáticas ficam perto do canto, abrindo encostadas na parede, como se faz na obra.
 - Coloque um cômodo **à direita, à esquerda, acima ou abaixo** de outro, crie **corredores** ligando dois cômodos com o comprimento que quiser e **escadas retas ou caracol**.
 - **Móveis com medidas reais**: cama (com **baú** na cabeceira, nos pés ou nos dois, mais largo que a cama, centralizado, à esquerda, à direita ou com ajuste), guarda-roupa, berço, cômoda, criado-mudo, **mesa com cadeiras** (na frente, dos dois lados ou em volta, com o espaço para puxar), cadeira, sofá, poltrona, rack, estante, geladeira, fogão, pia, lavadora, tanque, armário, vaso sanitário, pia do banheiro, box, banheira e outros.
 - **Espaço livre na frente** de cada móvel calculado pelas portas e gavetas, e editável para móveis planejados.
 - **Avisos** quando algo não cabe: porta batendo em móvel, janela tapada, interruptor, tomada ou outro ponto tapado, cadeira sem espaço, cômodos um em cima do outro.
 - **Cenários** para comparar arrumações de um cômodo ou da casa toda (atualize o que está em uso ou salve um novo), e **3 sugestões** automáticas ou pela **IA**, que põem o rack no ponto de TV, a pia e a máquina de lavar na água e no esgoto e o fogão no gás.
 - **Desfazer e refazer** (↶ ↷ no topo, ou Ctrl+Z e Ctrl+Shift+Z), **histórico** de tudo o que mudou e **pontos de restauração**, que guardam a casa inteira no navegador (automáticos e os seus) para voltar depois.
-- **Esconda os móveis** (ou portas e janelas, ar-condicionado, pontos, nomes e a grade) para mexer no que está por baixo, use a **trena** para medir qualquer distância e veja a **área** de cada cômodo, andar e da casa, com o chão livre.
+- **Esconda os móveis** (ou portas e janelas, ar-condicionado, pontos, nomes, o piso e a grade) para mexer no que está por baixo, use a **trena** para medir qualquer distância e veja a **área** de cada cômodo, andar e da casa, com o chão livre.
 - **Duplique um cômodo** com tudo dentro, **copie e cole** móveis e itens de parede, veja o **resumo com a lista de móveis** para copiar e **salve a planta como imagem** (PNG, ou compartilhe no celular).
 - Tudo fica **salvo no navegador**; dá para **exportar e importar** um arquivo. Tema claro, escuro ou automático.
 - Funciona no **celular** e no **computador**, em modo **simples** ou **avançado** (painel de propriedades, posição exata, travar móveis), em **português** e **inglês**.
@@ -58,8 +59,8 @@ npm run build     # build de produção
 
 ```
 app/            páginas (Next.js App Router), estilos, fontes e as rotas /api/ia e /api/planta
-components/     a tela em React (planta em SVG, painéis, diálogos, menus)
-  desenho/      o desenho em escala dos cômodos e dos móveis (1 unidade = 1 cm)
+components/     a tela em React (planta em SVG, barra de ações, dock, painéis, diálogos, menus)
+  desenho/      o desenho em escala dos cômodos, dos pisos e dos móveis (1 unidade = 1 cm)
 lib/            a lógica sem tela: geometria, avisos, casa, sugestões, IA, dados, idiomas
 tests/          testes (Vitest)
 ```

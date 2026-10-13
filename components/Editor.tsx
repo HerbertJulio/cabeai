@@ -139,7 +139,7 @@ export default function Editor() {
         if (s.dlg) return;
         if (s.medir) { modoMedir(false); return; }
         // desenhando: tira a seleção, depois larga a ferramenta de porta ou janela, depois sai do modo
-        if (s.desenho.ativo) { if (s.selEl) limparSel(); else if (s.desenho.item) ferramentaDesenho(null); else modoDesenho(false); return; }
+        if (s.desenho.ativo) { if (s.sel || s.selEl || s.selComodo) limparSel(); else if (s.desenho.item) ferramentaDesenho(null); else modoDesenho(false); return; }
         if (s.latAberta) { atualizar((x) => { x.latAberta = false; }); return; }
         if (s.folha) atualizar((x) => { x.folha = false; x.folhaModo = 'acoes'; });
         else if (s.sel || s.selEl || s.selComodo) limparSel();

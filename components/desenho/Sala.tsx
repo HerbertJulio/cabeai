@@ -2,13 +2,45 @@
 import type { ReactNode } from 'react';
 import { AR_PROF, NOME_PAREDE, PAREDES, PONTO_NOME, T, ehInterruptor, horizontal, pontoDe, tipoDoComodo } from '@/lib/catalogo';
 import { tx } from '@/lib/i18n';
-import { compParede, folgas, folhaDe, folhasPorta, geoEl, geoPorta, giraParaDentro, jeitoDaPorta, nivel, temGiro, uv2xy, zonaAr, type Folga } from '@/lib/geometria';
+import { compParede, folgas, folhaDe, folhasPorta, geoEl, geoPorta, giraParaDentro, jeitoDaPorta, nivel, ret, temGiro, uv2xy, zonaAr, type Folga } from '@/lib/geometria';
 import { areaM2, fmtArea } from '@/lib/resumo';
 import type { Avaliacao, ComodoCompleto, ElParede, Movel, Parede, Ret, Vista } from '@/lib/tipos';
 import { fmtM, n1, pl } from '@/lib/util';
 import { Desenho, DesenhoAbertura, Rotulo, transfLocal } from './Movel';
 
 type Q = ComodoCompleto;
+
+/** Pisos (em cm, presos no canto de cada cômodo) e a sombra dos móveis: a planta com cara de projeto. Madeira no
+ *  quarto, porcelanato na sala, no corredor e na cozinha, cerâmica no banheiro e na área de serviço, deck na varanda.
+ *  O porcelanato tem 50 × 50 e a cerâmica 25 × 25: as juntas caem na grade de 50 cm. */
+export function DefsPlanta() {
+  const linhas = (d: string, cls: string) => <path className={cls} d={d} />;
+  return <>
+    <pattern id="piso-madeira" patternUnits="userSpaceOnUse" width="120" height="54">
+      <rect className="pt-madeira" width="120" height="54" />
+      {linhas('M0 18H120M0 36H120M0 54H120M0 0V18M40 18V36M80 36V54', 'pt-madeira-l')}
+    </pattern>
+    <pattern id="piso-porcelanato" patternUnits="userSpaceOnUse" width="50" height="50">
+      <rect className="pt-porc" width="50" height="50" />
+      {linhas('M0 0H50M0 0V50', 'pt-porc-l')}
+    </pattern>
+    <pattern id="piso-cozinha" patternUnits="userSpaceOnUse" width="50" height="50">
+      <rect className="pt-coz" width="50" height="50" />
+      {linhas('M0 0H50M0 0V50', 'pt-coz-l')}
+    </pattern>
+    <pattern id="piso-ceramica" patternUnits="userSpaceOnUse" width="25" height="25">
+      <rect className="pt-ceram" width="25" height="25" />
+      {linhas('M0 0H25M0 0V25', 'pt-ceram-l')}
+    </pattern>
+    <pattern id="piso-deck" patternUnits="userSpaceOnUse" width="90" height="28">
+      <rect className="pt-deck" width="90" height="28" />
+      {linhas('M0 0H90M0 14H90M0 0V14M45 14V28', 'pt-deck-l')}
+    </pattern>
+    <filter id="sombra-mv" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="1.6" stdDeviation="1.4" floodColor="#10141a" floodOpacity="0.2" />
+    </filter>
+  </>;
+}
 function rectEm(q: Q, parede: Parede, u1: number, v1: number, u2: number, v2: number) {
   const p1 = uv2xy(q, parede, u1, v1), p2 = uv2xy(q, parede, u2, v2);
   return { x: n1(Math.min(p1[0], p2[0])), y: n1(Math.min(p1[1], p2[1])), width: n1(Math.abs(p1[0] - p2[0])), height: n1(Math.abs(p1[1] - p2[1])) };
@@ -220,8 +252,8 @@ function retUV(q: Q, parede: Parede, u1: number, v1: number, u2: number, v2: num
   return { x1: Math.min(a[0], b[0]), y1: Math.min(a[1], b[1]), x2: Math.max(a[0], b[0]), y2: Math.max(a[1], b[1]) };
 }
 /** Onde fica a etiqueta do cômodo na planta da casa: no canto de cima à esquerda, a não ser que ali abra uma porta,
- *  fique o ar-condicionado ou o nome de uma porta; aí ela vai para o canto mais livre. */
-export function lugarEtiqueta(q: Q, w: number, h: number): { x: number; y: number } {
+ *  fique o ar-condicionado, o nome de uma porta ou um móvel (com o nome dele); aí ela vai para o canto mais livre. */
+export function lugarEtiqueta(q: Q, w: number, h: number, moveis: Movel[] = []): { x: number; y: number } {
   const m = 6, cands = [{ x: m, y: m }, { x: q.w - m - w, y: m }, { x: m, y: q.h - m - h }, { x: q.w - m - w, y: q.h - m - h }];
   const ocupado: Ret[] = [];
   for (const p of q.portas) {
@@ -233,6 +265,7 @@ export function lugarEtiqueta(q: Q, w: number, h: number): { x: number; y: numbe
   }
   for (const a of q.ares) { const z = zonaAr(q, a); ocupado.push(retUV(q, a.parede, z.a, 0, z.b, AR_PROF + 14)); }
   for (const i of q.interruptores) { const g = geoEl(q, i); ocupado.push(retUV(q, i.parede, g.a - 4, 0, g.b + 4, 7)); }
+  for (const m of moveis) ocupado.push(ret(m));
   const sobra = (c: { x: number; y: number }) => ocupado.reduce((t, r) => t + Math.max(0, Math.min(r.x2, c.x + w) - Math.max(r.x1, c.x)) * Math.max(0, Math.min(r.y2, c.y + h) - Math.max(r.y1, c.y)), 0);
   let melhor = cands[0], menor = Infinity;
   for (const c of cands) { if (c.x < 0 || c.y < 0) continue; const s = sobra(c); if (s < menor - 1) { menor = s; melhor = c; } if (s === 0) break; }
@@ -359,7 +392,7 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
       {ordem.map((m) => (
         <g key={m.id} className={`mv${sel === m.id ? ' sel' : ''}${av.conflitos.has(m.id) ? ' conflito' : ''}`} data-id={m.id} tabIndex={0} role="button"
           aria-label={tx(`${m.nome}, ${fmtM(m.larg)} por ${fmtM(m.prof)} metros${m.fixo ? ', travado' : ''}. Enter abre as opções; setas movem; R gira.`, `${m.nome}, ${fmtM(m.larg)} by ${fmtM(m.prof)} meters${m.fixo ? ', locked' : ''}. Enter opens the options; arrow keys move it; R rotates it.`)}>
-          <g transform={transfLocal(m)}><Desenho m={m} /></g>
+          <g transform={transfLocal(m)} filter="url(#sombra-mv)"><Desenho m={m} /></g>
           <Rotulo m={m} />
         </g>
       ))}
@@ -370,7 +403,7 @@ export function Sala({ q, lista, av, sel, selEl, foco, vista, ty, setasTodos, se
         const dimensoes = `${fmtM(q.w)} × ${fmtM(q.h)}`, area = fmtArea(areaM2(q)), nw = q.nome.length * 7.4 + 30;
         const cabe = (t: string) => nw + t.length * 5.7 + 8 + 10 <= q.w - 12;
         const med = cabe(`${dimensoes} · ${area}`) ? `${dimensoes} · ${area}` : cabe(dimensoes) ? dimensoes : '';
-        const w = Math.max(40, Math.min(q.w - 12, nw + (med ? med.length * 5.7 + 8 : 0) + 10)), pos = lugarEtiqueta(q, w, 26);
+        const w = Math.max(40, Math.min(q.w - 12, nw + (med ? med.length * 5.7 + 8 : 0) + 10)), pos = lugarEtiqueta(q, w, 26, lista);
         return (
           <g className={`sala-rot${foco ? ' ativo' : ''}${probs ? ' ruim' : ''}`} data-qt={q.id} role="button" tabIndex={0} transform={pos.x !== 6 || pos.y !== 6 ? `translate(${n1(pos.x - 6)} ${n1(pos.y - 6)})` : undefined}
             aria-label={tx(`${q.nome}, ${fmtM(q.w)} por ${fmtM(q.h)} metros, ${area}${probs ? ', ' + pl(probs, 'problema', 'problemas') : ''}. Arraste para mudar o cômodo de lugar na planta.`, `${q.nome}, ${fmtM(q.w)} by ${fmtM(q.h)} meters, ${area}${probs ? ', ' + pl(probs, 'problem', 'problems') : ''}. Drag to move the room on the floor plan.`)}>

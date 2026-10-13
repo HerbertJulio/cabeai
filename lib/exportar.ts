@@ -40,7 +40,7 @@ export async function pngDaPlanta(titulo: string): Promise<Blob | null> {
   const { svg } = f, m = 40, vb: Vb = [f.vb[0] - m, f.vb[1] - m, f.vb[2] + 2 * m, f.vb[3] + 2 * m];
   const esc = Math.min(4, Math.max(1.2, 2600 / Math.max(vb[2], vb[3]))), W = Math.round(vb[2] * esc), H = Math.round(vb[3] * esc);
   const copia = svg.cloneNode(true) as SVGSVGElement;
-  copia.querySelectorAll('.alcas, .alca-girar, .paredes-btns, .portas-btns, .risco-g, .grade-desenho, .juntas, .trena-g, .trena-p, .sala-foco').forEach((el) => el.remove());
+  copia.querySelectorAll('.alcas, .paredes-btns, .risco-g, .grade-desenho, .juntas, .trena-g, .trena-p, .sala-foco').forEach((el) => el.remove());
   copia.querySelectorAll('.sel, .ativo').forEach((el) => el.classList.remove('sel', 'ativo'));
   copia.setAttribute('viewBox', vb.join(' '));
   copia.setAttribute('width', String(W)); copia.setAttribute('height', String(H));
